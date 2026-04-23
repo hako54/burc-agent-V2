@@ -1,14 +1,14 @@
 """
-Telegram Bot — Burç Agent
-Long polling ile çalışır. Komutlar:
-  /burc <burç>   - Tek burç için video üret ve yükle
-  /tumburclar    - 12 burç için sırayla üret
-  /durum         - Çalışan işlem var mı göster
-  /iptal         - Toplu üretimi durdur
-  /yardim        - Yardım
+Telegram Bot — Burç Agent (Onay Akışlı)
 
-Aşama değişimlerini job_tracker üzerinden takip eder ve kullanıcıya
-anlamlı ara bildirimler atar.
+Komutlar:
+  /burc <burç>        - Video üret, ONAY BEKLE
+  /yayinla <burç>     - Onaylı videoyu YouTube'a yükle
+  /iptal <burç>       - Onay bekleyen videoyu sil
+  /bekleyenler        - Onay bekleyen tüm videoları listele
+  /tumburclar         - 12 burç batch üretim (onaysız, direkt yükler)
+  /durum              - Canlı durum
+  /yardim             - Yardım
 """
 
 import os
@@ -19,13 +19,16 @@ import requests
 import urllib3
 
 from zodiac import normalize_sign, all_sign_keys, get_sign
-from pipeline import produce_and_upload, produce_all_signs
+from pipeline import (
+    produce_and_upload, produce_all_signs,
+    approve_and_upload, reject_pending,
+)
 import job_tracker as jt
+import approval
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 log = logging.getLogger(__name__)
 
-# Toplu iş bayrağı
 _batch_running = False
 _batch_lock = threading.Lock()
 
@@ -61,15 +64,55 @@ def send(text: str, chat_id: str = None):
         log.warning(f"Telegram send hata: {e}")
 
 
-# ── Aşama Takipçisi ─────────────────────────────────────────────────
+def send_video(video_path: str, caption: str, chat_id: str = None):
+    """Video dosyasını Telegram'a gönderir. 50 MB limit."""
+    token = _bot_token()
+    if not token:
+        return False
+    cid = chat_id or _allowed_chat()
+    if not cid or not os.path.exists(video_path):
+        return False
+
+    try:
+        size_mb = os.path.getsize(video_path) / (1024 * 1024)
+        if size_mb > 49:
+            log.warning(f"Video {size_mb:.1f}MB, Telegram 50MB limitini aşıyor")
+            send(
+                f"⚠ Video çok büyük ({size_mb:.1f}MB), Telegram'a "
+                f"gönderilemedi.\nRailway URL'den izleyebilirsin.",
+                cid,
+            )
+            return False
+
+        log.info(f"Video Telegram'a yükleniyor ({size_mb:.1f}MB)...")
+        with open(video_path, "rb") as f:
+            r = requests.post(
+                f"https://api.telegram.org/bot{token}/sendVideo",
+                data={
+                    "chat_id": cid,
+                    "caption": caption,
+                    "parse_mode": "HTML",
+                    "supports_streaming": "true",
+                },
+                files={"video": f},
+                timeout=300,
+                verify=False,
+            )
+        if r.status_code == 200:
+            return True
+        log.warning(f"sendVideo HTTP {r.status_code}: {r.text[:200]}")
+        return False
+    except Exception as e:
+        log.warning(f"Video gönderilemedi: {e}")
+        return False
+
+
+# ── Aşama takipçisi ─────────────────────────────────────────────────
 
 def _watch_job_stages(sign_key: str, chat_id: str, info: dict):
-    """Bir iş başladıktan sonra arka planda aşama değişimlerini izler
-    ve Telegram'a her yeni aşamada mesaj atar. İş bitince kendiliğinden
-    durur."""
+    """İş başladıktan sonra aşama değişimlerini Telegram'a bildirir."""
     last_stage = None
-    # Max 20 dakika bekle, sonra bırak (job zaten hata verir)
-    for _ in range(240):  # 240 * 5sn = 20 dk
+    for _ in range(240):
         job = jt.get_job(sign_key)
         if not job:
             return
@@ -112,22 +155,35 @@ def cmd_burc(chat_id: str, sign_input: str):
         send(f"❌ Geçersiz burç: <code>{sign_input}</code>", chat_id)
         return
 
+    # Zaten çalışıyor mu?
     if jt.is_running(sign_key):
         job = jt.get_job(sign_key)
         send(f"⏳ {sign_key.capitalize()} zaten üretiliyor "
              f"({job.get('stage_label', '?')})", chat_id)
         return
 
-    info = get_sign(sign_key)
-    send(f"{info['emoji']} <b>{info['name']}</b> burcu üretimi başlıyor...",
-         chat_id)
+    # Daha önce onay bekleyen var mı?
+    pending = approval.get_pending(sign_key)
+    if pending:
+        info = get_sign(sign_key)
+        send(
+            f"⚠ <b>{info['name']}</b> için zaten onay bekleyen video var:\n"
+            f"📝 {pending.get('title', '')[:80]}\n\n"
+            f"Önce karar ver:\n"
+            f"✅ /yayinla {sign_key}\n"
+            f"❌ /iptal {sign_key}",
+            chat_id,
+        )
+        return
 
-    # İş başlatıldığını tracker'a bildir (telegram'dan geldi bilgisi)
+    info = get_sign(sign_key)
+    send(f"{info['emoji']} <b>{info['name']}</b> burcu üretimi başlıyor...\n"
+         f"<i>Üretim sonrası onay isteyeceğim.</i>", chat_id)
+
     jt.start_job(sign_key, source="telegram")
 
     def run():
         try:
-            # Aşama bildiricisini paralel başlat
             watcher = threading.Thread(
                 target=_watch_job_stages,
                 args=(sign_key, chat_id, info),
@@ -135,14 +191,34 @@ def cmd_burc(chat_id: str, sign_input: str):
             )
             watcher.start()
 
-            result = produce_and_upload(sign_key, upload=True, source="telegram")
-            send(
-                f"✅ <b>{info['name']}</b> yayında!\n"
-                f"📝 {result.get('title', '')[:80]}\n"
-                f"🤖 {result.get('provider', '?')}\n"
-                f"🔗 {result.get('youtube_url', '(yok)')}",
-                chat_id,
+            # require_approval=True → YouTube'a yüklemez, kuyruğa alır
+            result = produce_and_upload(
+                sign_key, upload=True, source="telegram",
+                require_approval=True,
             )
+
+            # Video bilgilerini gönder
+            video_path = result.get("video_path", "")
+            public_url = _public_video_url(video_path)
+
+            caption = (
+                f"✋ <b>{info['name']} onay bekliyor</b>\n\n"
+                f"📝 {result.get('title', '')[:90]}\n"
+                f"🤖 {result.get('provider', '?')}\n"
+            )
+            if public_url:
+                caption += f"🔗 <a href=\"{public_url}\">Web'de izle</a>\n"
+            caption += (
+                f"\n<b>Kararını bekliyorum:</b>\n"
+                f"✅ /yayinla {sign_key} — YouTube'a yükle\n"
+                f"❌ /iptal {sign_key} — Sil"
+            )
+            send(caption, chat_id)
+
+            # Videoyu da Telegram'a gönder (50MB altındaysa)
+            send_video(video_path, f"{info['emoji']} {info['name']} — önizleme",
+                       chat_id)
+
         except Exception as e:
             log.exception(f"cmd_burc({sign_key}) hata")
             send(f"❌ <b>{info['name']}</b> hatası: {str(e)[:200]}", chat_id)
@@ -150,7 +226,91 @@ def cmd_burc(chat_id: str, sign_input: str):
     threading.Thread(target=run, daemon=True).start()
 
 
+def cmd_yayinla(chat_id: str, sign_input: str):
+    """Onaylı videoyu YouTube'a yükler."""
+    if not sign_input:
+        send("📋 Kullanım: /yayinla &lt;burç&gt;\nÖrn: /yayinla koç", chat_id)
+        return
+
+    sign_key = normalize_sign(sign_input)
+    if not sign_key:
+        send(f"❌ Geçersiz burç: <code>{sign_input}</code>", chat_id)
+        return
+
+    pending = approval.get_pending(sign_key)
+    if not pending:
+        send(f"ℹ️ {sign_key.capitalize()} için onay bekleyen video yok.\n"
+             f"Önce /burc {sign_key} ile üret.", chat_id)
+        return
+
+    info = get_sign(sign_key)
+    send(f"📤 <b>{info['name']}</b> YouTube'a yükleniyor...", chat_id)
+
+    def run():
+        try:
+            result = approve_and_upload(sign_key, source="telegram")
+            send(
+                f"✅ <b>{info['name']}</b> yayında!\n"
+                f"📝 {result.get('title', '')[:80]}\n"
+                f"🔗 {result.get('youtube_url', '?')}",
+                chat_id,
+            )
+        except Exception as e:
+            log.exception(f"cmd_yayinla {sign_key} hata")
+            send(f"❌ <b>{info['name']}</b> yükleme hatası: "
+                 f"{str(e)[:200]}", chat_id)
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+def cmd_iptal(chat_id: str, sign_input: str):
+    """Onay bekleyen videoyu iptal eder (siler)."""
+    if not sign_input:
+        # Argüman yoksa, batch iptal komutu gibi çalışsın
+        global _batch_running
+        with _batch_lock:
+            if _batch_running:
+                _batch_running = False
+                send("🛑 Toplu üretim durduruldu.", chat_id)
+                return
+        send("📋 Kullanım: /iptal &lt;burç&gt;\nÖrn: /iptal koç", chat_id)
+        return
+
+    sign_key = normalize_sign(sign_input)
+    if not sign_key:
+        send(f"❌ Geçersiz burç: <code>{sign_input}</code>", chat_id)
+        return
+
+    try:
+        item = reject_pending(sign_key)
+        info = get_sign(sign_key)
+        send(f"🗑 <b>{info['name']}</b> iptal edildi ve silindi.", chat_id)
+    except Exception as e:
+        send(f"ℹ️ {str(e)[:200]}", chat_id)
+
+
+def cmd_bekleyenler(chat_id: str):
+    """Onay bekleyen tüm videoları listeler."""
+    pending = approval.list_pending()
+    if not pending:
+        send("📭 Onay bekleyen video yok.", chat_id)
+        return
+
+    lines = ["📋 <b>Onay Bekleyenler</b>", ""]
+    for sign_key, item in pending.items():
+        info = get_sign(sign_key)
+        lines.append(
+            f"{info['emoji']} <b>{info['name']}</b>\n"
+            f"   📝 {item.get('title', '')[:60]}\n"
+            f"   ✅ /yayinla {sign_key}\n"
+            f"   ❌ /iptal {sign_key}"
+        )
+        lines.append("")
+    send("\n".join(lines), chat_id)
+
+
 def cmd_tumburclar(chat_id: str):
+    """12 burç için batch üretim. Onaysız, direkt yükler."""
     global _batch_running
     with _batch_lock:
         if _batch_running:
@@ -158,9 +318,8 @@ def cmd_tumburclar(chat_id: str):
             return
         _batch_running = True
 
-    send("🌟 <b>12 burç için üretim başlıyor</b>\n"
-         "Yaklaşık 30-60 dakika sürebilir. Her burç için ayrı bildirim alacaksın.",
-         chat_id)
+    send("🌟 <b>12 burç için üretim başlıyor (onaysız)</b>\n"
+         "Yaklaşık 30-60 dakika sürebilir.", chat_id)
 
     def run():
         global _batch_running
@@ -168,6 +327,10 @@ def cmd_tumburclar(chat_id: str):
             success_count = 0
             fail_count = 0
             for i, sign_key in enumerate(all_sign_keys(), 1):
+                with _batch_lock:
+                    if not _batch_running:
+                        send("🛑 İptal edildi.", chat_id)
+                        break
                 info = get_sign(sign_key)
                 try:
                     send(f"[{i}/12] {info['emoji']} <b>{info['name']}</b> "
@@ -181,8 +344,10 @@ def cmd_tumburclar(chat_id: str):
                     )
                     watcher.start()
 
-                    result = produce_and_upload(sign_key, upload=True,
-                                                source="telegram")
+                    result = produce_and_upload(
+                        sign_key, upload=True, source="telegram",
+                        require_approval=False,  # Batch'te onay yok
+                    )
                     send(f"✅ [{i}/12] {info['name']} → "
                          f"{result.get('youtube_url', '?')}", chat_id)
                     success_count += 1
@@ -207,6 +372,7 @@ def cmd_tumburclar(chat_id: str):
 def cmd_durum(chat_id: str):
     jobs = jt.all_jobs()
     active = [k for k, v in jobs.items() if v.get("status") == "running"]
+    pending = approval.list_pending()
 
     lines = ["📊 <b>Canlı Durum</b>", ""]
 
@@ -221,60 +387,61 @@ def cmd_durum(chat_id: str):
             stage = job.get("stage_label", "?")
             detail = job.get("progress_detail", "")
             provider = job.get("provider", "")
-            title = job.get("title", "")
             source = job.get("source", "?")
 
             line = f"{info['emoji']} <b>{info['name']}</b> → {stage}"
             if detail:
                 line += f"\n   <i>{detail}</i>"
-            if title:
-                line += f"\n   📝 {title[:60]}"
             if provider:
                 line += f" ({provider})"
-            line += f"\n   📥 {source}"
             lines.append(line)
             lines.append("")
     else:
         if not _batch_running:
-            lines.append("✅ Boşta - çalışan iş yok")
+            lines.append("✅ Üretim boşta")
 
-    # Son tamamlananlar
-    done = [(k, v) for k, v in jobs.items() if v.get("status") == "done"][-3:]
-    if done:
-        lines.append("")
-        lines.append("📜 <b>Son tamamlananlar:</b>")
-        for key, job in done:
-            info = get_sign(key)
-            url = job.get("youtube_url", "")
-            lines.append(f"{info['emoji']} {info['name']} → {url or 'yok'}")
+    if pending:
+        lines.append(f"")
+        lines.append(f"✋ <b>Onay bekleyen:</b> {len(pending)}")
+        for sign_key in pending:
+            info = get_sign(sign_key)
+            lines.append(f"   {info['emoji']} {info['name']}")
+        lines.append("📋 /bekleyenler yazarak detayı gör")
 
     send("\n".join(lines), chat_id)
-
-
-def cmd_iptal(chat_id: str):
-    global _batch_running
-    with _batch_lock:
-        if _batch_running:
-            _batch_running = False
-            send("🛑 Toplu üretim durduruldu (mevcut burç bitince).",
-                 chat_id)
-        else:
-            send("ℹ️ Çalışan toplu üretim yok.", chat_id)
 
 
 def cmd_yardim(chat_id: str):
     send(
         "🤖 <b>Burç Agent</b>\n\n"
-        "🔮 <b>Komutlar:</b>\n"
-        "/burc &lt;burç&gt; — Tek burç için video\n"
+        "🔮 <b>Üretim (onaylı):</b>\n"
+        "/burc &lt;burç&gt; — Video üret, onay iste\n"
         "   Örn: /burc koç, /burc aslan\n"
-        "/tumburclar — 12 burç için toplu üretim\n"
-        "/durum — Canlı durum (hangi aşamada)\n"
-        "/iptal — Toplu üretimi durdur\n"
-        "/yardim — Bu mesaj\n\n"
-        "<i>Aşama değişimlerinde otomatik bildirim alırsın.</i>",
+        "/yayinla &lt;burç&gt; — Onaylıyı YouTube'a yükle\n"
+        "/iptal &lt;burç&gt; — Onay bekleyeni sil\n"
+        "/bekleyenler — Onay bekleyenleri listele\n\n"
+        "🌟 <b>Batch (onaysız):</b>\n"
+        "/tumburclar — 12 burç direkt yükle\n\n"
+        "📊 <b>Diğer:</b>\n"
+        "/durum — Canlı durum\n"
+        "/iptal — Batch üretimi durdur\n"
+        "/yardim — Bu mesaj",
         chat_id,
     )
+
+
+# ── Yardımcılar ─────────────────────────────────────────────────────
+
+def _public_video_url(video_path: str) -> str:
+    """Railway'in public URL'i + output path'i."""
+    if not video_path:
+        return ""
+    filename = os.path.basename(video_path)
+    # Railway generates bir domain — RAILWAY_PUBLIC_DOMAIN env var'da
+    domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
+    if domain:
+        return f"https://{domain}/output/{filename}"
+    return ""
 
 
 # ── Polling ─────────────────────────────────────────────────────────
@@ -303,12 +470,16 @@ def _handle_update(update: dict):
 
     if cmd == "/burc":
         cmd_burc(chat_id, args)
+    elif cmd == "/yayinla":
+        cmd_yayinla(chat_id, args)
+    elif cmd == "/iptal":
+        cmd_iptal(chat_id, args)
+    elif cmd == "/bekleyenler":
+        cmd_bekleyenler(chat_id)
     elif cmd == "/tumburclar":
         cmd_tumburclar(chat_id)
     elif cmd == "/durum":
         cmd_durum(chat_id)
-    elif cmd == "/iptal":
-        cmd_iptal(chat_id)
     elif cmd in ("/yardim", "/help", "/start"):
         cmd_yardim(chat_id)
     else:
