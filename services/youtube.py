@@ -10,6 +10,9 @@ Bu dosyalar Railway'de environment variable olarak saklanır:
 - CREDENTIALS_BURC (base64)
 - TOKEN_BURC (base64)
 Uygulama başlarken bootstrap.py bunları dosyaya dönüştürür.
+
+ÖNEMLİ: Sunucuda (Railway) tarayıcı yoktur. OAuth akışı yalnızca LOKAL
+makinede başlatılabilir. Token eksikse açık ve anlaşılır hata fırlatırız.
 """
 
 import os
@@ -33,38 +36,82 @@ TOKEN_FILE = "token_burc.json"
 CREDS_FILE = "credentials_burc.json"
 
 
+def _is_server_environment() -> bool:
+    """Railway, Heroku veya başka bir sunucu ortamında mıyız tespit eder.
+    Bu ortamlarda tarayıcı açılamaz, OAuth başlatılamaz."""
+    # Railway, Render, Fly vs otomatik env var'lar
+    server_markers = [
+        "RAILWAY_ENVIRONMENT",
+        "RENDER",
+        "DYNO",          # Heroku
+        "FLY_APP_NAME",
+        "K_SERVICE",     # Google Cloud Run
+    ]
+    for marker in server_markers:
+        if os.environ.get(marker):
+            return True
+    # DISPLAY yoksa X olmayan sistem
+    if os.name != "nt" and not os.environ.get("DISPLAY"):
+        return True
+    return False
+
+
 def get_youtube_service():
-    """YouTube API istemcisi oluşturur. Token yoksa veya süresi dolduysa yeniler."""
+    """YouTube API istemcisi oluşturur. Token yoksa veya süresi dolduysa yeniler.
+    Sunucuda tarayıcı açılamaz, net hata fırlatır."""
     credentials = None
 
     if os.path.exists(TOKEN_FILE):
         try:
             credentials = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
+            log.info("token_burc.json yüklendi")
         except Exception as e:
             log.warning(f"Token okunamadı: {e}")
             credentials = None
+    else:
+        log.warning(f"{TOKEN_FILE} bulunamadı")
 
-    if not credentials or not credentials.valid:
-        if credentials and credentials.expired and credentials.refresh_token:
+    # Token var ama geçersizse, refresh dene
+    if credentials and not credentials.valid:
+        if credentials.expired and credentials.refresh_token:
             log.info("Token süresi dolmuş, yenileniyor...")
             try:
                 credentials.refresh(Request())
+                # Yenilenmiş token'i geri kaydet
+                with open(TOKEN_FILE, "w", encoding="utf-8") as f:
+                    f.write(credentials.to_json())
+                log.info("✅ Token yenilendi")
             except Exception as e:
                 log.error(f"Token yenilenemedi: {e}")
                 credentials = None
+        else:
+            log.warning("Token geçersiz ve refresh_token yok")
+            credentials = None
 
-        if not credentials:
-            if not os.path.exists(CREDS_FILE):
-                raise RuntimeError(
-                    f"{CREDS_FILE} bulunamadı. Google Cloud Console'dan "
-                    "OAuth Desktop Client credentials indir ve proje kök "
-                    "klasörüne koy."
-                )
-            log.info("Yeni OAuth akışı başlatılıyor...")
-            flow = InstalledAppFlow.from_client_secrets_file(CREDS_FILE, SCOPES)
-            credentials = flow.run_local_server(port=0)
+    # Hala credentials yoksa — OAuth başlatmak gerekir
+    if not credentials:
+        if _is_server_environment():
+            # Bulutta tarayıcı açamayız. Net hata.
+            raise RuntimeError(
+                "❌ YouTube token eksik veya geçersiz. "
+                "Sunucuda OAuth akışı başlatılamaz (tarayıcı yok). "
+                "ÇÖZÜM: Lokal makinende `python -c \"from services.youtube "
+                "import get_youtube_service; get_youtube_service()\"` "
+                "çalıştır, yeni token_burc.json oluştur, onu base64'e çevir "
+                "ve Railway'de TOKEN_BURC variable'ını güncelle."
+            )
 
-        # Yeni/yenilenmiş token'i kaydet
+        # Lokalde — tarayıcıyı açıp OAuth akışı başlat
+        if not os.path.exists(CREDS_FILE):
+            raise RuntimeError(
+                f"{CREDS_FILE} bulunamadı. Google Cloud Console'dan "
+                "OAuth Desktop Client credentials indir ve proje kök "
+                "klasörüne koy."
+            )
+        log.info("Yeni OAuth akışı başlatılıyor (yerel tarayıcı açılacak)...")
+        flow = InstalledAppFlow.from_client_secrets_file(CREDS_FILE, SCOPES)
+        credentials = flow.run_local_server(port=0)
+
         with open(TOKEN_FILE, "w", encoding="utf-8") as f:
             f.write(credentials.to_json())
         log.info(f"✅ Token kaydedildi: {TOKEN_FILE}")
@@ -77,27 +124,12 @@ def upload_video(video_path: str, title: str, description: str,
                  tags: list = None, category_id: str = "22",
                  privacy: str = "public",
                  scheduled_time: str = None) -> dict:
-    """Video'yu YouTube'a yükler. Dönüş: {'id': video_id, 'url': youtube_url}.
-
-    Args:
-        video_path: Yerel video dosya yolu
-        title: Video başlığı (max 100 karakter, YouTube limit)
-        description: Açıklama metni
-        tags: Tag listesi (max 15 önerilen)
-        category_id: YouTube kategori ID'si. 22=People&Blogs, 24=Entertainment,
-                     28=Science&Tech. Astroloji için 22 veya 24.
-        privacy: 'public', 'unlisted', veya 'private'
-        scheduled_time: ISO 8601 tarih (gelecek). Verilirse privacy 'private' olur.
-
-    Returns:
-        {'id': str, 'url': str, 'title': str}
-    """
+    """Video'yu YouTube'a yükler. Dönüş: {'id': video_id, 'url': youtube_url}."""
     if not os.path.exists(video_path):
         raise FileNotFoundError(f"Video bulunamadı: {video_path}")
 
     youtube = get_youtube_service()
 
-    # Title YouTube'da max 100 karakter
     title = (title or "Günlük Burç Yorumu")[:100]
 
     snippet = {
@@ -111,7 +143,6 @@ def upload_video(video_path: str, title: str, description: str,
         "privacyStatus": privacy,
         "selfDeclaredMadeForKids": False,
     }
-    # Scheduled upload: privacy zorunlu olarak 'private'
     if scheduled_time:
         status["privacyStatus"] = "private"
         status["publishAt"] = scheduled_time
@@ -134,7 +165,6 @@ def upload_video(video_path: str, title: str, description: str,
         status_resp, response = request.next_chunk()
         if status_resp:
             progress = int(status_resp.progress() * 100)
-            # %10'luk dilimlerle log
             if progress >= last_progress + 10:
                 log.info(f"  ... %{progress}")
                 last_progress = progress
