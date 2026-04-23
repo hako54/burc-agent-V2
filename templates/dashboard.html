@@ -473,13 +473,22 @@
     </button>
   </div>
 
-  <!-- Canlı Aktif İşler Banner (sadece iş varken görünür) -->
+  <!-- Canlı Aktif İşler Banner -->
   <div class="active-jobs" id="activeJobs">
     <div class="active-jobs-header">
       <div class="spinner"></div>
       <span>Şu an üretiliyor</span>
     </div>
     <div id="activeJobsList"></div>
+  </div>
+
+  <!-- Onay Bekleyenler Banner -->
+  <div class="active-jobs" id="pendingSection" style="border-color: var(--gold);">
+    <div class="active-jobs-header" style="color: var(--gold);">
+      <span>✋</span>
+      <span>Onay Bekleyen Videolar</span>
+    </div>
+    <div id="pendingList"></div>
   </div>
 
   <h2 class="section-title">Bugünün Burçları</h2>
@@ -590,7 +599,7 @@ async function produceSingle(key, name) {
     return;
   }
 
-  if (!confirm(`${name} burcu için video üretilip YouTube'a yüklensin mi?`)) return;
+  if (!confirm(`${name} burcu için video üretilsin mi?\n(Üretim bitince onayın istenecek, direkt YouTube'a yüklenmeyecek.)`)) return;
 
   card.classList.remove('done', 'error');
   card.classList.add('working');
@@ -599,12 +608,11 @@ async function produceSingle(key, name) {
     const res = await fetch(`/api/produce/${key}`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({upload: true}),
+      body: JSON.stringify({upload: true, require_approval: true}),
     });
     const data = await res.json();
     if (res.ok) {
-      toast(`${name} üretimi başladı. Canlı takip için yukarı bak.`, 'info');
-      // Canlı poll zaten 3 sn'de bir çalışıyor
+      toast(`${name} üretimi başladı. Bitince onay paneli gösterir.`, 'info');
     } else if (res.status === 409) {
       toast(data.error || `${name} zaten çalışıyor`, 'info');
     } else {
@@ -614,6 +622,114 @@ async function produceSingle(key, name) {
     card.classList.remove('working');
     card.classList.add('error');
     toast(name + ': ' + e.message, 'error');
+  }
+}
+
+async function approvePending(key, name) {
+  if (!confirm(`${name} YouTube'a yüklensin mi?`)) return;
+  try {
+    const res = await fetch(`/api/approve/${key}`, {method: 'POST'});
+    const data = await res.json();
+    if (res.ok) {
+      toast(`${name} YouTube'a yükleniyor...`, 'info');
+      loadPending();
+    } else {
+      throw new Error(data.error || 'hata');
+    }
+  } catch (e) {
+    toast('Onay hatası: ' + e.message, 'error');
+  }
+}
+
+async function rejectPending(key, name) {
+  if (!confirm(`${name} videosu silinsin mi?`)) return;
+  try {
+    const res = await fetch(`/api/reject/${key}`, {method: 'POST'});
+    const data = await res.json();
+    if (res.ok) {
+      toast(`${name} silindi.`, 'info');
+      loadPending();
+    } else {
+      throw new Error(data.error || 'hata');
+    }
+  } catch (e) {
+    toast('İptal hatası: ' + e.message, 'error');
+  }
+}
+
+async function loadPending() {
+  try {
+    const res = await fetch('/api/pending');
+    const data = await res.json();
+    const pending = data.pending || {};
+    const section = document.getElementById('pendingSection');
+    const list = document.getElementById('pendingList');
+    const keys = Object.keys(pending);
+
+    if (keys.length === 0) {
+      section.classList.remove('visible');
+      return;
+    }
+    section.classList.add('visible');
+    list.innerHTML = '';
+
+    for (const key of keys) {
+      const item = pending[key];
+      const signInfo = getSignInfo(key);
+      const row = document.createElement('div');
+      row.className = 'job-row';
+      row.style.setProperty('--accent-color', signInfo?.color || 'var(--gold)');
+
+      const videoUrl = `/output/${item.video_path.split('/').pop()}`;
+      row.innerHTML = `
+        <div class="job-row-symbol">${signInfo?.symbol || '✦'}</div>
+        <div class="job-row-content">
+          <div class="job-row-title">
+            <strong>${signInfo?.name || key}</strong>
+            <span class="source-badge ${item.source || 'web'}">${(item.source || 'web').toUpperCase()}</span>
+          </div>
+          <div class="job-row-stage" style="color: var(--text);">
+            ${escapeHtml(item.title || '(başlık yok)')}
+          </div>
+          <div class="job-row-detail">
+            ${item.provider ? '🤖 ' + item.provider : ''}
+          </div>
+          <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <a href="${videoUrl}" target="_blank" style="
+              padding: 0.5rem 1rem;
+              background: transparent;
+              color: var(--text-dim);
+              border: 1px solid var(--border-strong);
+              border-radius: 6px;
+              text-decoration: none;
+              font-size: 0.813rem;
+            ">👀 Önizle</a>
+            <button onclick="approvePending('${key}', '${escapeHtml(signInfo?.name || key)}')" style="
+              padding: 0.5rem 1rem;
+              background: linear-gradient(135deg, var(--success) 0%, #22c55e 100%);
+              color: var(--bg-void);
+              border: none;
+              border-radius: 6px;
+              cursor: pointer;
+              font-size: 0.813rem;
+              font-weight: 500;
+            ">✅ Yayınla</button>
+            <button onclick="rejectPending('${key}', '${escapeHtml(signInfo?.name || key)}')" style="
+              padding: 0.5rem 1rem;
+              background: transparent;
+              color: var(--danger);
+              border: 1px solid var(--danger);
+              border-radius: 6px;
+              cursor: pointer;
+              font-size: 0.813rem;
+            ">❌ İptal</button>
+          </div>
+        </div>
+      `;
+      list.appendChild(row);
+    }
+  } catch (e) {
+    console.error('Pending load error:', e);
   }
 }
 
@@ -798,11 +914,13 @@ function refresh() {
 loadSigns().then(() => {
   pollStatus();
   loadHistory();
+  loadPending();
 });
 
 // Aktif iş varken hızlı poll (3sn), yoksa yavaş (10sn)
 setInterval(pollStatus, 3000);
 setInterval(loadHistory, 30000);
+setInterval(loadPending, 10000);
 </script>
 
 </body>
