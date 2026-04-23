@@ -25,16 +25,12 @@ COPY . .
 # Uygulama dizinleri
 RUN mkdir -p data output static/preview shortmusic
 
-# Railway PORT'u dinamik atar, varsayılan 8000
+# Railway PORT'u dinamik atar
 ENV PORT=8000
 EXPOSE 8000
 
-# Gunicorn ile Flask app çalıştır. Tek worker çünkü bot ve scheduler
-# thread'leri app ile birlikte çalışıyor.
-CMD gunicorn app:app \
-    --bind 0.0.0.0:$PORT \
-    --workers 1 \
-    --threads 4 \
-    --timeout 600 \
-    --access-logfile - \
-    --error-logfile -
+# Gunicorn ile Flask app çalıştır.
+# Shell form kullanılıyor ki $PORT environment variable interpolate olsun.
+# Tek worker: bot ve scheduler thread'leri app ile birlikte çalışıyor.
+CMD gunicorn app:app --bind 0.0.0.0:${PORT:-8000} --workers 1 --threads 4 --timeout 600 --access-logfile - --error-logfile -
+
