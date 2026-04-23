@@ -191,3 +191,20 @@ def get_sign(key: str) -> dict:
 def all_sign_keys() -> list:
     """12 burç anahtarını sabit sırayla döner."""
     return list(ZODIAC_SIGNS.keys())
+
+
+# ── Gün aşırı rotasyon grupları ────────────────────────────────────
+# YouTube günlük quota sınırı (~10.000/gün, 1 video ≈ 1.600 quota) nedeniyle
+# 12 burcun hepsini aynı gün yayınlayamıyoruz. Bu yüzden iki gruba böldük:
+GROUP_EVEN_DAYS = ["koc", "boga", "ikizler", "yengec", "aslan", "basak"]
+GROUP_ODD_DAYS = ["terazi", "akrep", "yay", "oglak", "kova", "balik"]
+
+
+def get_todays_group() -> list:
+    """Bugünün günü tek mi çift mi → ona göre 6 burç döner.
+    Çift günler (2, 4, 6...): Koç → Başak
+    Tek günler (1, 3, 5...): Terazi → Balık"""
+    from datetime import datetime
+    day = datetime.now().day
+    return GROUP_EVEN_DAYS if day % 2 == 0 else GROUP_ODD_DAYS
+
