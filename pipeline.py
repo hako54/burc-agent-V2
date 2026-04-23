@@ -67,13 +67,17 @@ def _save_to_history(entry: dict):
 
 
 def produce_and_upload(sign_input: str, upload: bool = True,
-                       source: str = "web") -> dict:
+                       source: str = "web",
+                       scheduled_publish_at: str = None) -> dict:
     """Bir burç için tam akış.
 
     Args:
         sign_input: Burç adı
         upload: False ise yalnızca video üretir, YouTube'a yüklemez
-        source: 'web', 'telegram', 'scheduler' — job_tracker için
+        source: 'web', 'telegram', 'scheduler'
+        scheduled_publish_at: ISO 8601 tarih. Verilirse video 'private'
+            olarak yüklenir ve YouTube bu saatte otomatik public yapar.
+            Örnek: '2026-04-24T10:00:00+03:00'
 
     Returns:
         sonuç dict'i
@@ -148,6 +152,7 @@ def produce_and_upload(sign_input: str, upload: bool = True,
                 tags=all_tags,
                 category_id="22",
                 privacy="public",
+                scheduled_time=scheduled_publish_at,
             )
             result["youtube_id"] = upload_result["id"]
             result["youtube_url"] = upload_result["url"]
@@ -163,18 +168,37 @@ def produce_and_upload(sign_input: str, upload: bool = True,
         raise
 
 
-def produce_all_signs(upload: bool = True, source: str = "web") -> dict:
-    """12 burç için batch üretim."""
+def produce_signs(sign_keys: list, upload: bool = True,
+                  source: str = "web",
+                  scheduled_publish_at: str = None) -> dict:
+    """Verilen burç listesi için sırayla üretim yapar.
+
+    Args:
+        sign_keys: Üretilecek burç anahtarları listesi
+        upload: YouTube'a yükleme yapılsın mı
+        source: Tetikleyen kaynak
+        scheduled_publish_at: Hepsini bu saatte yayınlanacak şekilde planla
+    """
     success = []
     failed = []
 
-    for sign_key in all_sign_keys():
+    for sign_key in sign_keys:
         try:
-            result = produce_and_upload(sign_key, upload=upload, source=source)
+            result = produce_and_upload(
+                sign_key, upload=upload, source=source,
+                scheduled_publish_at=scheduled_publish_at,
+            )
             success.append(result)
         except Exception as e:
             log.exception(f"❌ {sign_key} başarısız")
             failed.append({"sign_key": sign_key, "error": str(e)})
 
-    log.info(f"🏁 Toplu üretim bitti: {len(success)}/12 başarılı")
+    log.info(f"🏁 Grup üretim bitti: {len(success)}/{len(sign_keys)} başarılı")
     return {"success": success, "failed": failed}
+
+
+def produce_all_signs(upload: bool = True, source: str = "web",
+                      scheduled_publish_at: str = None) -> dict:
+    """12 burç için batch üretim (hepsi)."""
+    return produce_signs(all_sign_keys(), upload=upload, source=source,
+                         scheduled_publish_at=scheduled_publish_at)
