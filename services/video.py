@@ -426,8 +426,19 @@ def _find_bg_music(duration_needed: float) -> Optional[str]:
     return str(random.choice(candidates))
 
 
-def render_video(content: dict, output_path: str) -> str:
-    """Content dict'ten video render eder ve kaydeder. Dosya yolunu döner."""
+def render_video(content: dict, output_path: str,
+                 sign_key: Optional[str] = None) -> str:
+    """Content dict'ten video render eder ve kaydeder. Dosya yolunu döner.
+
+    sign_key verilirse job_tracker'a aşama güncellemesi yapılır."""
+    # Job tracker opsiyonel — import cycle olmaması için local import
+    jt = None
+    if sign_key:
+        try:
+            import job_tracker as jt
+        except Exception:
+            jt = None
+
     sign_name = content.get("sign_name", "")
     sign_symbol = content.get("sign_symbol", "")
     segments = content.get("segments", [])[:6]
@@ -445,6 +456,9 @@ def render_video(content: dict, output_path: str) -> str:
     log.info(f"🎬 Video render başlıyor: {sign_name}")
 
     # 1) Görselleri indir
+    if jt and sign_key:
+        jt.update_stage(sign_key, jt.STAGE_IMAGES,
+                        detail=f"{len(queries)} sorgu aranıyor")
     log.info(f"🔍 Görseller aranıyor...")
     urls = fetch_image_urls(queries, count=len(segments) + 2)
     random.shuffle(urls)
@@ -456,30 +470,35 @@ def render_video(content: dict, output_path: str) -> str:
         img = download_and_prepare(url, W, H, accent)
         if img:
             images.append(img)
+            if jt and sign_key:
+                jt.update_stage(sign_key, jt.STAGE_IMAGES,
+                                detail=f"Görsel {len(images)}/{len(segments)}")
 
-    # Eksik kalanlar için fallback
     idx = 0
     while len(images) < len(segments):
         images.append(create_fallback_image(W, H, accent, bg, idx))
         idx += 1
     log.info(f"✅ {len(images)} görsel hazır")
 
-    # 2) Her segment için TTS
+    # 2) TTS
+    if jt and sign_key:
+        jt.update_stage(sign_key, jt.STAGE_TTS, detail="Giriş sesi")
     log.info(f"🎙 Seslendirme...")
     seg_tts_paths = []
     seg_audio_clips = []
     seg_durations = []
     tmp_prefix = output_path.replace(".mp4", "")
 
-    # İntro sesi
     intro_text = f"{sign_name} burcu günlük yorum"
     intro_tts_path = f"{tmp_prefix}_intro_tts.mp3"
     generate_tts(intro_text, intro_tts_path)
     intro_audio = AudioFileClip(intro_tts_path)
     intro_dur = max(intro_audio.duration + 0.8, 3.0)
 
-    # Segment sesleri
     for i, seg in enumerate(segments):
+        if jt and sign_key:
+            jt.update_stage(sign_key, jt.STAGE_TTS,
+                            detail=f"Segment {i + 1}/{len(segments)}")
         text = seg.get("narration") or seg.get("text", "") or content.get("full_narration", sign_name)
         tts_p = f"{tmp_prefix}_seg{i}_tts.mp3"
         generate_tts(text, tts_p)
@@ -493,7 +512,11 @@ def render_video(content: dict, output_path: str) -> str:
     total_dur = sum(seg_durations)
     log.info(f"⏱ Toplam içerik: {total_dur:.1f}s")
 
-    # 3) Segment video klipleri
+    # 3) Video klipleri (RENDER aşaması başlıyor)
+    if jt and sign_key:
+        jt.update_stage(sign_key, jt.STAGE_RENDER,
+                        detail="Video kareleri hazırlanıyor")
+
     dirs = ["center", "left", "right", "up", "down", "center"]
     clips = []
 
@@ -572,6 +595,9 @@ def render_video(content: dict, output_path: str) -> str:
             log.warning(f"Müzik eklenemedi: {e}")
 
     # 7) Kaydet
+    if jt and sign_key:
+        jt.update_stage(sign_key, jt.STAGE_RENDER,
+                        detail=f"Video dosyası kaydediliyor (~{int(full_dur)}s)")
     log.info(f"💾 Kaydediliyor...")
     final.write_videofile(
         output_path,
