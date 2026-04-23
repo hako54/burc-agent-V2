@@ -20,6 +20,7 @@ from services.content import generate_content
 from services.video import render_video
 from services.youtube import upload_video
 import job_tracker as jt
+import approval
 
 log = logging.getLogger(__name__)
 
@@ -68,7 +69,8 @@ def _save_to_history(entry: dict):
 
 def produce_and_upload(sign_input: str, upload: bool = True,
                        source: str = "web",
-                       scheduled_publish_at: str = None) -> dict:
+                       scheduled_publish_at: str = None,
+                       require_approval: bool = False) -> dict:
     """Bir burç için tam akış.
 
     Args:
@@ -77,7 +79,9 @@ def produce_and_upload(sign_input: str, upload: bool = True,
         source: 'web', 'telegram', 'scheduler'
         scheduled_publish_at: ISO 8601 tarih. Verilirse video 'private'
             olarak yüklenir ve YouTube bu saatte otomatik public yapar.
-            Örnek: '2026-04-24T10:00:00+03:00'
+        require_approval: True verirse video üretilir ama YouTube'a yüklenmez,
+            onay kuyruğuna eklenir. Kullanıcının /yayinla komutu ile yükleme
+            tetiklenir.
 
     Returns:
         sonuç dict'i
@@ -121,7 +125,18 @@ def produce_and_upload(sign_input: str, upload: bool = True,
             "source": source,
         }
 
-        # 3) YouTube upload
+        # 3a) Onay gerekiyorsa: kuyruğa al, upload yapma
+        if require_approval and upload:
+            approval.add_pending(sign_key, video_path, content, source=source)
+            result["status"] = "pending_approval"
+            result["awaiting_approval"] = True
+            _save_to_history(result)
+            # İş durumunu "done" yerine özel bir durumla işaretle
+            jt.finish_job(sign_key, result=result)
+            log.info(f"⏸ {info['name']} onay bekliyor")
+            return result
+
+        # 3b) YouTube upload (normal akış)
         if upload:
             jt.update_stage(sign_key, jt.STAGE_UPLOAD)
 
@@ -166,6 +181,105 @@ def produce_and_upload(sign_input: str, upload: bool = True,
         log.exception(f"❌ {info['name']} başarısız")
         jt.finish_job(sign_key, error=str(e))
         raise
+
+
+def approve_and_upload(sign_input: str, source: str = "telegram") -> dict:
+    """Onay kuyruğunda bekleyen videoyu YouTube'a yükler.
+    Başarılı olursa kuyruğundan çıkarır."""
+    sign_key = normalize_sign(sign_input)
+    if not sign_key:
+        raise ValueError(f"Geçersiz burç: '{sign_input}'")
+
+    pending = approval.get_pending(sign_key)
+    if not pending:
+        raise ValueError(
+            f"{sign_key} için onay bekleyen video yok. "
+            f"Önce /burc {sign_key} ile üret."
+        )
+
+    video_path = pending["video_path"]
+    if not os.path.exists(video_path):
+        approval.remove_pending(sign_key)
+        raise FileNotFoundError(
+            f"Video dosyası bulunamadı: {video_path}. "
+            f"Kuyruk kaydı silindi, yeniden üretmek gerekir."
+        )
+
+    info = get_sign(sign_key)
+    log.info(f"📤 Onaylı upload: {info['name']}")
+
+    # Job tracker — yeni bir "upload only" job
+    jt.start_job(sign_key, source=source)
+    jt.update_stage(sign_key, jt.STAGE_UPLOAD)
+
+    try:
+        # Tag ve hashtag'leri hazırla (add_pending'de sadece base'i sakladık)
+        base_tags = pending.get("tags", [])
+        extra_tags = [
+            "burç", "günlükburç", "astroloji", "shorts", "keşfet",
+            info["name"].lower(), f"{info['name'].lower()}burcu",
+        ]
+        all_tags = list(dict.fromkeys(base_tags + extra_tags))[:15]
+
+        hashtags = pending.get("hashtags", [])
+        extra_hashtags = [
+            f"#{info['name'].lower()}", f"#{info['name'].lower()}burcu",
+            "#günlükburç", "#astroloji", "#shorts", "#burç",
+            "#zodyak", "#keşfet", "#viral", "#keşfetteyim",
+        ]
+        all_hashtags = list(dict.fromkeys(hashtags + extra_hashtags))[:15]
+
+        description = (
+            pending.get("description", "")
+            + "\n\n" + " ".join(all_hashtags)
+        )
+
+        upload_result = upload_video(
+            video_path=video_path,
+            title=pending.get("title", f"{info['name']} Günlük Yorum"),
+            description=description,
+            tags=all_tags,
+            category_id="22",
+            privacy="public",
+        )
+
+        result = {
+            "sign_key": sign_key,
+            "sign_name": info["name"],
+            "title": pending.get("title", ""),
+            "video_path": video_path,
+            "provider": pending.get("provider", "?"),
+            "youtube_id": upload_result["id"],
+            "youtube_url": upload_result["url"],
+            "generated_at": datetime.now().isoformat(),
+            "source": source,
+            "approved": True,
+        }
+
+        # Kuyruktan çıkar (dosyayı silme, history'de kalsın)
+        approval.remove_pending(sign_key, delete_file=False)
+
+        _save_to_history(result)
+        jt.finish_job(sign_key, result=result)
+        log.info(f"✅ {info['name']} onaylanıp yüklendi: {upload_result['url']}")
+        return result
+
+    except Exception as e:
+        log.exception(f"approve_and_upload {sign_key} hata")
+        jt.finish_job(sign_key, error=str(e))
+        raise
+
+
+def reject_pending(sign_input: str) -> dict:
+    """Onay bekleyen videoyu reddeder ve siler."""
+    sign_key = normalize_sign(sign_input)
+    if not sign_key:
+        raise ValueError(f"Geçersiz burç: '{sign_input}'")
+
+    item = approval.remove_pending(sign_key, delete_file=True)
+    if not item:
+        raise ValueError(f"{sign_key} için onay bekleyen video yok.")
+    return item
 
 
 def produce_signs(sign_keys: list, upload: bool = True,
