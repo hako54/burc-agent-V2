@@ -7,7 +7,8 @@ Long polling ile çalışır. Komutlar:
   /iptal         - Toplu üretimi durdur
   /yardim        - Yardım
 
-Kurumsal ağlarda SSL proxy'lerini bypass etmek için verify=False kullanır.
+Aşama değişimlerini job_tracker üzerinden takip eder ve kullanıcıya
+anlamlı ara bildirimler atar.
 """
 
 import os
@@ -19,12 +20,14 @@ import urllib3
 
 from zodiac import normalize_sign, all_sign_keys, get_sign
 from pipeline import produce_and_upload, produce_all_signs
+import job_tracker as jt
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 log = logging.getLogger(__name__)
 
-# Durum bayrakları — thread-safe basit yaklaşım
-_running = {}
+# Toplu iş bayrağı
+_batch_running = False
+_batch_lock = threading.Lock()
 
 
 def _bot_token() -> str:
@@ -36,7 +39,6 @@ def _allowed_chat() -> str:
 
 
 def send(text: str, chat_id: str = None):
-    """Telegram'a mesaj gönderir. HTML formatlaması destekler."""
     token = _bot_token()
     if not token:
         return
@@ -59,12 +61,43 @@ def send(text: str, chat_id: str = None):
         log.warning(f"Telegram send hata: {e}")
 
 
+# ── Aşama Takipçisi ─────────────────────────────────────────────────
+
+def _watch_job_stages(sign_key: str, chat_id: str, info: dict):
+    """Bir iş başladıktan sonra arka planda aşama değişimlerini izler
+    ve Telegram'a her yeni aşamada mesaj atar. İş bitince kendiliğinden
+    durur."""
+    last_stage = None
+    # Max 20 dakika bekle, sonra bırak (job zaten hata verir)
+    for _ in range(240):  # 240 * 5sn = 20 dk
+        job = jt.get_job(sign_key)
+        if not job:
+            return
+        stage = job.get("stage")
+        if stage != last_stage and stage not in (jt.STAGE_DONE, jt.STAGE_ERROR):
+            label = job.get("stage_label", stage)
+            detail = job.get("progress_detail", "")
+            emoji = {
+                jt.STAGE_CONTENT: "🤖",
+                jt.STAGE_IMAGES: "🖼️",
+                jt.STAGE_TTS: "🎙",
+                jt.STAGE_RENDER: "🎬",
+                jt.STAGE_UPLOAD: "📤",
+            }.get(stage, "⚙️")
+            msg = f"{emoji} {info['emoji']} <b>{info['name']}</b> → {label}"
+            if detail:
+                msg += f"\n<i>{detail}</i>"
+            send(msg, chat_id)
+            last_stage = stage
+        if job.get("status") in ("done", "error"):
+            return
+        time.sleep(5)
+
+
 # ── Komut Handler'lar ───────────────────────────────────────────────
 
 def cmd_burc(chat_id: str, sign_input: str):
-    """/burc <burç> komutu — tek burç için akış."""
     if not sign_input:
-        # Menü göster
         lines = ["🔮 <b>Hangi burcu istersin?</b>", ""]
         for key in all_sign_keys():
             info = get_sign(key)
@@ -79,63 +112,79 @@ def cmd_burc(chat_id: str, sign_input: str):
         send(f"❌ Geçersiz burç: <code>{sign_input}</code>", chat_id)
         return
 
-    lock = f"burc_{sign_key}"
-    if _running.get(lock):
-        send(f"⏳ {sign_key.capitalize()} zaten üretiliyor, bekle.", chat_id)
+    if jt.is_running(sign_key):
+        job = jt.get_job(sign_key)
+        send(f"⏳ {sign_key.capitalize()} zaten üretiliyor "
+             f"({job.get('stage_label', '?')})", chat_id)
         return
-    _running[lock] = True
 
     info = get_sign(sign_key)
-    send(f"{info['emoji']} <b>{info['name']}</b> burcu üretimi başladı...",
+    send(f"{info['emoji']} <b>{info['name']}</b> burcu üretimi başlıyor...",
          chat_id)
+
+    # İş başlatıldığını tracker'a bildir (telegram'dan geldi bilgisi)
+    jt.start_job(sign_key, source="telegram")
 
     def run():
         try:
-            send("🤖 Yorum üretiliyor...", chat_id)
-            result = produce_and_upload(sign_key, upload=True)
+            # Aşama bildiricisini paralel başlat
+            watcher = threading.Thread(
+                target=_watch_job_stages,
+                args=(sign_key, chat_id, info),
+                daemon=True,
+            )
+            watcher.start()
+
+            result = produce_and_upload(sign_key, upload=True, source="telegram")
             send(
                 f"✅ <b>{info['name']}</b> yayında!\n"
                 f"📝 {result.get('title', '')[:80]}\n"
-                f"🤖 {result.get('provider', '?')} | "
+                f"🤖 {result.get('provider', '?')}\n"
                 f"🔗 {result.get('youtube_url', '(yok)')}",
                 chat_id,
             )
         except Exception as e:
             log.exception(f"cmd_burc({sign_key}) hata")
             send(f"❌ <b>{info['name']}</b> hatası: {str(e)[:200]}", chat_id)
-        finally:
-            _running[lock] = False
 
     threading.Thread(target=run, daemon=True).start()
 
 
 def cmd_tumburclar(chat_id: str):
-    """/tumburclar — 12 burç için sırayla."""
-    if _running.get("batch"):
-        send("⏳ Toplu üretim zaten çalışıyor.", chat_id)
-        return
-    _running["batch"] = True
+    global _batch_running
+    with _batch_lock:
+        if _batch_running:
+            send("⏳ Toplu üretim zaten çalışıyor.", chat_id)
+            return
+        _batch_running = True
+
     send("🌟 <b>12 burç için üretim başlıyor</b>\n"
-         "Yaklaşık 30-60 dakika sürebilir.", chat_id)
+         "Yaklaşık 30-60 dakika sürebilir. Her burç için ayrı bildirim alacaksın.",
+         chat_id)
 
     def run():
+        global _batch_running
         try:
             success_count = 0
             fail_count = 0
             for i, sign_key in enumerate(all_sign_keys(), 1):
-                if not _running.get("batch"):
-                    send("🛑 İptal edildi.", chat_id)
-                    break
                 info = get_sign(sign_key)
                 try:
-                    send(f"[{i}/12] {info['emoji']} <b>{info['name']}</b>...",
-                         chat_id)
-                    result = produce_and_upload(sign_key, upload=True)
-                    send(
-                        f"✅ [{i}/12] {info['name']} → "
-                        f"{result.get('youtube_url', '?')}",
-                        chat_id,
+                    send(f"[{i}/12] {info['emoji']} <b>{info['name']}</b> "
+                         f"başlıyor...", chat_id)
+
+                    jt.start_job(sign_key, source="telegram")
+                    watcher = threading.Thread(
+                        target=_watch_job_stages,
+                        args=(sign_key, chat_id, info),
+                        daemon=True,
                     )
+                    watcher.start()
+
+                    result = produce_and_upload(sign_key, upload=True,
+                                                source="telegram")
+                    send(f"✅ [{i}/12] {info['name']} → "
+                         f"{result.get('youtube_url', '?')}", chat_id)
                     success_count += 1
                 except Exception as e:
                     log.exception(f"{sign_key} batch hata")
@@ -149,39 +198,68 @@ def cmd_tumburclar(chat_id: str):
                 chat_id,
             )
         finally:
-            _running["batch"] = False
+            with _batch_lock:
+                _batch_running = False
 
     threading.Thread(target=run, daemon=True).start()
 
 
 def cmd_durum(chat_id: str):
-    """/durum — çalışan işlem var mı?"""
-    lines = ["📊 <b>Durum</b>", ""]
-    batch = _running.get("batch", False)
-    active_signs = [
-        k.replace("burc_", "") for k in _running
-        if k.startswith("burc_") and _running[k]
-    ]
-    if batch:
+    jobs = jt.all_jobs()
+    active = [k for k, v in jobs.items() if v.get("status") == "running"]
+
+    lines = ["📊 <b>Canlı Durum</b>", ""]
+
+    if _batch_running:
         lines.append("🔄 Toplu üretim çalışıyor")
-    elif active_signs:
-        lines.append(f"🔄 Aktif: {', '.join(active_signs)}")
+        lines.append("")
+
+    if active:
+        for key in active:
+            job = jobs[key]
+            info = get_sign(key)
+            stage = job.get("stage_label", "?")
+            detail = job.get("progress_detail", "")
+            provider = job.get("provider", "")
+            title = job.get("title", "")
+            source = job.get("source", "?")
+
+            line = f"{info['emoji']} <b>{info['name']}</b> → {stage}"
+            if detail:
+                line += f"\n   <i>{detail}</i>"
+            if title:
+                line += f"\n   📝 {title[:60]}"
+            if provider:
+                line += f" ({provider})"
+            line += f"\n   📥 {source}"
+            lines.append(line)
+            lines.append("")
     else:
-        lines.append("✅ Boşta")
+        if not _batch_running:
+            lines.append("✅ Boşta - çalışan iş yok")
+
+    # Son tamamlananlar
+    done = [(k, v) for k, v in jobs.items() if v.get("status") == "done"][-3:]
+    if done:
+        lines.append("")
+        lines.append("📜 <b>Son tamamlananlar:</b>")
+        for key, job in done:
+            info = get_sign(key)
+            url = job.get("youtube_url", "")
+            lines.append(f"{info['emoji']} {info['name']} → {url or 'yok'}")
+
     send("\n".join(lines), chat_id)
 
 
 def cmd_iptal(chat_id: str):
-    """/iptal — çalışan toplu üretimi durdur."""
-    stopped = []
-    for k in list(_running.keys()):
-        if _running.get(k):
-            _running[k] = False
-            stopped.append(k)
-    if stopped:
-        send(f"🛑 Durduruldu: {', '.join(stopped)}", chat_id)
-    else:
-        send("ℹ️ Çalışan işlem yok.", chat_id)
+    global _batch_running
+    with _batch_lock:
+        if _batch_running:
+            _batch_running = False
+            send("🛑 Toplu üretim durduruldu (mevcut burç bitince).",
+                 chat_id)
+        else:
+            send("ℹ️ Çalışan toplu üretim yok.", chat_id)
 
 
 def cmd_yardim(chat_id: str):
@@ -191,9 +269,10 @@ def cmd_yardim(chat_id: str):
         "/burc &lt;burç&gt; — Tek burç için video\n"
         "   Örn: /burc koç, /burc aslan\n"
         "/tumburclar — 12 burç için toplu üretim\n"
-        "/durum — Çalışan işlemi göster\n"
+        "/durum — Canlı durum (hangi aşamada)\n"
         "/iptal — Toplu üretimi durdur\n"
-        "/yardim — Bu mesaj",
+        "/yardim — Bu mesaj\n\n"
+        "<i>Aşama değişimlerinde otomatik bildirim alırsın.</i>",
         chat_id,
     )
 
@@ -208,7 +287,6 @@ def _handle_update(update: dict):
     chat_id = str(msg.get("chat", {}).get("id", ""))
     text = (msg.get("text") or "").strip()
 
-    # Yetkisiz erişim kontrolü
     allowed = _allowed_chat()
     if allowed and chat_id != allowed:
         send("⛔ Yetkisiz.", chat_id)
@@ -239,7 +317,6 @@ def _handle_update(update: dict):
 
 
 def start_polling():
-    """Long polling ile bot'u çalıştır. Engelleyen çağrı."""
     token = _bot_token()
     if not token:
         log.warning("TELEGRAM_BOT_TOKEN yok, bot başlatılmadı")
@@ -276,7 +353,6 @@ def start_polling():
 
 
 def start_background():
-    """Bot'u arka plan thread'de başlatır. Flask app içinden çağrılır."""
     t = threading.Thread(target=start_polling, daemon=True,
                          name="TelegramBot")
     t.start()
