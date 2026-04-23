@@ -71,32 +71,80 @@ def api_signs():
 
 @app.route("/api/produce/<sign_key>", methods=["POST"])
 def api_produce(sign_key):
-    """Bir burç için üretim başlatır (arka planda)."""
+    """Bir burç için üretim başlatır (arka planda).
+    Varsayılan: require_approval=True → video üretilir, onay beklenir.
+    Body: {"require_approval": true|false}
+    """
     key = normalize_sign(sign_key)
     if not key:
         return jsonify({"error": "Geçersiz burç"}), 400
 
     data = request.get_json(silent=True) or {}
     upload = bool(data.get("upload", True))
+    require_approval = bool(data.get("require_approval", True))
 
-    # Zaten çalışıyor mu kontrol (hem tracker hem batch bakıyor)
     if jt.is_running(key):
         return jsonify({
             "error": "Bu burç için işlem zaten çalışıyor",
             "job": jt.get_job(key),
         }), 409
 
-    # Tracker'da job kaydını başlat
     jt.start_job(key, source="web")
 
     def run():
         try:
-            produce_and_upload(key, upload=upload, source="web")
+            produce_and_upload(
+                key, upload=upload, source="web",
+                require_approval=require_approval,
+            )
         except Exception as e:
             log.exception(f"Web job {key} hata")
 
     threading.Thread(target=run, daemon=True).start()
-    return jsonify({"sign_key": key, "status": "running"})
+    return jsonify({
+        "sign_key": key,
+        "status": "running",
+        "require_approval": require_approval,
+    })
+
+
+@app.route("/api/approve/<sign_key>", methods=["POST"])
+def api_approve(sign_key):
+    """Onay bekleyen videoyu YouTube'a yükler."""
+    from pipeline import approve_and_upload
+    key = normalize_sign(sign_key)
+    if not key:
+        return jsonify({"error": "Geçersiz burç"}), 400
+
+    def run():
+        try:
+            approve_and_upload(key, source="web")
+        except Exception as e:
+            log.exception(f"Approve {key} hata")
+
+    threading.Thread(target=run, daemon=True).start()
+    return jsonify({"sign_key": key, "status": "uploading"})
+
+
+@app.route("/api/reject/<sign_key>", methods=["POST"])
+def api_reject(sign_key):
+    """Onay bekleyen videoyu siler."""
+    from pipeline import reject_pending
+    key = normalize_sign(sign_key)
+    if not key:
+        return jsonify({"error": "Geçersiz burç"}), 400
+    try:
+        reject_pending(key)
+        return jsonify({"sign_key": key, "status": "rejected"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/pending")
+def api_pending():
+    """Onay bekleyen tüm videoları listeler."""
+    import approval
+    return jsonify({"pending": approval.list_pending()})
 
 
 @app.route("/api/produce-all", methods=["POST"])
