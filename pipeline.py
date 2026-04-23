@@ -5,7 +5,8 @@ Tek bir burç için tüm akışı yönetir:
 2. Video render (MoviePy)
 3. YouTube upload
 
-Ayrıca geçmişi (`data/history.json`) ve kullanılan temaları tutar.
+İlerleme aşamaları job_tracker'a bildirilir, böylece hem web panel
+hem telegram canlı durumu görebilir.
 """
 
 import os
@@ -18,6 +19,7 @@ from zodiac import normalize_sign, get_sign, all_sign_keys
 from services.content import generate_content
 from services.video import render_video
 from services.youtube import upload_video
+import job_tracker as jt
 
 log = logging.getLogger(__name__)
 
@@ -43,7 +45,6 @@ def _save_json(path: Path, data):
 
 
 def _get_used_themes(sign_key: str) -> list:
-    """Bu burç için son kullanılan temaları döner (tekrar önleme)."""
     all_themes = _load_json(THEMES_FILE, {})
     return [t["theme"] for t in all_themes.get(sign_key, [])][-20:]
 
@@ -54,7 +55,6 @@ def _save_used_theme(sign_key: str, theme: str):
         "theme": theme,
         "date": datetime.now().isoformat(),
     })
-    # Her burç için son 50 tema
     all_themes[sign_key] = all_themes[sign_key][-50:]
     _save_json(THEMES_FILE, all_themes)
 
@@ -62,28 +62,21 @@ def _save_used_theme(sign_key: str, theme: str):
 def _save_to_history(entry: dict):
     history = _load_json(HISTORY_FILE, [])
     history.append(entry)
-    # Son 500 kayıt
     history = history[-500:]
     _save_json(HISTORY_FILE, history)
 
 
-def produce_and_upload(sign_input: str, upload: bool = True) -> dict:
-    """Bir burç için tam akış: içerik üret, video render et, YouTube'a yükle.
+def produce_and_upload(sign_input: str, upload: bool = True,
+                       source: str = "web") -> dict:
+    """Bir burç için tam akış.
 
     Args:
-        sign_input: Burç adı (koc/koç/aries hepsi kabul).
-        upload: False verirse sadece video üretir, YouTube'a yüklemez.
-                (Web panelinden "önizleme" modu için kullanılabilir.)
+        sign_input: Burç adı
+        upload: False ise yalnızca video üretir, YouTube'a yüklemez
+        source: 'web', 'telegram', 'scheduler' — job_tracker için
 
     Returns:
-        {
-            'sign_key': 'koc',
-            'title': '...',
-            'video_path': '/path/to/video.mp4',
-            'youtube_url': 'https://...' (upload=True ise),
-            'youtube_id': 'xxx' (upload=True ise),
-            'provider': 'Claude' | 'Gemini' | 'Groq',
-        }
+        sonuç dict'i
     """
     sign_key = normalize_sign(sign_input)
     if not sign_key:
@@ -94,80 +87,90 @@ def produce_and_upload(sign_input: str, upload: bool = True) -> dict:
 
     info = get_sign(sign_key)
     log.info(f"{'='*50}")
-    log.info(f"🔮 {info['emoji']} {info['name']} üretim başlıyor")
+    log.info(f"🔮 {info['emoji']} {info['name']} üretim başlıyor ({source})")
 
-    # 1) İçerik
-    used_themes = _get_used_themes(sign_key)
-    content = generate_content(sign_key, used_themes)
-    _save_used_theme(sign_key, content.get("theme", content.get("title", "")))
+    # Job başlat (zaten başlatılmadıysa)
+    if not jt.get_job(sign_key) or not jt.is_running(sign_key):
+        jt.start_job(sign_key, source=source)
 
-    # 2) Video render
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    video_path = str(OUTPUT_DIR / f"burc_{sign_key}_{ts}.mp4")
-    render_video(content, video_path)
+    try:
+        # 1) İçerik üretimi
+        jt.update_stage(sign_key, jt.STAGE_CONTENT)
+        used_themes = _get_used_themes(sign_key)
+        content = generate_content(sign_key, used_themes)
+        jt.set_provider(sign_key, content.get("provider", "?"))
+        jt.set_title(sign_key, content.get("title", ""))
+        _save_used_theme(sign_key, content.get("theme", content.get("title", "")))
 
-    result = {
-        "sign_key": sign_key,
-        "sign_name": info["name"],
-        "title": content.get("title", ""),
-        "video_path": video_path,
-        "provider": content.get("provider", "?"),
-        "generated_at": datetime.now().isoformat(),
-    }
+        # 2) Video render — içinde aşamalar işaretlenir
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        video_path = str(OUTPUT_DIR / f"burc_{sign_key}_{ts}.mp4")
+        render_video(content, video_path, sign_key=sign_key)
 
-    # 3) Upload
-    if upload:
-        # Hashtag'leri açıklamaya ekle
-        hashtags = content.get("hashtags", [])
-        base_tags = content.get("tags", [])
-        extra_tags = [
-            "burç", "günlükburç", "astroloji", "shorts", "keşfet",
-            info["name"].lower(), f"{info['name'].lower()}burcu",
-        ]
-        all_tags = list(dict.fromkeys(base_tags + extra_tags))[:15]
+        result = {
+            "sign_key": sign_key,
+            "sign_name": info["name"],
+            "title": content.get("title", ""),
+            "video_path": video_path,
+            "provider": content.get("provider", "?"),
+            "generated_at": datetime.now().isoformat(),
+            "source": source,
+        }
 
-        base_hashtags = hashtags
-        extra_hashtags = [
-            f"#{info['name'].lower()}", f"#{info['name'].lower()}burcu",
-            "#günlükburç", "#astroloji", "#shorts", "#burç",
-            "#zodyak", "#keşfet", "#viral", "#keşfetteyim",
-        ]
-        all_hashtags = list(dict.fromkeys(base_hashtags + extra_hashtags))[:15]
+        # 3) YouTube upload
+        if upload:
+            jt.update_stage(sign_key, jt.STAGE_UPLOAD)
 
-        description = (
-            content.get("description", "")
-            + "\n\n" + " ".join(all_hashtags)
-        )
+            hashtags = content.get("hashtags", [])
+            base_tags = content.get("tags", [])
+            extra_tags = [
+                "burç", "günlükburç", "astroloji", "shorts", "keşfet",
+                info["name"].lower(), f"{info['name'].lower()}burcu",
+            ]
+            all_tags = list(dict.fromkeys(base_tags + extra_tags))[:15]
 
-        upload_result = upload_video(
-            video_path=video_path,
-            title=content.get("title", f"{info['name']} Günlük Yorum"),
-            description=description,
-            tags=all_tags,
-            category_id="22",  # People & Blogs
-            privacy="public",
-        )
+            extra_hashtags = [
+                f"#{info['name'].lower()}", f"#{info['name'].lower()}burcu",
+                "#günlükburç", "#astroloji", "#shorts", "#burç",
+                "#zodyak", "#keşfet", "#viral", "#keşfetteyim",
+            ]
+            all_hashtags = list(dict.fromkeys(hashtags + extra_hashtags))[:15]
 
-        result["youtube_id"] = upload_result["id"]
-        result["youtube_url"] = upload_result["url"]
+            description = (
+                content.get("description", "")
+                + "\n\n" + " ".join(all_hashtags)
+            )
 
-    _save_to_history(result)
-    log.info(f"🎉 {info['name']} tamamlandı\n")
-    return result
+            upload_result = upload_video(
+                video_path=video_path,
+                title=content.get("title", f"{info['name']} Günlük Yorum"),
+                description=description,
+                tags=all_tags,
+                category_id="22",
+                privacy="public",
+            )
+            result["youtube_id"] = upload_result["id"]
+            result["youtube_url"] = upload_result["url"]
+
+        _save_to_history(result)
+        jt.finish_job(sign_key, result=result)
+        log.info(f"🎉 {info['name']} tamamlandı\n")
+        return result
+
+    except Exception as e:
+        log.exception(f"❌ {info['name']} başarısız")
+        jt.finish_job(sign_key, error=str(e))
+        raise
 
 
-def produce_all_signs(upload: bool = True) -> dict:
-    """12 burcun hepsini sırayla üretir ve yükler.
-
-    Returns:
-        {'success': [...], 'failed': [...]}
-    """
+def produce_all_signs(upload: bool = True, source: str = "web") -> dict:
+    """12 burç için batch üretim."""
     success = []
     failed = []
 
     for sign_key in all_sign_keys():
         try:
-            result = produce_and_upload(sign_key, upload=upload)
+            result = produce_and_upload(sign_key, upload=upload, source=source)
             success.append(result)
         except Exception as e:
             log.exception(f"❌ {sign_key} başarısız")
