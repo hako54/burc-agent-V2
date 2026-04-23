@@ -26,9 +26,9 @@
     --success: #4ade80;
     --danger: #ef4444;
     --warning: #f59e0b;
+    --info: #60a5fa;
     --shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-
-    --font-display: 'Cormorant Garamond', 'Playfair Display', serif;
+    --font-display: 'Cormorant Garamond', serif;
     --font-body: 'Inter', -apple-system, sans-serif;
   }
 
@@ -48,7 +48,6 @@
       radial-gradient(ellipse at center, rgba(30, 20, 60, 0.3) 0%, transparent 70%);
   }
 
-  /* Noise overlay for atmosphere */
   body::before {
     content: '';
     position: fixed;
@@ -59,21 +58,13 @@
     z-index: 1;
   }
 
-  /* Floating stars background */
   .stars {
-    position: fixed;
-    inset: 0;
-    overflow: hidden;
-    pointer-events: none;
-    z-index: 0;
+    position: fixed; inset: 0; overflow: hidden;
+    pointer-events: none; z-index: 0;
   }
   .star {
-    position: absolute;
-    width: 2px;
-    height: 2px;
-    background: #fff;
-    border-radius: 50%;
-    opacity: 0.6;
+    position: absolute; width: 2px; height: 2px;
+    background: #fff; border-radius: 50%; opacity: 0.6;
     animation: twinkle 3s infinite ease-in-out;
   }
   @keyframes twinkle {
@@ -82,33 +73,24 @@
   }
 
   .container {
-    position: relative;
-    z-index: 2;
-    max-width: 1240px;
-    margin: 0 auto;
+    position: relative; z-index: 2;
+    max-width: 1240px; margin: 0 auto;
     padding: 3rem 2rem 6rem;
   }
 
   /* ── Header ── */
   .header {
-    display: flex;
-    justify-content: space-between;
+    display: flex; justify-content: space-between;
     align-items: flex-start;
-    margin-bottom: 4rem;
-    padding-bottom: 2rem;
+    margin-bottom: 4rem; padding-bottom: 2rem;
     border-bottom: 1px solid var(--border);
   }
 
-  .brand {
-    display: flex;
-    align-items: center;
-    gap: 1.25rem;
-  }
+  .brand { display: flex; align-items: center; gap: 1.25rem; }
 
   .brand-mark {
     font-family: var(--font-display);
-    font-size: 3.5rem;
-    color: var(--gold);
+    font-size: 3.5rem; color: var(--gold);
     line-height: 1;
     text-shadow: 0 0 40px rgba(212, 175, 55, 0.4);
     animation: glow 4s ease-in-out infinite;
@@ -121,76 +103,44 @@
 
   .brand-text h1 {
     font-family: var(--font-display);
-    font-size: 2.25rem;
-    font-weight: 500;
-    letter-spacing: 0.02em;
-    line-height: 1.1;
-    color: var(--text);
+    font-size: 2.25rem; font-weight: 500;
+    letter-spacing: 0.02em; line-height: 1.1;
   }
-
-  .brand-text h1 em {
-    color: var(--gold);
-    font-style: italic;
-  }
-
+  .brand-text h1 em { color: var(--gold); font-style: italic; }
   .brand-text p {
-    font-size: 0.813rem;
-    color: var(--text-muted);
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
+    font-size: 0.813rem; color: var(--text-muted);
+    letter-spacing: 0.15em; text-transform: uppercase;
     margin-top: 0.25rem;
   }
 
   .status-pill {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 100px;
-    font-size: 0.75rem;
-    color: var(--text-dim);
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.5rem 1rem; background: var(--bg-card);
+    border: 1px solid var(--border); border-radius: 100px;
+    font-size: 0.75rem; color: var(--text-dim);
+    letter-spacing: 0.1em; text-transform: uppercase;
     backdrop-filter: blur(12px);
   }
 
   .status-dot {
-    width: 8px;
-    height: 8px;
-    background: var(--success);
-    border-radius: 50%;
-    box-shadow: 0 0 12px var(--success);
+    width: 8px; height: 8px; background: var(--success);
+    border-radius: 50%; box-shadow: 0 0 12px var(--success);
     animation: pulse 2s infinite;
   }
 
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-  }
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.5} }
 
-  /* ── Actions Bar ── */
+  /* ── Actions ── */
   .actions {
-    display: flex;
-    gap: 1rem;
-    margin-bottom: 3rem;
-    flex-wrap: wrap;
+    display: flex; gap: 1rem; margin-bottom: 3rem; flex-wrap: wrap;
   }
 
   .btn {
-    font-family: var(--font-body);
-    font-size: 0.875rem;
-    font-weight: 500;
-    letter-spacing: 0.05em;
-    padding: 0.875rem 1.75rem;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
+    font-family: var(--font-body); font-size: 0.875rem; font-weight: 500;
+    letter-spacing: 0.05em; padding: 0.875rem 1.75rem;
+    border: none; border-radius: 8px; cursor: pointer;
     transition: all 0.3s ease;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
+    display: inline-flex; align-items: center; gap: 0.5rem;
     text-transform: uppercase;
   }
 
@@ -199,49 +149,113 @@
     color: var(--bg-void);
     box-shadow: 0 4px 20px rgba(212, 175, 55, 0.3);
   }
-
   .btn-primary:hover {
     transform: translateY(-2px);
     box-shadow: 0 8px 30px rgba(212, 175, 55, 0.5);
   }
-
   .btn-ghost {
-    background: transparent;
-    color: var(--text-dim);
+    background: transparent; color: var(--text-dim);
     border: 1px solid var(--border);
   }
+  .btn-ghost:hover { border-color: var(--gold); color: var(--gold); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; }
 
-  .btn-ghost:hover {
-    border-color: var(--gold);
-    color: var(--gold);
-  }
-
-  .btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-    transform: none !important;
-  }
-
-  /* ── Zodiac Grid ── */
+  /* ── Section title ── */
   .section-title {
-    font-family: var(--font-display);
-    font-size: 1.875rem;
-    font-weight: 500;
-    margin-bottom: 2rem;
-    color: var(--text);
-    display: flex;
-    align-items: center;
-    gap: 1rem;
+    font-family: var(--font-display); font-size: 1.875rem;
+    font-weight: 500; margin-bottom: 2rem;
+    display: flex; align-items: center; gap: 1rem;
   }
-
-  .section-title::before,
-  .section-title::after {
-    content: '';
-    flex: 1;
-    height: 1px;
+  .section-title::before, .section-title::after {
+    content: ''; flex: 1; height: 1px;
     background: linear-gradient(90deg, transparent, var(--border), transparent);
   }
 
+  /* ── Aktif İşler Banner ── */
+  .active-jobs {
+    background: var(--bg-card);
+    border: 1px solid var(--violet);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 3rem;
+    backdrop-filter: blur(20px);
+    display: none;
+  }
+  .active-jobs.visible { display: block; }
+  .active-jobs-header {
+    font-family: var(--font-display);
+    font-size: 1.25rem;
+    color: var(--violet);
+    margin-bottom: 1rem;
+    display: flex; align-items: center; gap: 0.75rem;
+  }
+  .spinner {
+    width: 18px; height: 18px;
+    border: 2px solid var(--border);
+    border-top-color: var(--violet);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .job-row {
+    display: flex; align-items: center; gap: 1rem;
+    padding: 0.875rem 0;
+    border-bottom: 1px dashed var(--border);
+  }
+  .job-row:last-child { border-bottom: none; }
+  .job-row-symbol {
+    font-family: var(--font-display);
+    font-size: 1.75rem;
+    color: var(--accent-color, var(--gold));
+    width: 40px; text-align: center;
+  }
+  .job-row-content { flex: 1; min-width: 0; }
+  .job-row-title {
+    font-size: 0.938rem; color: var(--text);
+    margin-bottom: 0.25rem;
+    display: flex; align-items: center; gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .source-badge {
+    display: inline-block;
+    font-size: 0.625rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 100px;
+    background: rgba(139, 92, 246, 0.15);
+    color: var(--violet);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+  }
+  .source-badge.telegram { background: rgba(96, 165, 250, 0.15); color: var(--info); border-color: rgba(96,165,250,0.3); }
+  .source-badge.web { background: rgba(212, 175, 55, 0.15); color: var(--gold); border-color: rgba(212,175,55,0.3); }
+  .source-badge.scheduler { background: rgba(74, 222, 128, 0.15); color: var(--success); border-color: rgba(74,222,128,0.3); }
+
+  .job-row-stage {
+    font-size: 0.813rem; color: var(--text-dim);
+    font-weight: 500;
+  }
+  .job-row-detail {
+    font-size: 0.75rem; color: var(--text-muted);
+    font-style: italic; margin-top: 0.125rem;
+  }
+
+  /* Progress bar */
+  .job-progress {
+    width: 100%; height: 4px;
+    background: var(--border);
+    border-radius: 2px; margin-top: 0.5rem;
+    overflow: hidden;
+  }
+  .job-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--violet), var(--gold));
+    border-radius: 2px;
+    transition: width 0.5s ease;
+  }
+
+  /* ── Zodiac Grid ── */
   .zodiac-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -260,110 +274,90 @@
     backdrop-filter: blur(20px);
     overflow: hidden;
   }
-
   .sign-card::before {
     content: '';
-    position: absolute;
-    inset: 0;
+    position: absolute; inset: 0;
     background: radial-gradient(circle at top right, var(--accent-color, transparent) 0%, transparent 60%);
-    opacity: 0;
-    transition: opacity 0.4s ease;
+    opacity: 0; transition: opacity 0.4s ease;
     pointer-events: none;
   }
-
   .sign-card:hover {
     transform: translateY(-4px);
     border-color: var(--accent-color, var(--gold));
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
   }
-
-  .sign-card:hover::before {
-    opacity: 0.2;
-  }
+  .sign-card:hover::before { opacity: 0.2; }
 
   .sign-card.working {
-    border-color: var(--warning);
-    animation: working-pulse 1.5s infinite;
+    border-color: var(--violet);
+    animation: working-pulse 2s infinite;
   }
-
   @keyframes working-pulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); }
-    50% { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); }
+    0%, 100% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.5); }
+    50% { box-shadow: 0 0 0 12px rgba(139, 92, 246, 0); }
   }
-
-  .sign-card.done {
-    border-color: var(--success);
-  }
-
-  .sign-card.error {
-    border-color: var(--danger);
-  }
+  .sign-card.done { border-color: var(--success); }
+  .sign-card.error { border-color: var(--danger); }
 
   .sign-symbol {
     font-family: var(--font-display);
-    font-size: 3rem;
-    line-height: 1;
+    font-size: 3rem; line-height: 1;
     margin-bottom: 0.75rem;
     color: var(--accent-color, var(--gold));
-    position: relative;
-    z-index: 1;
+    position: relative; z-index: 1;
   }
 
   .sign-name {
     font-family: var(--font-display);
-    font-size: 1.375rem;
-    font-weight: 500;
-    color: var(--text);
+    font-size: 1.375rem; font-weight: 500;
     margin-bottom: 0.25rem;
-    position: relative;
-    z-index: 1;
+    position: relative; z-index: 1;
   }
 
   .sign-dates {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    letter-spacing: 0.05em;
-    margin-bottom: 0.5rem;
-    position: relative;
-    z-index: 1;
+    font-size: 0.75rem; color: var(--text-muted);
+    letter-spacing: 0.05em; margin-bottom: 0.5rem;
+    position: relative; z-index: 1;
   }
 
   .sign-element {
     display: inline-block;
     font-size: 0.688rem;
     color: var(--accent-color, var(--gold));
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    padding: 2px 8px;
-    border: 1px solid currentColor;
+    letter-spacing: 0.15em; text-transform: uppercase;
+    padding: 2px 8px; border: 1px solid currentColor;
     border-radius: 4px;
-    position: relative;
-    z-index: 1;
+    position: relative; z-index: 1;
     opacity: 0.8;
   }
 
   .sign-status {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    font-size: 0.75rem;
-    color: var(--text-muted);
+    position: absolute; top: 1rem; right: 1rem;
+    font-size: 0.75rem; color: var(--text-muted);
     z-index: 1;
   }
+  .sign-status.working { color: var(--violet); }
+  .sign-status.done { color: var(--success); }
+  .sign-status.error { color: var(--danger); }
 
-  .sign-status.working {
-    color: var(--warning);
+  /* Card stage indicator */
+  .sign-stage {
+    display: none;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px dashed var(--border);
+    font-size: 0.75rem;
+    color: var(--violet);
+    position: relative; z-index: 1;
+  }
+  .sign-card.working .sign-stage { display: block; }
+  .sign-stage-label { font-weight: 500; }
+  .sign-stage-detail {
+    font-size: 0.688rem; color: var(--text-muted);
+    font-style: italic; margin-top: 0.125rem;
   }
 
-  .sign-status.done {
-    color: var(--success);
-  }
-
-  .sign-status.error {
-    color: var(--danger);
-  }
-
-  /* ── History Section ── */
+  /* ── History ── */
   .history-section {
     background: var(--bg-card);
     border: 1px solid var(--border);
@@ -371,116 +365,69 @@
     padding: 2rem;
     backdrop-filter: blur(20px);
   }
-
-  .history-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-
+  .history-list { display: flex; flex-direction: column; gap: 0.75rem; }
   .history-item {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
+    display: flex; align-items: center; gap: 1rem;
     padding: 1rem;
     background: rgba(0, 0, 0, 0.2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
+    border: 1px solid var(--border); border-radius: 8px;
     transition: border-color 0.3s ease;
   }
-
-  .history-item:hover {
-    border-color: var(--border-strong);
-  }
+  .history-item:hover { border-color: var(--border-strong); }
 
   .history-symbol {
     font-family: var(--font-display);
-    font-size: 1.75rem;
-    color: var(--gold);
-    width: 40px;
-    text-align: center;
+    font-size: 1.75rem; color: var(--gold);
+    width: 40px; text-align: center;
   }
-
-  .history-content {
-    flex: 1;
-    min-width: 0;
-  }
-
+  .history-content { flex: 1; min-width: 0; }
   .history-title {
-    font-size: 0.938rem;
-    color: var(--text);
-    margin-bottom: 0.25rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-size: 0.938rem; margin-bottom: 0.25rem;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-
   .history-meta {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    display: flex;
-    gap: 1rem;
+    font-size: 0.75rem; color: var(--text-muted);
+    display: flex; gap: 1rem; flex-wrap: wrap;
   }
-
   .history-link {
-    color: var(--gold);
-    text-decoration: none;
+    color: var(--gold); text-decoration: none;
     font-size: 0.813rem;
     padding: 0.4rem 0.875rem;
-    border: 1px solid var(--gold-dim);
-    border-radius: 6px;
-    transition: all 0.2s ease;
-    white-space: nowrap;
+    border: 1px solid var(--gold-dim); border-radius: 6px;
+    transition: all 0.2s ease; white-space: nowrap;
   }
-
-  .history-link:hover {
-    background: var(--gold);
-    color: var(--bg-void);
-  }
+  .history-link:hover { background: var(--gold); color: var(--bg-void); }
 
   .empty-state {
-    text-align: center;
-    padding: 3rem 1rem;
-    color: var(--text-muted);
-    font-style: italic;
-    font-family: var(--font-display);
-    font-size: 1.125rem;
+    text-align: center; padding: 3rem 1rem;
+    color: var(--text-muted); font-style: italic;
+    font-family: var(--font-display); font-size: 1.125rem;
   }
 
-  /* ── Toast Notifications ── */
+  /* ── Toast ── */
   .toast-container {
-    position: fixed;
-    top: 2rem;
-    right: 2rem;
-    z-index: 100;
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    max-width: 380px;
+    position: fixed; top: 2rem; right: 2rem;
+    z-index: 100; display: flex; flex-direction: column;
+    gap: 0.75rem; max-width: 380px;
   }
-
   .toast {
     background: var(--bg-card-solid);
     border: 1px solid var(--border-strong);
-    border-radius: 8px;
-    padding: 1rem 1.25rem;
-    color: var(--text);
-    font-size: 0.875rem;
+    border-radius: 8px; padding: 1rem 1.25rem;
+    color: var(--text); font-size: 0.875rem;
     box-shadow: var(--shadow);
     animation: toast-in 0.3s ease-out;
     backdrop-filter: blur(20px);
   }
-
   .toast.success { border-left: 3px solid var(--success); }
   .toast.error { border-left: 3px solid var(--danger); }
   .toast.info { border-left: 3px solid var(--gold); }
-
   @keyframes toast-in {
     from { transform: translateX(400px); opacity: 0; }
     to { transform: translateX(0); opacity: 1; }
   }
 
-  /* ── Responsive ── */
+  /* Responsive */
   @media (max-width: 768px) {
     .container { padding: 2rem 1rem 4rem; }
     .header { flex-direction: column; gap: 1.5rem; }
@@ -493,7 +440,6 @@
     .actions { flex-direction: column; }
     .btn { width: 100%; justify-content: center; }
   }
-
   @media (max-width: 420px) {
     .zodiac-grid { grid-template-columns: 1fr; }
   }
@@ -501,11 +447,9 @@
 </head>
 <body>
 
-<!-- Yıldızlı atmosfer -->
 <div class="stars" id="stars"></div>
 
 <div class="container">
-  <!-- Header -->
   <header class="header">
     <div class="brand">
       <div class="brand-mark">✧</div>
@@ -520,7 +464,6 @@
     </div>
   </header>
 
-  <!-- Ana butonlar -->
   <div class="actions">
     <button class="btn btn-primary" onclick="produceAll()">
       ✦ Bugün tüm burçları üret
@@ -530,24 +473,30 @@
     </button>
   </div>
 
-  <!-- 12 burç grid -->
+  <!-- Canlı Aktif İşler Banner (sadece iş varken görünür) -->
+  <div class="active-jobs" id="activeJobs">
+    <div class="active-jobs-header">
+      <div class="spinner"></div>
+      <span>Şu an üretiliyor</span>
+    </div>
+    <div id="activeJobsList"></div>
+  </div>
+
   <h2 class="section-title">Bugünün Burçları</h2>
   <div class="zodiac-grid" id="signGrid"></div>
 
-  <!-- Geçmiş -->
   <h2 class="section-title">Son Yayınlar</h2>
   <div class="history-section">
     <div class="history-list" id="historyList">
-      <div class="empty-state">Henüz yayın yok. Yukarıdan bir burç seç.</div>
+      <div class="empty-state">Henüz yayın yok. Yukarıdan bir burç seç veya Telegram'dan komut gönder.</div>
     </div>
   </div>
 </div>
 
-<!-- Toast container -->
 <div class="toast-container" id="toasts"></div>
 
 <script>
-// Yıldızları oluştur
+// Yıldızlar
 (function createStars() {
   const container = document.getElementById('stars');
   for (let i = 0; i < 60; i++) {
@@ -561,7 +510,6 @@
   }
 })();
 
-// Toast
 function toast(msg, type = 'info') {
   const container = document.getElementById('toasts');
   const el = document.createElement('div');
@@ -575,11 +523,36 @@ function toast(msg, type = 'info') {
   }, 5000);
 }
 
-// 12 burcu çek ve grid'i oluştur
+// Aşama yüzde tahmini (sadece ilerleme çubuğu için)
+const STAGE_PROGRESS = {
+  queued: 5,
+  content: 15,
+  images: 30,
+  tts: 50,
+  render: 75,
+  upload: 92,
+  done: 100,
+  error: 0,
+};
+
+const STAGE_ICONS = {
+  queued: '⏳',
+  content: '🤖',
+  images: '🖼️',
+  tts: '🎙',
+  render: '🎬',
+  upload: '📤',
+  done: '✓',
+  error: '✗',
+};
+
+let SIGNS_CACHE = null;
+
 async function loadSigns() {
   try {
     const res = await fetch('/api/signs');
     const data = await res.json();
+    SIGNS_CACHE = data.signs;
     const grid = document.getElementById('signGrid');
     grid.innerHTML = '';
     for (const sign of data.signs) {
@@ -593,6 +566,10 @@ async function loadSigns() {
         <div class="sign-name">${sign.name}</div>
         <div class="sign-dates">${sign.dates}</div>
         <span class="sign-element">${sign.element}</span>
+        <div class="sign-stage">
+          <div class="sign-stage-label" data-stage-label></div>
+          <div class="sign-stage-detail" data-stage-detail></div>
+        </div>
       `;
       card.addEventListener('click', () => produceSingle(sign.key, sign.name));
       grid.appendChild(card);
@@ -602,7 +579,10 @@ async function loadSigns() {
   }
 }
 
-// Tek burç üret
+function getSignInfo(key) {
+  return SIGNS_CACHE ? SIGNS_CACHE.find(s => s.key === key) : null;
+}
+
 async function produceSingle(key, name) {
   const card = document.querySelector(`[data-key="${key}"]`);
   if (card.classList.contains('working')) {
@@ -614,8 +594,6 @@ async function produceSingle(key, name) {
 
   card.classList.remove('done', 'error');
   card.classList.add('working');
-  card.querySelector('[data-status]').textContent = '⟳ üretiliyor';
-  card.querySelector('[data-status]').className = 'sign-status working';
 
   try {
     const res = await fetch(`/api/produce/${key}`, {
@@ -625,59 +603,20 @@ async function produceSingle(key, name) {
     });
     const data = await res.json();
     if (res.ok) {
-      toast(`${name} üretimi başladı. 3-6 dakika.`, 'info');
-      pollJob(key, name);
+      toast(`${name} üretimi başladı. Canlı takip için yukarı bak.`, 'info');
+      // Canlı poll zaten 3 sn'de bir çalışıyor
+    } else if (res.status === 409) {
+      toast(data.error || `${name} zaten çalışıyor`, 'info');
     } else {
       throw new Error(data.error || 'Bilinmeyen hata');
     }
   } catch (e) {
     card.classList.remove('working');
     card.classList.add('error');
-    card.querySelector('[data-status]').textContent = '✗ hata';
-    card.querySelector('[data-status]').className = 'sign-status error';
     toast(name + ': ' + e.message, 'error');
   }
 }
 
-// İş durumunu poll et
-async function pollJob(key, name) {
-  const card = document.querySelector(`[data-key="${key}"]`);
-  const statusEl = card.querySelector('[data-status]');
-
-  const check = async () => {
-    try {
-      const res = await fetch('/api/jobs');
-      const data = await res.json();
-      const job = data.jobs[key];
-      if (!job) return;
-
-      if (job.status === 'done') {
-        card.classList.remove('working', 'error');
-        card.classList.add('done');
-        statusEl.textContent = '✓ yayında';
-        statusEl.className = 'sign-status done';
-        toast(`${name} yayında! 🎉`, 'success');
-        loadHistory();
-        return;
-      }
-      if (job.status === 'error') {
-        card.classList.remove('working', 'done');
-        card.classList.add('error');
-        statusEl.textContent = '✗ hata';
-        statusEl.className = 'sign-status error';
-        toast(`${name}: ${job.error || 'hata'}`, 'error');
-        return;
-      }
-      // Hala çalışıyor, 5sn sonra tekrar
-      setTimeout(check, 5000);
-    } catch (e) {
-      console.error(e);
-    }
-  };
-  setTimeout(check, 3000);
-}
-
-// Tümünü üret
 async function produceAll() {
   if (!confirm('12 burcun tümü üretilip yüklensin mi? (~30-60 dakika)')) return;
   try {
@@ -688,8 +627,7 @@ async function produceAll() {
     });
     const data = await res.json();
     if (res.ok) {
-      toast('Toplu üretim başladı. Telegram\'dan da takip edebilirsin.', 'info');
-      pollAllJobs();
+      toast('Toplu üretim başladı. Canlı takip paneldedir.', 'info');
     } else {
       throw new Error(data.error || 'hata');
     }
@@ -698,54 +636,114 @@ async function produceAll() {
   }
 }
 
-// Tüm iş durumlarını poll et
-async function pollAllJobs() {
+// Canlı durum — tüm job'ları poll eder
+async function pollStatus() {
   try {
     const res = await fetch('/api/jobs');
     const data = await res.json();
-    for (const [key, job] of Object.entries(data.jobs)) {
-      if (key === '__batch__') continue;
-      const card = document.querySelector(`[data-key="${key}"]`);
-      if (!card) continue;
-      const statusEl = card.querySelector('[data-status]');
-      if (job.status === 'running') {
-        card.classList.add('working');
-        statusEl.textContent = '⟳ üretiliyor';
-        statusEl.className = 'sign-status working';
-      } else if (job.status === 'done') {
-        card.classList.remove('working');
-        card.classList.add('done');
-        statusEl.textContent = '✓ yayında';
-        statusEl.className = 'sign-status done';
-      } else if (job.status === 'error') {
-        card.classList.remove('working');
-        card.classList.add('error');
-        statusEl.textContent = '✗ hata';
-        statusEl.className = 'sign-status error';
+    const jobs = data.jobs || {};
+    const batch = data.batch || {};
+
+    // 1) Sign kartlarını güncelle
+    if (SIGNS_CACHE) {
+      for (const sign of SIGNS_CACHE) {
+        const card = document.querySelector(`[data-key="${sign.key}"]`);
+        if (!card) continue;
+        const job = jobs[sign.key];
+        const statusEl = card.querySelector('[data-status]');
+        const labelEl = card.querySelector('[data-stage-label]');
+        const detailEl = card.querySelector('[data-stage-detail]');
+
+        if (!job) {
+          card.classList.remove('working', 'done', 'error');
+          statusEl.textContent = '';
+          statusEl.className = 'sign-status';
+          continue;
+        }
+
+        const status = job.status;
+        const stage = job.stage || 'queued';
+        const stageLabel = job.stage_label || stage;
+        const detail = job.progress_detail || '';
+
+        if (status === 'running') {
+          card.classList.remove('done', 'error');
+          card.classList.add('working');
+          statusEl.textContent = `${STAGE_ICONS[stage] || '⟳'} ${stageLabel}`;
+          statusEl.className = 'sign-status working';
+          if (labelEl) labelEl.textContent = stageLabel;
+          if (detailEl) detailEl.textContent = detail;
+        } else if (status === 'done') {
+          card.classList.remove('working', 'error');
+          card.classList.add('done');
+          statusEl.textContent = '✓ yayında';
+          statusEl.className = 'sign-status done';
+        } else if (status === 'error') {
+          card.classList.remove('working', 'done');
+          card.classList.add('error');
+          statusEl.textContent = '✗ hata';
+          statusEl.className = 'sign-status error';
+        }
       }
     }
-    // Batch bitmediyse poll'a devam et
-    const batch = data.jobs['__batch__'];
-    if (batch && batch.status === 'running') {
-      setTimeout(pollAllJobs, 10000);
-    } else if (batch && batch.status === 'done') {
+
+    // 2) Aktif işler banner'ı
+    const activeKeys = Object.keys(jobs).filter(k => jobs[k].status === 'running');
+    const banner = document.getElementById('activeJobs');
+    const list = document.getElementById('activeJobsList');
+
+    if (activeKeys.length > 0) {
+      banner.classList.add('visible');
+      list.innerHTML = '';
+      for (const key of activeKeys) {
+        const job = jobs[key];
+        const signInfo = getSignInfo(key);
+        const row = document.createElement('div');
+        row.className = 'job-row';
+        row.style.setProperty('--accent-color', signInfo?.color || 'var(--gold)');
+
+        const progress = STAGE_PROGRESS[job.stage] || 5;
+        const source = job.source || 'web';
+        const title = job.title || '';
+        const provider = job.provider ? ` · ${job.provider}` : '';
+
+        row.innerHTML = `
+          <div class="job-row-symbol">${signInfo?.symbol || '✦'}</div>
+          <div class="job-row-content">
+            <div class="job-row-title">
+              <strong>${signInfo?.name || key}</strong>
+              <span class="source-badge ${source}">${source === 'telegram' ? '📱 telegram' : source === 'scheduler' ? '⏰ otomatik' : '🌐 web'}</span>
+              ${title ? '<span style="color: var(--text-muted); font-size: 0.813rem;">· ' + escapeHtml(title.substring(0, 50)) + '...</span>' : ''}
+            </div>
+            <div class="job-row-stage">${STAGE_ICONS[job.stage] || '⟳'} ${job.stage_label || 'hazırlanıyor'}${provider}</div>
+            ${job.progress_detail ? '<div class="job-row-detail">' + escapeHtml(job.progress_detail) + '</div>' : ''}
+            <div class="job-progress"><div class="job-progress-fill" style="width: ${progress}%"></div></div>
+          </div>
+        `;
+        list.appendChild(row);
+      }
+    } else {
+      banner.classList.remove('visible');
+    }
+
+    // 3) Batch durumu
+    if (batch.finished_at && batch.success_count !== undefined && !window._batchNotified) {
       toast(`Toplu üretim bitti: ${batch.success_count}/12 başarılı`, 'success');
+      window._batchNotified = true;
       loadHistory();
     }
   } catch (e) {
-    console.error(e);
-    setTimeout(pollAllJobs, 10000);
+    console.error('Poll error:', e);
   }
 }
 
-// Geçmişi yükle
 async function loadHistory() {
   try {
     const res = await fetch('/api/history');
     const data = await res.json();
     const list = document.getElementById('historyList');
     if (!data.history || !data.history.length) {
-      list.innerHTML = '<div class="empty-state">Henüz yayın yok. Yukarıdan bir burç seç.</div>';
+      list.innerHTML = '<div class="empty-state">Henüz yayın yok. Yukarıdan bir burç seç veya Telegram\'dan komut gönder.</div>';
       return;
     }
     list.innerHTML = '';
@@ -756,6 +754,7 @@ async function loadHistory() {
       const item = document.createElement('div');
       item.className = 'history-item';
       const symbol = entry.sign_name ? getSymbol(entry.sign_key) : '✦';
+      const source = entry.source || 'web';
       item.innerHTML = `
         <div class="history-symbol">${symbol}</div>
         <div class="history-content">
@@ -763,6 +762,7 @@ async function loadHistory() {
           <div class="history-meta">
             <span>${time}</span>
             ${entry.provider ? '<span>· ' + entry.provider + '</span>' : ''}
+            <span class="source-badge ${source}">${source === 'telegram' ? '📱' : source === 'scheduler' ? '⏰' : '🌐'} ${source}</span>
           </div>
         </div>
         ${entry.youtube_url ? `<a class="history-link" href="${entry.youtube_url}" target="_blank">İzle →</a>` : ''}
@@ -782,22 +782,26 @@ const SYMBOLS = {
 function getSymbol(key) { return SYMBOLS[key] || '✦'; }
 
 function escapeHtml(s) {
+  if (s === null || s === undefined) return '';
   const div = document.createElement('div');
-  div.textContent = s;
+  div.textContent = String(s);
   return div.innerHTML;
 }
 
 function refresh() {
   loadHistory();
+  pollStatus();
   toast('Yenilendi', 'info');
 }
 
 // Başlangıç
-loadSigns();
-loadHistory();
-// Başlangıçta mevcut job'ları da yansıt
-pollAllJobs();
-// Her 30sn'de bir geçmişi tazele
+loadSigns().then(() => {
+  pollStatus();
+  loadHistory();
+});
+
+// Aktif iş varken hızlı poll (3sn), yoksa yavaş (10sn)
+setInterval(pollStatus, 3000);
 setInterval(loadHistory, 30000);
 </script>
 
