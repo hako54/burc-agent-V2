@@ -551,8 +551,8 @@
   </header>
 
   <div class="actions">
-    <button class="btn btn-primary" onclick="produceAll()">
-      ✦ Bugün tüm burçları üret
+    <button class="btn btn-primary" id="batchBtn" onclick="produceAll()" style="display: none;">
+      ✦ Bugün tüm konuları üret
     </button>
     <button class="btn btn-ghost" onclick="refresh()">
       Geçmişi yenile
@@ -577,7 +577,7 @@
     <div id="pendingList"></div>
   </div>
 
-  <h2 class="section-title">Bugünün Burçları</h2>
+  <h2 class="section-title" id="topicsTitle">Konular</h2>
   <div class="zodiac-grid" id="signGrid"></div>
 
   <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem;">
@@ -656,6 +656,7 @@ const STAGE_ICONS = {
 };
 
 let SIGNS_CACHE = null;
+let CONTENT_TYPE_INFO = null;
 let CURRENT_HISTORY_TAB = 'local';
 let CHANNEL_URL = '';
 
@@ -663,41 +664,50 @@ async function loadSigns() {
   try {
     const res = await fetch(`/api/${CHANNEL_ID}/signs`);
     const data = await res.json();
-    SIGNS_CACHE = data.signs;
+    SIGNS_CACHE = data.topics || data.signs;  // yeni veya eski format
+    CONTENT_TYPE_INFO = data.content_type || {};
 
-    // YouTube kanal linki (env var'dan geliyor)
-    if (data.youtube_channel_url) {
-      CHANNEL_URL = data.youtube_channel_url;
-      const link = document.getElementById('channelLink');
-      if (link) {
-        link.href = CHANNEL_URL;
-        link.style.display = 'inline-flex';
+    // Content type'a göre başlığı ve batch butonunu güncelle
+    const titleEl = document.getElementById('topicsTitle');
+    const batchBtn = document.getElementById('batchBtn');
+    if (titleEl) {
+      if (CONTENT_TYPE_INFO.id === 'zodiac') {
+        titleEl.textContent = 'Bugünün Burçları';
+        if (batchBtn) { batchBtn.style.display = ''; batchBtn.textContent = '✦ 12 Burcu Birden Üret'; }
+      } else if (CONTENT_TYPE_INFO.id === 'motivation') {
+        titleEl.textContent = 'Motivasyon Kategorileri';
+        if (batchBtn) batchBtn.style.display = 'none';
+      } else {
+        titleEl.textContent = 'Konular';
+        if (batchBtn) batchBtn.style.display = 'none';
       }
     }
 
+    // YouTube kanal linki zaten template'ten geliyor, JS'den dokunmuyoruz
+
     const grid = document.getElementById('signGrid');
     grid.innerHTML = '';
-    for (const sign of data.signs) {
+    for (const topic of SIGNS_CACHE) {
       const card = document.createElement('div');
       card.className = 'sign-card';
-      card.dataset.key = sign.key;
-      card.style.setProperty('--accent-color', sign.color);
+      card.dataset.key = topic.key;
+      card.style.setProperty('--accent-color', topic.color || '#d4af37');
       card.innerHTML = `
         <div class="sign-status" data-status></div>
-        <div class="sign-symbol">${sign.symbol}</div>
-        <div class="sign-name">${sign.name}</div>
-        <div class="sign-dates">${sign.dates}</div>
-        <span class="sign-element">${sign.element}</span>
+        <div class="sign-symbol">${topic.icon || topic.symbol || '✨'}</div>
+        <div class="sign-name">${escapeHtml(topic.name)}</div>
+        <div class="sign-dates">${escapeHtml(topic.subtitle || topic.dates || '')}</div>
+        ${topic.meta || topic.element ? `<span class="sign-element">${escapeHtml(topic.meta || topic.element)}</span>` : ''}
         <div class="sign-stage">
           <div class="sign-stage-label" data-stage-label></div>
           <div class="sign-stage-detail" data-stage-detail></div>
         </div>
       `;
-      card.addEventListener('click', () => produceSingle(sign.key, sign.name));
+      card.addEventListener('click', () => produceSingle(topic.key, topic.name));
       grid.appendChild(card);
     }
   } catch (e) {
-    toast('Burçlar yüklenemedi: ' + e.message, 'error');
+    toast('Konular yüklenemedi: ' + e.message, 'error');
   }
 }
 
