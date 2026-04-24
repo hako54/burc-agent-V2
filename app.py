@@ -66,7 +66,10 @@ def api_signs():
             "dates": info["dates"],
             "color": info["color"],
         })
-    return jsonify({"signs": signs})
+    return jsonify({
+        "signs": signs,
+        "youtube_channel_url": os.environ.get("YOUTUBE_CHANNEL_URL", ""),
+    })
 
 
 @app.route("/api/produce/<sign_key>", methods=["POST"])
@@ -134,7 +137,7 @@ def api_reject(sign_key):
     if not key:
         return jsonify({"error": "Geçersiz burç"}), 400
     try:
-        reject_pending(key)
+        reject_pending(key, source="web")
         return jsonify({"sign_key": key, "status": "rejected"})
     except Exception as e:
         return jsonify({"error": str(e)}), 400
@@ -204,14 +207,65 @@ def api_job(sign_key):
 
 @app.route("/api/history")
 def api_history():
-    history_file = Path("data/history.json")
+    """Yerel history.json dosyasından son yayınları döner."""
+    history_file = Path(os.environ.get("DATA_DIR", "data")) / "history.json"
     if not history_file.exists():
         return jsonify({"history": []})
     try:
         data = json.loads(history_file.read_text(encoding="utf-8"))
-        return jsonify({"history": data[-50:]})
+        # Tarihe göre tersine sırala (en yeni önce)
+        data = sorted(data, key=lambda e: e.get("generated_at", ""),
+                      reverse=True)
+        return jsonify({"history": data[:50]})
     except Exception as e:
         return jsonify({"history": [], "error": str(e)})
+
+
+@app.route("/api/youtube/recent")
+def api_youtube_recent():
+    """YouTube kanalından son yüklenen videoları fetch eder.
+    history.json olmadığında (deploy sonrası) UI'a veri sağlar."""
+    try:
+        from services.youtube import get_youtube_service
+        yt = get_youtube_service()
+
+        ch_resp = yt.channels().list(part="snippet,contentDetails",
+                                     mine=True).execute()
+        if not ch_resp.get("items"):
+            return jsonify({"videos": [], "error": "Kanal bulunamadı"})
+
+        channel = ch_resp["items"][0]
+        uploads_playlist = channel["contentDetails"]["relatedPlaylists"]["uploads"]
+
+        pl_resp = yt.playlistItems().list(
+            part="snippet,contentDetails",
+            playlistId=uploads_playlist,
+            maxResults=50,
+        ).execute()
+
+        videos = []
+        for item in pl_resp.get("items", []):
+            vid_id = item["contentDetails"]["videoId"]
+            snip = item["snippet"]
+            videos.append({
+                "youtube_id": vid_id,
+                "youtube_url": f"https://youtube.com/shorts/{vid_id}",
+                "short_url": f"https://youtu.be/{vid_id}",
+                "title": snip.get("title", ""),
+                "published_at": snip.get("publishedAt", ""),
+                "thumbnail": snip.get("thumbnails", {}).get("medium", {}).get("url", ""),
+            })
+
+        videos.sort(key=lambda v: v.get("published_at", ""), reverse=True)
+
+        return jsonify({
+            "videos": videos,
+            "channel_title": channel["snippet"].get("title", ""),
+            "channel_url": f"https://youtube.com/channel/{channel['id']}",
+        })
+    except Exception as e:
+        log.exception("YouTube recent fetch hata")
+        return jsonify({"videos": [], "error": str(e)[:200]}), 500
 
 
 @app.route("/output/<path:filename>")
