@@ -33,7 +33,8 @@ from pipeline import produce_and_upload, produce_all_signs
 from telegram_bot import start_background as start_telegram_bg
 from scheduler import start_scheduler
 import job_tracker as jt
-import channels as ch_registry
+import channel_registry as ch_registry
+import channel_modules
 import approval
 
 log = logging.getLogger(__name__)
@@ -135,11 +136,11 @@ def api_channel_signs(channel_id):
     if not channel:
         return jsonify({"error": "Kanal bulunamadı"}), 404
 
-    from content_types import get_content_type
-    content_type = get_content_type(channel.get("type", "zodiac"), channel)
-    topics = content_type.get_topics()
+    module = channel_modules.load_module(channel["id"],
+                                         channel.get("type", "zodiac"))
+    topics = module.get_topics()
+    meta = module.CHANNEL_META
 
-    # Geriye uyumluluk için eski "signs" formatında da veriyoruz
     signs = [
         {
             "key": t["key"],
@@ -157,11 +158,11 @@ def api_channel_signs(channel_id):
         "signs": signs,
         "topics": topics,
         "content_type": {
-            "id": content_type.type_id,
-            "name": content_type.type_name,
-            "icon": content_type.type_icon,
-            "supports_manual": content_type.supports_manual,
-            "supports_auto": content_type.supports_auto,
+            "id": meta["type_id"],
+            "name": meta["type_name"],
+            "icon": meta["icon"],
+            "supports_manual": meta.get("supports_manual", True),
+            "supports_auto": meta.get("supports_auto", False),
         },
     })
 

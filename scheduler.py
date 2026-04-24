@@ -68,7 +68,7 @@ def _daily_batch_job():
     log.info(f"   YouTube publishAt: {publish_at}")
 
     # Tüm zodiac tipi kanallar için çalıştır
-    import channels as ch_registry
+    import channel_registry as ch_registry
     all_channels = [c for c in ch_registry.list_channels()
                     if c.get("type") == "zodiac"]
 

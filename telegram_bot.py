@@ -460,19 +460,38 @@ def cmd_durum(chat_id: str):
 
 
 def cmd_yardim(chat_id: str):
+    import channel_registry as ch_registry
+    # Aktif kanalları listele
+    channel_lines = []
+    try:
+        for ch in ch_registry.list_channels():
+            cid = ch["id"]
+            if cid == "burc":
+                continue  # burç için /burc komutu zaten var
+            channel_lines.append(
+                f"{ch.get('icon', '📺')} /{cid} &lt;konu&gt; — {ch['name']}"
+            )
+    except Exception:
+        pass
+
+    channels_section = (
+        "\n🎭 <b>Özel kanallar:</b>\n" + "\n".join(channel_lines) + "\n"
+        if channel_lines else ""
+    )
+
     send(
         "🤖 <b>Burç Agent</b>\n\n"
-        "🔮 <b>Üretim (onaylı):</b>\n"
+        "🔮 <b>Burç kanalı:</b>\n"
         "/burc &lt;burç&gt; — Video üret, onay iste\n"
         "   Örn: /burc koç, /burc aslan\n"
         "/yayinla &lt;burç&gt; — Onaylıyı YouTube'a yükle\n"
         "/iptal &lt;burç&gt; — Onay bekleyeni sil\n"
-        "/bekleyenler — Onay bekleyenleri listele\n\n"
-        "⛔ <b>Çalışan üretimi durdur:</b>\n"
-        "/durdur &lt;burç&gt; — Devam eden üretimi iptal et\n"
-        "/durdur (argümansız) — Çalışan işleri listele\n\n"
-        "🌟 <b>Batch (onaysız):</b>\n"
-        "/tumburclar — 12 burç direkt yükle\n\n"
+        "/bekleyenler — Onay bekleyenleri listele\n"
+        "/tumburclar — 12 burç batch\n"
+        + channels_section +
+        "\n⛔ <b>Çalışan üretimi durdur:</b>\n"
+        "/durdur &lt;konu&gt; — Aktif üretimi iptal et\n"
+        "/durdur — Çalışan işleri listele\n\n"
         "📊 <b>Diğer:</b>\n"
         "/durum — Canlı durum\n"
         "/yardim — Bu mesaj",
@@ -535,8 +554,158 @@ def _handle_update(update: dict):
     elif cmd in ("/yardim", "/help", "/start"):
         cmd_yardim(chat_id)
     else:
-        send(f"❓ Bilinmeyen komut: {cmd}\n/yardim yazarak listeyi gör.",
-             chat_id)
+        # Kanal-bazlı komut deneyelim — /<channel_id> <topic>
+        # Örn: /motivasyon başarı, /burc-en koç
+        _try_channel_command(cmd, args, chat_id)
+
+
+def _try_channel_command(cmd: str, args: str, chat_id: str):
+    """Bilinmeyen komutu kanal ID'si olarak değerlendirir.
+    /motivasyon başarı → motivasyon kanalına "başarı" ile üretim başlat"""
+    import channel_registry as ch_registry
+
+    # /motivasyon → motivasyon
+    channel_id = cmd.lstrip("/")
+
+    channel = ch_registry.get_channel(channel_id)
+    if not channel:
+        send(
+            f"❓ Bilinmeyen komut: {cmd}\n"
+            f"/yardim yazarak komutları listele.",
+            chat_id,
+        )
+        return
+
+    # Kanalı bulduk — topic girilmişse üret, girilmemişse topic listesi göster
+    if not args:
+        # Kanal topicleri listele
+        try:
+            import channel_modules
+            module = channel_modules.load_module(
+                channel["id"], channel.get("type", "zodiac")
+            )
+            topics = module.get_topics()
+            lines = [f"{channel.get('icon', '📺')} <b>{channel['name']}</b>",
+                     "Hangi konu için üretim yapayım?\n"]
+            for t in topics[:15]:
+                lines.append(f"{t.get('emoji', t.get('icon', '•'))} "
+                             f"/{channel_id} {t['key']}")
+            if len(topics) > 15:
+                lines.append(f"... ({len(topics)} konu toplam)")
+            send("\n".join(lines), chat_id)
+        except Exception as e:
+            send(f"❌ Konular yüklenemedi: {e}", chat_id)
+        return
+
+    # Topic verildi — üretimi başlat
+    topic_key = args.strip().lower()
+    _start_production(channel, topic_key, chat_id)
+
+
+def _start_production(channel: dict, topic_key: str, chat_id: str):
+    """Kanal + topic ile üretim başlat (Telegram'dan)."""
+    import channel_modules
+    from pipeline import produce_content
+
+    channel_id = channel["id"]
+    name = channel["name"]
+    icon = channel.get("icon", "📺")
+
+    jkey = f"{channel_id}:{topic_key}"
+    if jt.is_running(jkey):
+        send(f"⏳ {name}/{topic_key} zaten üretiliyor.", chat_id)
+        return
+
+    # Topic validate — zodiac ise normalize_sign, yoksa olduğu gibi
+    module = channel_modules.load_module(channel_id,
+                                         channel.get("type", "zodiac"))
+    valid_keys = [t["key"] for t in module.get_topics()]
+    # Zodiac için aksan tolere etmek için normalize_sign de deneyelim
+    norm = None
+    try:
+        from zodiac import normalize_sign
+        norm = normalize_sign(topic_key)
+    except Exception:
+        pass
+
+    if topic_key in valid_keys:
+        final_key = topic_key
+    elif norm and norm in valid_keys:
+        final_key = norm
+    else:
+        send(
+            f"❌ <code>{topic_key}</code> bu kanalda geçerli değil.\n"
+            f"/{channel_id} yaz → konu listesi.",
+            chat_id,
+        )
+        return
+
+    send(f"{icon} <b>{name}</b> / {final_key} üretim başlıyor...\n"
+         f"<i>Onay isteyeceğim.</i>", chat_id)
+
+    jt.start_job(jkey, source="telegram")
+    info = {"name": final_key.capitalize(), "emoji": icon}
+
+    def run():
+        try:
+            watcher = threading.Thread(
+                target=_watch_job_stages_generic,
+                args=(jkey, chat_id, name, icon),
+                daemon=True,
+            )
+            watcher.start()
+
+            result = produce_content(
+                channel_id=channel_id, topic_key=final_key,
+                upload=True, source="telegram",
+                require_approval=True,
+            )
+
+            video_path = result.get("video_path", "")
+            caption = (
+                f"✋ <b>{name} / {final_key}</b> onay bekliyor\n\n"
+                f"📝 {result.get('title', '')[:90]}\n"
+                f"🤖 {result.get('provider', '?')}\n\n"
+                f"<b>Kararını bekliyorum:</b>\n"
+                f"✅ /yayinla {final_key} (kanal: {channel_id})\n"
+                f"❌ /iptal {final_key}"
+            )
+            send(caption, chat_id)
+            send_video(video_path,
+                       f"{icon} {name} — önizleme", chat_id)
+        except Exception as e:
+            log.exception(f"telegram {channel_id}/{final_key} hata")
+            send(f"❌ {name}/{final_key}: {str(e)[:200]}", chat_id)
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+def _watch_job_stages_generic(jkey: str, chat_id: str, name: str, icon: str):
+    """Kanal-bazlı iş aşama takibi."""
+    last_stage = None
+    for _ in range(240):
+        job = jt.get_job(jkey)
+        if not job:
+            return
+        stage = job.get("stage")
+        if stage != last_stage and stage not in (jt.STAGE_DONE, jt.STAGE_ERROR):
+            label = job.get("stage_label", stage)
+            detail = job.get("progress_detail", "")
+            emoji = {
+                jt.STAGE_CONTENT: "🤖",
+                jt.STAGE_IMAGES: "🖼️",
+                jt.STAGE_TTS: "🎙",
+                jt.STAGE_RENDER: "🎬",
+                jt.STAGE_UPLOAD: "📤",
+            }.get(stage, "⚙️")
+            msg = f"{emoji} {icon} <b>{name}</b> → {label}"
+            if detail:
+                msg += f"\n<i>{detail}</i>"
+            send(msg, chat_id)
+            last_stage = stage
+        if job.get("status") in ("done", "error"):
+            return
+        time.sleep(5)
 
 
 def start_polling():

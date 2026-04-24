@@ -4,7 +4,7 @@ Kanal bazında, içerik tipi bazında üretim yönetir.
 
 Genel akış:
 1. Kanaldan content_type belirle (zodiac, motivation, ...)
-2. content_type.build_prompt() → LLM'e gönder
+2. module.build_prompt() → LLM'e gönder
 3. LLM JSON → post-process (imla)
 4. render_video (görsel + TTS + montaj)
 5. YouTube'a yükle (veya onay kuyruğuna al)
@@ -23,9 +23,9 @@ from services.youtube import upload_video
 from services.text_cleaner import clean_content
 import job_tracker as jt
 import approval
-import channels as ch_registry
+import channel_registry as ch_registry
+import channel_modules
 import cancel_manager as cancel_mgr
-from content_types import get_content_type
 
 log = logging.getLogger(__name__)
 
@@ -126,7 +126,7 @@ def produce_content(
     if not channel:
         raise ValueError(f"Kanal bulunamadı: {channel_id}")
 
-    content_type = get_content_type(channel.get("type", "zodiac"), channel)
+    module = channel_modules.load_module(channel["id"], channel.get("type", "zodiac"))
     topic_key = (topic_key or "").lower().strip()
 
     log.info("=" * 60)
@@ -161,7 +161,7 @@ def produce_content(
         cancel_mgr.check_is_cancelled(jkey)
         jt.update_stage(jkey, jt.STAGE_CONTENT)
         used_themes = _get_used_themes(topic_key, channel_id)
-        prompt = content_type.build_prompt(
+        prompt = module.build_prompt(
             topic_key=topic_key,
             custom_topic=custom_topic,
             used_themes=used_themes,
@@ -182,15 +182,15 @@ def produce_content(
         )
 
         # Content_type'a özgü meta bilgileri zenginleştir
-        theme_colors = content_type.get_theme_colors(topic_key, content)
+        theme_colors = module.get_theme_colors(topic_key, content)
         content["accent_color"] = theme_colors["accent_color"]
         content["background_color"] = theme_colors["background_color"]
-        content["pexels_queries"] = content_type.get_visual_queries(topic_key, content)
+        content["pexels_queries"] = module.get_visual_queries(topic_key, content)
         content["topic_key"] = topic_key
-        content["topic_label"] = _topic_label(content_type, topic_key)
-        content["intro_text"] = content_type.get_intro_text(topic_key, content)
-        content["outro_text"] = content_type.get_outro_text(topic_key, content)
-        content["lucky_card"] = content_type.get_lucky_card(topic_key, content)
+        content["topic_label"] = _topic_label(module, topic_key)
+        content["intro_text"] = module.get_intro_text(topic_key, content)
+        content["outro_text"] = module.get_outro_text(topic_key, content)
+        content["lucky_card"] = module.get_lucky_card(topic_key, content)
         content["provider"] = provider
         content["generated_at"] = datetime.now().isoformat()
 
@@ -242,9 +242,9 @@ def produce_content(
             cancel_mgr.mark_upload_started(jkey)
             jt.update_stage(jkey, jt.STAGE_UPLOAD)
 
-            title = content_type.format_title(topic_key, content)
-            description = content_type.format_description(topic_key, content)
-            tags = content_type.get_tags(topic_key, content)
+            title = module.format_title(topic_key, content)
+            description = module.format_description(topic_key, content)
+            tags = module.get_tags(topic_key, content)
 
             upload_result = upload_video(
                 video_path=video_path,
@@ -303,8 +303,8 @@ def produce_content(
         raise
 
 
-def _topic_label(content_type, topic_key: str) -> str:
-    for t in content_type.get_topics():
+def _topic_label(module, topic_key: str) -> str:
+    for t in module.get_topics():
         if t["key"] == topic_key:
             return t["name"]
     return topic_key
@@ -319,7 +319,7 @@ def approve_and_upload(topic_key: str, channel_id: str = "burc",
     if not channel:
         raise ValueError(f"Kanal bulunamadı: {channel_id}")
 
-    content_type = get_content_type(channel.get("type", "zodiac"), channel)
+    module = channel_modules.load_module(channel["id"], channel.get("type", "zodiac"))
     topic_key = (topic_key or "").lower().strip()
 
     pending = approval.get_pending(topic_key, channel_id=channel_id)
@@ -343,9 +343,9 @@ def approve_and_upload(topic_key: str, channel_id: str = "burc",
             "tags": pending.get("tags", []),
             "hashtags": pending.get("hashtags", []),
         }
-        title = content_type.format_title(topic_key, fake_content)
-        description = content_type.format_description(topic_key, fake_content)
-        tags = content_type.get_tags(topic_key, fake_content)
+        title = module.format_title(topic_key, fake_content)
+        description = module.format_description(topic_key, fake_content)
+        tags = module.get_tags(topic_key, fake_content)
 
         upload_result = upload_video(
             video_path=video_path, title=title, description=description,
