@@ -28,11 +28,13 @@ CHANNEL_TYPES = {
         "name": "Burç / Astroloji",
         "icon": "🔮",
         "description": "Günlük 12 burç yorumu",
+        "auto_schedule": True,
     },
-    "custom": {
-        "name": "Özel İçerik",
-        "icon": "✨",
-        "description": "Serbest konu / manuel içerik",
+    "motivation": {
+        "name": "Motivasyon",
+        "icon": "💪",
+        "description": "Günlük motivasyon sözleri ve düşünceler",
+        "auto_schedule": True,
     },
 }
 
