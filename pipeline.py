@@ -1,34 +1,35 @@
 """
-Pipeline Orchestrator
-Tek bir burç için tüm akışı yönetir:
-1. İçerik üretimi (Claude/Gemini/Groq)
-2. Video render (MoviePy)
-3. YouTube upload
+Pipeline Orchestrator (Çoklu Kanal + Çoklu İçerik Tipi)
+Kanal bazında, içerik tipi bazında üretim yönetir.
 
-İlerleme aşamaları job_tracker'a bildirilir, böylece hem web panel
-hem telegram canlı durumu görebilir. Web'den tetiklenen işlerin de
-özeti Telegram'a gönderilir.
+Genel akış:
+1. Kanaldan content_type belirle (zodiac, motivation, ...)
+2. content_type.build_prompt() → LLM'e gönder
+3. LLM JSON → post-process (imla)
+4. render_video (görsel + TTS + montaj)
+5. YouTube'a yükle (veya onay kuyruğuna al)
 """
 
 import os
 import json
 import logging
+import re
 from pathlib import Path
 from datetime import datetime
 
-from zodiac import normalize_sign, get_sign, all_sign_keys
-from services.content import generate_content
+from services.content import call_llm_with_fallback, parse_llm_json
 from services.video import render_video
 from services.youtube import upload_video
+from services.text_cleaner import clean_content
 import job_tracker as jt
 import approval
 import channels as ch_registry
+from content_types import get_content_type
 
 log = logging.getLogger(__name__)
 
 
 def _tg_notify(text: str):
-    """Web/scheduler kaynaklı olayları Telegram'a bildirir."""
     try:
         from telegram_bot import send as tg_send
         tg_send(text)
@@ -41,7 +42,6 @@ OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", "output"))
 
 
 def _channel_dir(channel_id: str) -> Path:
-    """Bir kanalın veri klasörünü döner."""
     path = DATA_DIR / channel_id
     path.mkdir(parents=True, exist_ok=True)
     return path
@@ -70,23 +70,23 @@ def _save_json(path: Path, data):
                     encoding="utf-8")
 
 
-def _get_used_themes(sign_key: str, channel_id: str = "burc") -> list:
+def _get_used_themes(topic_key: str, channel_id: str) -> list:
     all_themes = _load_json(_themes_file(channel_id), {})
-    return [t["theme"] for t in all_themes.get(sign_key, [])][-20:]
+    return [t["theme"] for t in all_themes.get(topic_key, [])][-20:]
 
 
-def _save_used_theme(sign_key: str, theme: str, channel_id: str = "burc"):
+def _save_used_theme(topic_key: str, theme: str, channel_id: str):
     path = _themes_file(channel_id)
     all_themes = _load_json(path, {})
-    all_themes.setdefault(sign_key, []).append({
+    all_themes.setdefault(topic_key, []).append({
         "theme": theme,
         "date": datetime.now().isoformat(),
     })
-    all_themes[sign_key] = all_themes[sign_key][-50:]
+    all_themes[topic_key] = all_themes[topic_key][-50:]
     _save_json(path, all_themes)
 
 
-def _save_to_history(entry: dict, channel_id: str = "burc"):
+def _save_to_history(entry: dict, channel_id: str):
     path = _history_file(channel_id)
     history = _load_json(path, [])
     history.append(entry)
@@ -94,121 +94,142 @@ def _save_to_history(entry: dict, channel_id: str = "burc"):
     _save_json(path, history)
 
 
-def produce_and_upload(sign_input: str, upload: bool = True,
-                       source: str = "web",
-                       scheduled_publish_at: str = None,
-                       require_approval: bool = False,
-                       channel_id: str = "burc") -> dict:
-    """Bir burç için tam akış (tek kanal için).
+def _job_key(channel_id: str, topic_key: str) -> str:
+    """Job tracker için kanal bazlı anahtar."""
+    return f"{channel_id}:{topic_key}"
+
+
+# ── Ana Üretim Fonksiyonu ────────────────────────────────────────
+
+def produce_content(
+    channel_id: str,
+    topic_key: str,
+    custom_topic: str = None,
+    upload: bool = True,
+    source: str = "web",
+    scheduled_publish_at: str = None,
+    require_approval: bool = False,
+) -> dict:
+    """Bir kanala bir içerik üretir.
 
     Args:
-        sign_input: Burç adı
-        upload: False ise yalnızca video üretir, YouTube'a yüklemez
+        channel_id: Hangi kanala
+        topic_key: Hangi konu/kategori (burç adı, motivasyon kategorisi vs.)
+        custom_topic: Serbest metin konu (manuel mod)
+        upload: YouTube'a yüklensin mi
         source: 'web', 'telegram', 'scheduler'
-        scheduled_publish_at: ISO 8601 tarih, YouTube otomatik yayın saati
-        require_approval: True ise onay kuyruğuna alır
-        channel_id: Hangi kanala yükleneceği (varsayılan 'burc')
+        scheduled_publish_at: YouTube planlı yayın
+        require_approval: Onay kuyruğuna alsın mı
     """
-    sign_key = normalize_sign(sign_input)
-    if not sign_key:
-        raise ValueError(
-            f"Geçersiz burç: '{sign_input}'. "
-            f"Geçerli: {', '.join(all_sign_keys())}"
-        )
+    channel = ch_registry.get_channel(channel_id)
+    if not channel:
+        raise ValueError(f"Kanal bulunamadı: {channel_id}")
 
-    info = get_sign(sign_key)
-    log.info(f"{'='*50}")
-    log.info(f"🔮 {info['emoji']} {info['name']} üretim başlıyor ({source})")
+    content_type = get_content_type(channel.get("type", "zodiac"), channel)
+    topic_key = (topic_key or "").lower().strip()
 
-    # Web'den tetiklendiyse Telegram'a bildir
+    log.info("=" * 60)
+    log.info(f"🎬 {channel['name']} ({channel['type']}) üretim başlıyor")
+    log.info(f"   Konu: {topic_key}" + (f" ({custom_topic})" if custom_topic else ""))
+    log.info(f"   Kaynak: {source}")
+
+    jkey = _job_key(channel_id, topic_key)
+
     if source == "web":
         _tg_notify(
             f"🌐 <b>Panelden üretim başladı</b>\n"
-            f"{info['emoji']} <b>{info['name']}</b>"
+            f"{channel.get('icon', '📺')} <b>{channel['name']}</b> · {topic_key}"
         )
 
-    # Job başlat (zaten başlatılmadıysa)
-    if not jt.get_job(sign_key) or not jt.is_running(sign_key):
-        jt.start_job(sign_key, source=source)
+    if not jt.get_job(jkey) or not jt.is_running(jkey):
+        jt.start_job(jkey, source=source)
 
     try:
-        # 1) İçerik üretimi
-        jt.update_stage(sign_key, jt.STAGE_CONTENT)
-        used_themes = _get_used_themes(sign_key, channel_id=channel_id)
-        content = generate_content(sign_key, used_themes)
-        jt.set_provider(sign_key, content.get("provider", "?"))
-        jt.set_title(sign_key, content.get("title", ""))
-        _save_used_theme(
-            sign_key,
-            content.get("theme", content.get("title", "")),
-            channel_id=channel_id,
+        # 1) Prompt hazırla ve LLM çağır
+        jt.update_stage(jkey, jt.STAGE_CONTENT)
+        used_themes = _get_used_themes(topic_key, channel_id)
+        prompt = content_type.build_prompt(
+            topic_key=topic_key,
+            custom_topic=custom_topic,
+            used_themes=used_themes,
         )
+        raw, provider = call_llm_with_fallback(prompt)
+        content = parse_llm_json(raw)
+        content = clean_content(content)
+
+        jt.set_provider(jkey, provider)
+        jt.set_title(jkey, content.get("title", ""))
+
+        _save_used_theme(
+            topic_key,
+            content.get("theme", content.get("title", "")),
+            channel_id,
+        )
+
+        # Content_type'a özgü meta bilgileri zenginleştir
+        theme_colors = content_type.get_theme_colors(topic_key, content)
+        content["accent_color"] = theme_colors["accent_color"]
+        content["background_color"] = theme_colors["background_color"]
+        content["pexels_queries"] = content_type.get_visual_queries(topic_key, content)
+        content["topic_key"] = topic_key
+        content["topic_label"] = _topic_label(content_type, topic_key)
+        content["intro_text"] = content_type.get_intro_text(topic_key, content)
+        content["outro_text"] = content_type.get_outro_text(topic_key, content)
+        content["lucky_card"] = content_type.get_lucky_card(topic_key, content)
+        content["provider"] = provider
+        content["generated_at"] = datetime.now().isoformat()
 
         # 2) Video render
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        video_path = str(OUTPUT_DIR / f"{channel_id}_{sign_key}_{ts}.mp4")
-        render_video(content, video_path, sign_key=sign_key)
+        safe_topic = re.sub(r"[^a-z0-9\-]", "-", topic_key.lower())[:20] or "content"
+        video_path = str(OUTPUT_DIR / f"{channel_id}_{safe_topic}_{ts}.mp4")
+        render_video(content, video_path, sign_key=jkey)
 
         result = {
-            "sign_key": sign_key,
-            "sign_name": info["name"],
+            "channel_id": channel_id,
+            "channel_name": channel["name"],
+            "topic_key": topic_key,
+            "topic_label": content.get("topic_label", topic_key),
             "title": content.get("title", ""),
             "video_path": video_path,
-            "provider": content.get("provider", "?"),
+            "provider": provider,
             "generated_at": datetime.now().isoformat(),
             "source": source,
-            "channel_id": channel_id,
+            "sign_key": topic_key,  # geriye uyumluluk
         }
 
-        # 3a) Onay gerekiyorsa: kuyruğa al
+        # 3a) Onay gerekliyse kuyruğa al
         if require_approval and upload:
-            approval.add_pending(sign_key, video_path, content, source=source,
+            approval.add_pending(topic_key, video_path, content, source=source,
                                  channel_id=channel_id)
             result["status"] = "pending_approval"
             result["awaiting_approval"] = True
             _save_to_history(result, channel_id=channel_id)
-            jt.finish_job(sign_key, result=result)
-            log.info(f"⏸ {info['name']} onay bekliyor ({channel_id})")
+            jt.finish_job(jkey, result=result)
+            log.info(f"⏸ {channel['name']}/{topic_key} onay bekliyor")
 
             if source == "web":
                 _tg_notify(
                     f"🌐 <b>Panelden üretildi — onay bekliyor</b>\n"
-                    f"{info['emoji']} <b>{info['name']}</b>\n"
+                    f"{channel.get('icon', '📺')} <b>{channel['name']}</b>\n"
                     f"📝 {content.get('title', '')[:80]}\n"
-                    f"🤖 {content.get('provider', '?')}\n\n"
-                    f"Panelden yayınla/iptal edebilirsin."
+                    f"🤖 {provider}\n\nPanelden yayınla/iptal."
                 )
             return result
 
-        # 3b) YouTube upload (normal akış)
+        # 3b) YouTube upload
         if upload:
-            jt.update_stage(sign_key, jt.STAGE_UPLOAD)
+            jt.update_stage(jkey, jt.STAGE_UPLOAD)
 
-            hashtags = content.get("hashtags", [])
-            base_tags = content.get("tags", [])
-            extra_tags = [
-                "burç", "günlükburç", "astroloji", "shorts", "keşfet",
-                info["name"].lower(), f"{info['name'].lower()}burcu",
-            ]
-            all_tags = list(dict.fromkeys(base_tags + extra_tags))[:15]
-
-            extra_hashtags = [
-                f"#{info['name'].lower()}", f"#{info['name'].lower()}burcu",
-                "#günlükburç", "#astroloji", "#shorts", "#burç",
-                "#zodyak", "#keşfet", "#viral", "#keşfetteyim",
-            ]
-            all_hashtags = list(dict.fromkeys(hashtags + extra_hashtags))[:15]
-
-            description = (
-                content.get("description", "")
-                + "\n\n" + " ".join(all_hashtags)
-            )
+            title = content_type.format_title(topic_key, content)
+            description = content_type.format_description(topic_key, content)
+            tags = content_type.get_tags(topic_key, content)
 
             upload_result = upload_video(
                 video_path=video_path,
-                title=content.get("title", f"{info['name']} Günlük Yorum"),
+                title=title,
                 description=description,
-                tags=all_tags,
+                tags=tags,
                 category_id="22",
                 privacy="public",
                 scheduled_time=scheduled_publish_at,
@@ -220,91 +241,81 @@ def produce_and_upload(sign_input: str, upload: bool = True,
             if source == "web":
                 _tg_notify(
                     f"🌐 <b>Panelden yayınlandı</b>\n"
-                    f"{info['emoji']} <b>{info['name']}</b> yayında!\n"
+                    f"{channel.get('icon', '📺')} <b>{channel['name']}</b>\n"
                     f"📝 {content.get('title', '')[:80]}\n"
                     f"🔗 {upload_result['url']}"
                 )
 
         _save_to_history(result, channel_id=channel_id)
-        jt.finish_job(sign_key, result=result)
-        log.info(f"🎉 {info['name']} tamamlandı\n")
+        jt.finish_job(jkey, result=result)
+        log.info(f"🎉 {channel['name']}/{topic_key} tamamlandı\n")
         return result
 
     except Exception as e:
-        log.exception(f"❌ {info['name']} başarısız")
-        jt.finish_job(sign_key, error=str(e))
+        log.exception(f"❌ {channel['name']}/{topic_key} başarısız")
+        jt.finish_job(jkey, error=str(e))
         if source == "web":
             _tg_notify(
                 f"🌐 <b>Panelden üretim hatası</b>\n"
-                f"{info['emoji']} {info['name']}: {str(e)[:150]}"
+                f"{channel.get('icon', '📺')} {channel['name']}: {str(e)[:150]}"
             )
         raise
 
 
-def approve_and_upload(sign_input: str, source: str = "telegram",
-                       channel_id: str = "burc") -> dict:
-    """Onay kuyruğunda bekleyen videoyu YouTube'a yükler."""
-    sign_key = normalize_sign(sign_input)
-    if not sign_key:
-        raise ValueError(f"Geçersiz burç: '{sign_input}'")
+def _topic_label(content_type, topic_key: str) -> str:
+    for t in content_type.get_topics():
+        if t["key"] == topic_key:
+            return t["name"]
+    return topic_key
 
-    pending = approval.get_pending(sign_key, channel_id=channel_id)
+
+# ── Onay akışı ────────────────────────────────────────────────────
+
+def approve_and_upload(topic_key: str, channel_id: str = "burc",
+                       source: str = "telegram") -> dict:
+    """Onay bekleyen videoyu YouTube'a yükler."""
+    channel = ch_registry.get_channel(channel_id)
+    if not channel:
+        raise ValueError(f"Kanal bulunamadı: {channel_id}")
+
+    content_type = get_content_type(channel.get("type", "zodiac"), channel)
+    topic_key = (topic_key or "").lower().strip()
+
+    pending = approval.get_pending(topic_key, channel_id=channel_id)
     if not pending:
-        raise ValueError(
-            f"{sign_key} için onay bekleyen video yok. "
-            f"Önce /burc {sign_key} ile üret."
-        )
+        raise ValueError(f"{topic_key} için onay bekleyen video yok.")
 
     video_path = pending["video_path"]
     if not os.path.exists(video_path):
-        approval.remove_pending(sign_key, channel_id=channel_id)
-        raise FileNotFoundError(
-            f"Video dosyası bulunamadı: {video_path}. "
-            f"Kuyruk kaydı silindi, yeniden üretmek gerekir."
-        )
+        approval.remove_pending(topic_key, channel_id=channel_id)
+        raise FileNotFoundError(f"Video dosyası bulunamadı: {video_path}")
 
-    info = get_sign(sign_key)
-    log.info(f"📤 Onaylı upload: {info['name']}")
-
-    # Job tracker — yeni bir "upload only" job
-    jt.start_job(sign_key, source=source)
-    jt.update_stage(sign_key, jt.STAGE_UPLOAD)
+    jkey = _job_key(channel_id, topic_key)
+    jt.start_job(jkey, source=source)
+    jt.update_stage(jkey, jt.STAGE_UPLOAD)
 
     try:
-        # Tag ve hashtag'leri hazırla (add_pending'de sadece base'i sakladık)
-        base_tags = pending.get("tags", [])
-        extra_tags = [
-            "burç", "günlükburç", "astroloji", "shorts", "keşfet",
-            info["name"].lower(), f"{info['name'].lower()}burcu",
-        ]
-        all_tags = list(dict.fromkeys(base_tags + extra_tags))[:15]
-
-        hashtags = pending.get("hashtags", [])
-        extra_hashtags = [
-            f"#{info['name'].lower()}", f"#{info['name'].lower()}burcu",
-            "#günlükburç", "#astroloji", "#shorts", "#burç",
-            "#zodyak", "#keşfet", "#viral", "#keşfetteyim",
-        ]
-        all_hashtags = list(dict.fromkeys(hashtags + extra_hashtags))[:15]
-
-        description = (
-            pending.get("description", "")
-            + "\n\n" + " ".join(all_hashtags)
-        )
+        # Pending kaydından gerekli bilgileri al
+        fake_content = {
+            "title": pending.get("title", ""),
+            "description": pending.get("description", ""),
+            "tags": pending.get("tags", []),
+            "hashtags": pending.get("hashtags", []),
+        }
+        title = content_type.format_title(topic_key, fake_content)
+        description = content_type.format_description(topic_key, fake_content)
+        tags = content_type.get_tags(topic_key, fake_content)
 
         upload_result = upload_video(
-            video_path=video_path,
-            title=pending.get("title", f"{info['name']} Günlük Yorum"),
-            description=description,
-            tags=all_tags,
-            category_id="22",
-            privacy="public",
+            video_path=video_path, title=title, description=description,
+            tags=tags, category_id="22", privacy="public",
             channel_id=channel_id,
         )
 
         result = {
-            "sign_key": sign_key,
-            "sign_name": info["name"],
+            "channel_id": channel_id,
+            "channel_name": channel["name"],
+            "topic_key": topic_key,
             "title": pending.get("title", ""),
             "video_path": video_path,
             "provider": pending.get("provider", "?"),
@@ -313,86 +324,106 @@ def approve_and_upload(sign_input: str, source: str = "telegram",
             "generated_at": datetime.now().isoformat(),
             "source": source,
             "approved": True,
-            "channel_id": channel_id,
+            "sign_key": topic_key,
         }
 
-        # Kuyruktan çıkar (dosyayı silme, history'de kalsın)
-        approval.remove_pending(sign_key, delete_file=False,
+        approval.remove_pending(topic_key, delete_file=False,
                                 channel_id=channel_id)
-
         _save_to_history(result, channel_id=channel_id)
-        jt.finish_job(sign_key, result=result)
-        log.info(f"✅ {info['name']} onaylanıp yüklendi: {upload_result['url']}")
+        jt.finish_job(jkey, result=result)
+        log.info(f"✅ {channel['name']}/{topic_key} yayında: {upload_result['url']}")
 
-        # Web'den tetiklendiyse Telegram'a da bildir
         if source == "web":
             _tg_notify(
                 f"🌐 <b>Panelden yayınlandı</b>\n"
-                f"{info['emoji']} <b>{info['name']}</b> yayında!\n"
+                f"{channel.get('icon', '📺')} <b>{channel['name']}</b>\n"
                 f"🔗 {upload_result['url']}"
             )
         return result
 
     except Exception as e:
-        log.exception(f"approve_and_upload {sign_key} hata")
-        jt.finish_job(sign_key, error=str(e))
-        if source == "web":
-            _tg_notify(
-                f"❌ <b>Panelden yayın hatası</b>\n"
-                f"{info['emoji']} {info['name']}: {str(e)[:150]}"
-            )
+        log.exception(f"approve_and_upload {channel_id}/{topic_key} hata")
+        jt.finish_job(jkey, error=str(e))
         raise
 
 
-def reject_pending(sign_input: str, source: str = "telegram",
-                   channel_id: str = "burc") -> dict:
-    """Onay bekleyen videoyu reddeder ve siler."""
-    sign_key = normalize_sign(sign_input)
-    if not sign_key:
-        raise ValueError(f"Geçersiz burç: '{sign_input}'")
-
-    item = approval.remove_pending(sign_key, delete_file=True,
+def reject_pending(topic_key: str, channel_id: str = "burc",
+                   source: str = "telegram") -> dict:
+    topic_key = (topic_key or "").lower().strip()
+    item = approval.remove_pending(topic_key, delete_file=True,
                                    channel_id=channel_id)
     if not item:
-        raise ValueError(f"{sign_key} için onay bekleyen video yok.")
+        raise ValueError(f"{topic_key} için onay bekleyen video yok.")
 
     if source == "web":
-        info = get_sign(sign_key)
+        channel = ch_registry.get_channel(channel_id) or {}
         _tg_notify(
-            f"🌐 <b>Panelden iptal edildi</b>\n"
-            f"{info['emoji']} <b>{info['name']}</b> silindi."
+            f"🌐 <b>Panelden iptal</b>\n"
+            f"{channel.get('icon', '📺')} {channel.get('name', channel_id)} / {topic_key} silindi."
         )
     return item
+
+
+# ── Batch üretim ──────────────────────────────────────────────────
+
+def produce_topics(channel_id: str, topic_keys: list,
+                   upload: bool = True, source: str = "web",
+                   scheduled_publish_at: str = None) -> dict:
+    """Bir kanal için birden fazla konu üretir."""
+    success, failed = [], []
+    for topic_key in topic_keys:
+        try:
+            result = produce_content(
+                channel_id=channel_id, topic_key=topic_key,
+                upload=upload, source=source,
+                scheduled_publish_at=scheduled_publish_at,
+                require_approval=False,
+            )
+            success.append(result)
+        except Exception as e:
+            log.exception(f"❌ {channel_id}/{topic_key} başarısız")
+            failed.append({"topic_key": topic_key, "error": str(e)})
+    log.info(f"🏁 Batch bitti: {len(success)}/{len(topic_keys)} başarılı "
+             f"({channel_id})")
+    return {"success": success, "failed": failed}
+
+
+# ── Geriye uyumluluk (eski kod çağırmaya devam ederse) ─────────────
+
+def produce_and_upload(sign_input: str, upload: bool = True,
+                       source: str = "web",
+                       scheduled_publish_at: str = None,
+                       require_approval: bool = False,
+                       channel_id: str = "burc") -> dict:
+    """Eski burç fonksiyonu — zodiac kanalı için."""
+    from zodiac import normalize_sign
+    normalized = normalize_sign(sign_input)
+    if not normalized:
+        raise ValueError(f"Geçersiz burç: '{sign_input}'")
+    return produce_content(
+        channel_id=channel_id, topic_key=normalized,
+        upload=upload, source=source,
+        scheduled_publish_at=scheduled_publish_at,
+        require_approval=require_approval,
+    )
 
 
 def produce_signs(sign_keys: list, upload: bool = True,
                   source: str = "web",
                   scheduled_publish_at: str = None,
                   channel_id: str = "burc") -> dict:
-    """Verilen burç listesi için sırayla üretim yapar."""
-    success = []
-    failed = []
-
-    for sign_key in sign_keys:
-        try:
-            result = produce_and_upload(
-                sign_key, upload=upload, source=source,
-                scheduled_publish_at=scheduled_publish_at,
-                channel_id=channel_id,
-            )
-            success.append(result)
-        except Exception as e:
-            log.exception(f"❌ {sign_key} başarısız ({channel_id})")
-            failed.append({"sign_key": sign_key, "error": str(e)})
-
-    log.info(f"🏁 Grup üretim bitti: "
-             f"{len(success)}/{len(sign_keys)} başarılı ({channel_id})")
-    return {"success": success, "failed": failed}
+    """Eski batch fonksiyonu — zodiac için."""
+    return produce_topics(
+        channel_id=channel_id, topic_keys=sign_keys,
+        upload=upload, source=source,
+        scheduled_publish_at=scheduled_publish_at,
+    )
 
 
 def produce_all_signs(upload: bool = True, source: str = "web",
                       scheduled_publish_at: str = None,
                       channel_id: str = "burc") -> dict:
+    from zodiac import all_sign_keys
     return produce_signs(all_sign_keys(), upload=upload, source=source,
                          scheduled_publish_at=scheduled_publish_at,
                          channel_id=channel_id)
