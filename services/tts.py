@@ -1,16 +1,13 @@
 """
-TTS (Text-to-Speech) Servisi
+TTS (Text-to-Speech) Servisi — Kanal bazlı voice config destekli
 ElevenLabs → Edge TTS → gTTS fallback zinciri.
 
-ElevenLabs Türkçe desteği çok iyi — gerçek insan sesi gibi.
-Varsayılan ses: Rachel (warm, narrative female).
-Kullanıcı tercih ederse ELEVENLABS_VOICE_ID ile değiştirebilir.
+Çağrı:
+    generate_tts(text, out_path, voice_config={
+        "voice_id": "...", "stability": 0.5, "style": 0.35, "speed": 0.95
+    })
 
-Turkish için önerilen sesler:
-- Rachel (21m00Tcm4TlvDq8ikWAM) — sıcak anlatımcı
-- Bella (EXAVITQu4vr4xnSDxMaL) — yumuşak genç kadın
-- Aria (9BWtsMINqrJLrRacOk9x) — duygusal empatik
-- Matilda (XrExE9yKIg1WjnnlVkGX) — tatlı, naif
+voice_config None ise varsayılanlar kullanılır.
 """
 
 import asyncio
@@ -19,20 +16,30 @@ import logging
 
 log = logging.getLogger(__name__)
 
-# Oturum durumu — bir provider bu oturumda başarısız olduysa atlanır
 _session_state = {"edge_ok": None, "elevenlabs_ok": None}
 
 
-def _tts_elevenlabs(text: str, out_path: str) -> bool:
-    """ElevenLabs ile TTS. Türkçe için en iyi kalite.
-    Başarılıysa True, key yoksa/hata varsa False döner."""
+def _default_voice_config() -> dict:
+    return {
+        "voice_id": os.environ.get("ELEVENLABS_VOICE_ID",
+                                   "21m00Tcm4TlvDq8ikWAM"),  # Rachel
+        "stability": 0.50,
+        "style": 0.35,
+        "speed": 0.95,
+        "similarity_boost": 0.75,
+    }
+
+
+def _tts_elevenlabs(text: str, out_path: str,
+                    voice_config: dict = None) -> bool:
+    """ElevenLabs ile TTS. voice_config: kanal bazlı ses ayarları."""
     api_key = os.environ.get("ELEVENLABS_API_KEY")
     if not api_key:
         return False
-
-    # Oturumda başarısız olduysa atla
     if _session_state["elevenlabs_ok"] is False:
         return False
+
+    vc = {**_default_voice_config(), **(voice_config or {})}
 
     try:
         import httpx
@@ -42,38 +49,24 @@ def _tts_elevenlabs(text: str, out_path: str) -> bool:
             api_key=api_key,
             httpx_client=httpx.Client(verify=False, timeout=90),
         )
-
-        # Kullanıcı özel ses seçtiyse onu kullan, yoksa Rachel
-        voice_id = os.environ.get(
-            "ELEVENLABS_VOICE_ID",
-            "21m00Tcm4TlvDq8ikWAM",  # Rachel - sıcak anlatımcı
-        )
-
-        # Türkçe için optimize edilmiş voice ayarları
-        # stability: 0.50 = doğal + duygusal dengeli
-        # similarity_boost: 0.75 = orijinal sese yakınlık
-        # style: 0.35 = biraz ekspresyon, ama abartmadan (naif hissi)
-        # speed: 0.95 = hafif yavaş — astroloji için daha akıcı
         audio = client.text_to_speech.convert(
             text=text,
-            voice_id=voice_id,
-            model_id="eleven_multilingual_v2",  # Türkçe'yi en iyi destekleyen
+            voice_id=vc["voice_id"],
+            model_id="eleven_multilingual_v2",
             voice_settings={
-                "stability": 0.50,
-                "similarity_boost": 0.75,
-                "style": 0.35,
+                "stability": vc["stability"],
+                "similarity_boost": vc.get("similarity_boost", 0.75),
+                "style": vc["style"],
                 "use_speaker_boost": True,
             },
         )
         save(audio, out_path)
         _session_state["elevenlabs_ok"] = True
-        log.info(f"    ✅ ElevenLabs: {os.path.basename(out_path)}")
+        log.info(f"    ✅ ElevenLabs ({vc['voice_id'][:8]}…): {os.path.basename(out_path)}")
         return True
     except Exception as e:
         err_msg = str(e)
         log.warning(f"    ⚠ ElevenLabs: {err_msg[:150]}")
-        # Quota / billing / auth hataları — oturumda bir daha deneme
-        # Ama network/timeout'larda bir şans daha verelim
         if any(x in err_msg.lower() for x in
                ["quota", "billing", "unauthorized", "invalid", "forbidden"]):
             _session_state["elevenlabs_ok"] = False
@@ -81,16 +74,13 @@ def _tts_elevenlabs(text: str, out_path: str) -> bool:
 
 
 def _tts_edge(text: str, out_path: str) -> bool:
-    """Microsoft Edge TTS. Ücretsiz, kaliteli (ElevenLabs'tan sonra ikinci).
-    Windows'ta SSL sorunu yaşayabilir ama Linux/Railway'de çalışır."""
+    """Microsoft Edge TTS — ücretsiz fallback."""
     if _session_state["edge_ok"] is False:
         return False
-
     try:
         async def _run():
             import edge_tts
             voice = os.environ.get("EDGE_TTS_VOICE", "tr-TR-EmelNeural")
-            # Rate +3% = hafif hızlı, doğal tempo
             comm = edge_tts.Communicate(text=text, voice=voice, rate="+3%")
             await comm.save(out_path)
 
@@ -107,7 +97,7 @@ def _tts_edge(text: str, out_path: str) -> bool:
 
 
 def _tts_gtts(text: str, out_path: str) -> bool:
-    """Google TTS (gTTS) — en güvenilir son çare. Robotik ama hiç çökmez."""
+    """Google TTS — en güvenilir son çare."""
     try:
         from gtts import gTTS
         tts = gTTS(text=text, lang="tr", slow=False)
@@ -122,26 +112,32 @@ def _tts_gtts(text: str, out_path: str) -> bool:
         return False
 
 
-def generate_tts(text: str, out_path: str) -> str:
-    """Metni seslendirir. Provider sırası:
-    1. ElevenLabs (en kaliteli, ücretli)
-    2. Edge TTS (ücretsiz, doğal)
-    3. gTTS (son çare, robotik ama güvenilir)
+def generate_tts(text: str, out_path: str,
+                 voice_config: dict = None) -> str:
+    """Metni seslendirir. voice_config kanal bazlı ses ayarlarını içerir.
+
+    voice_config örneği:
+        {"voice_id": "...", "stability": 0.5, "style": 0.4, "speed": 1.0}
     """
     if not text or not text.strip():
         raise ValueError("TTS için boş metin verilemez")
 
-    for tts_fn in (_tts_elevenlabs, _tts_edge, _tts_gtts):
-        if tts_fn(text, out_path):
-            return out_path
+    # 1) ElevenLabs
+    if _tts_elevenlabs(text, out_path, voice_config=voice_config):
+        return out_path
+    # 2) Edge
+    if _tts_edge(text, out_path):
+        return out_path
+    # 3) gTTS
+    if _tts_gtts(text, out_path):
+        return out_path
 
     raise RuntimeError(
         "Tüm TTS servisleri başarısız. "
-        "En az bir tanesi çalışmalı (gTTS internet bağlantısı ister)."
+        "En az birinin çalışması gerekir."
     )
 
 
 def reset_session_state():
-    """Oturum durumunu sıfırlar. Yeni deployment veya manuel reset için."""
     _session_state["edge_ok"] = None
     _session_state["elevenlabs_ok"] = None

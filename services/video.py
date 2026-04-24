@@ -451,17 +451,28 @@ def _find_bg_music(duration_needed: float) -> Optional[str]:
 
 
 def render_video(content: dict, output_path: str,
-                 sign_key: Optional[str] = None) -> str:
-    """Content dict'ten video render eder ve kaydeder. Dosya yolunu döner.
+                 sign_key: Optional[str] = None,
+                 voice_config: dict = None) -> str:
+    """Content dict'ten video render eder ve kaydeder.
 
-    sign_key verilirse job_tracker'a aşama güncellemesi yapılır."""
-    # Job tracker opsiyonel — import cycle olmaması için local import
+    voice_config: TTS için ses ayarları (kanaldan gelir).
+    """
+    # Job tracker + cancel opsiyonel
     jt = None
+    cancel_mgr = None
     if sign_key:
         try:
             import job_tracker as jt
         except Exception:
             jt = None
+        try:
+            import cancel_manager as cancel_mgr
+        except Exception:
+            cancel_mgr = None
+
+    def check_cancel():
+        if cancel_mgr and sign_key:
+            cancel_mgr.check_is_cancelled(sign_key)
 
     sign_name = content.get("sign_name", "")
     sign_symbol = content.get("sign_symbol", "")
@@ -513,19 +524,26 @@ def render_video(content: dict, output_path: str,
     seg_durations = []
     tmp_prefix = output_path.replace(".mp4", "")
 
-    intro_text = f"{sign_name} burcu günlük yorum"
+    # Intro text — kanal tipine göre farklı (content'ten geliyor)
+    intro_text = content.get("intro_text") or f"{sign_name} günlük yorum"
     intro_tts_path = f"{tmp_prefix}_intro_tts.mp3"
-    generate_tts(intro_text, intro_tts_path)
+    check_cancel()
+    generate_tts(intro_text, intro_tts_path, voice_config=voice_config)
+    if cancel_mgr and sign_key:
+        cancel_mgr.record_tts(sign_key, len(intro_text))
     intro_audio = AudioFileClip(intro_tts_path)
     intro_dur = max(intro_audio.duration + 0.8, 3.0)
 
     for i, seg in enumerate(segments):
+        check_cancel()
         if jt and sign_key:
             jt.update_stage(sign_key, jt.STAGE_TTS,
                             detail=f"Segment {i + 1}/{len(segments)}")
         text = seg.get("narration") or seg.get("text", "") or content.get("full_narration", sign_name)
         tts_p = f"{tmp_prefix}_seg{i}_tts.mp3"
-        generate_tts(text, tts_p)
+        generate_tts(text, tts_p, voice_config=voice_config)
+        if cancel_mgr and sign_key:
+            cancel_mgr.record_tts(sign_key, len(text))
         seg_tts_paths.append(tts_p)
         aclip = AudioFileClip(tts_p)
         sd = max(3.0, aclip.duration + 0.6)
