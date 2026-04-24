@@ -550,35 +550,13 @@ def render_video(content: dict, output_path: str,
         direction = dirs[i % len(dirs)]
         show_hdr = (i == 0)
         sd = seg_durations[i]
-
-        section = seg.get("section", "")
-        raw_text = (seg.get("text") or "").strip()
-        raw_narration = (seg.get("narration") or "").strip()
-
-        # Rozet ve altyazı mantığı:
-        # - "text" alanı duygu ikonlu kısa etiketse (💕 Aşk, 💼 Kariyer...)
-        #   onu rozet olarak kullan, altyazı olarak narration'un ilk cümlesi
-        # - Değilse (giris, genel veya düz metin) "text"i altyazı olarak kullan
-        text_is_label = bool(raw_text) and any(
-            emj in raw_text for emj in ["💕", "💼", "🌿", "✨", "💖", "💰", "🍀"]
-        )
-
-        if text_is_label:
-            section_label = raw_text           # rozet
-            subtitle_text = _first_sentence(raw_narration)
-        else:
+        narration_text = seg.get("narration") or seg.get("text", "")
+        section_label = seg.get("text", "")
+        if seg.get("section") in ("giris", "genel"):
             section_label = ""
-            # Önce text dene (kısa altyazı için ideal)
-            # Yoksa narration'un ilk cümlesini kullan
-            subtitle_text = raw_text if raw_text else _first_sentence(raw_narration)
-
-        # Altyazı kesinlikle boş olmasın — son çare olarak burç adı
-        if not subtitle_text:
-            subtitle_text = sign_name
-
         is_last = (i == len(segments) - 1)
 
-        def make_frame(t, _img=img_arr, _txt=subtitle_text, _sd=sd,
+        def make_frame(t, _img=img_arr, _txt=narration_text, _sd=sd,
                        _zi=zoom_in, _dir=direction, _i=i, _sh=show_hdr,
                        _sec=section_label, _last=is_last):
             frame = _ken_burns(Image.fromarray(_img), t, _sd, _zi, _dir)
