@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Burç Agent · Kanal Seç</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-void: #080611;
+    --bg-card: rgba(22, 17, 42, 0.6);
+    --bg-card-solid: #1a1530;
+    --border: rgba(180, 150, 220, 0.15);
+    --border-strong: rgba(200, 170, 240, 0.3);
+    --gold: #d4af37;
+    --gold-soft: #e6c458;
+    --violet: #8b5cf6;
+    --text: #e8e3f5;
+    --text-dim: #a095c2;
+    --text-muted: #6b6287;
+    --success: #4ade80;
+    --danger: #ef4444;
+    --font-display: 'Cormorant Garamond', serif;
+    --font-body: 'Inter', -apple-system, sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg-void);
+    color: var(--text);
+    font-family: var(--font-body);
+    font-weight: 300;
+    line-height: 1.6;
+    min-height: 100vh;
+    overflow-x: hidden;
+    background-image:
+      radial-gradient(ellipse at top left, rgba(139, 92, 246, 0.15) 0%, transparent 50%),
+      radial-gradient(ellipse at bottom right, rgba(212, 175, 55, 0.1) 0%, transparent 50%);
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.08 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    opacity: 0.4;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .stars {
+    position: fixed; inset: 0; overflow: hidden;
+    pointer-events: none; z-index: 0;
+  }
+  .star {
+    position: absolute; width: 2px; height: 2px;
+    background: #fff; border-radius: 50%; opacity: 0.6;
+    animation: twinkle 3s infinite ease-in-out;
+  }
+  @keyframes twinkle {
+    0%, 100% { opacity: 0.3; transform: scale(1); }
+    50% { opacity: 0.9; transform: scale(1.3); }
+  }
+
+  .container {
+    position: relative; z-index: 2;
+    max-width: 960px; margin: 0 auto;
+    padding: 5rem 2rem 3rem;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Header */
+  .hero {
+    text-align: center;
+    margin-bottom: 4rem;
+  }
+  .hero-mark {
+    font-family: var(--font-display);
+    font-size: 5rem;
+    color: var(--gold);
+    line-height: 1;
+    margin-bottom: 1rem;
+    text-shadow: 0 0 60px rgba(212, 175, 55, 0.5);
+    animation: glow 4s ease-in-out infinite;
+  }
+  @keyframes glow {
+    0%, 100% { text-shadow: 0 0 40px rgba(212, 175, 55, 0.4); }
+    50% { text-shadow: 0 0 80px rgba(212, 175, 55, 0.7); }
+  }
+  .hero h1 {
+    font-family: var(--font-display);
+    font-size: 3rem;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+  }
+  .hero h1 em {
+    color: var(--gold);
+    font-style: italic;
+  }
+  .hero p {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+
+  /* Section */
+  .section-label {
+    font-family: var(--font-display);
+    font-size: 1.5rem;
+    font-weight: 500;
+    text-align: center;
+    margin-bottom: 2rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+  .section-label::before, .section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border), transparent);
+  }
+
+  /* Kanal kartları */
+  .channels-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 3rem;
+  }
+
+  .channel-card {
+    position: relative;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 2rem 1.75rem;
+    cursor: pointer;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    backdrop-filter: blur(20px);
+    overflow: hidden;
+    text-decoration: none;
+    color: inherit;
+    display: block;
+  }
+  .channel-card::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: radial-gradient(circle at top right, var(--accent-color, transparent) 0%, transparent 60%);
+    opacity: 0; transition: opacity 0.4s ease;
+    pointer-events: none;
+  }
+  .channel-card:hover {
+    transform: translateY(-6px);
+    border-color: var(--accent-color, var(--gold));
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  }
+  .channel-card:hover::before { opacity: 0.25; }
+
+  .channel-icon {
+    font-size: 3rem;
+    line-height: 1;
+    margin-bottom: 1rem;
+    position: relative;
+    z-index: 1;
+  }
+  .channel-name {
+    font-family: var(--font-display);
+    font-size: 1.5rem;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+    position: relative;
+    z-index: 1;
+  }
+  .channel-type {
+    font-size: 0.75rem;
+    color: var(--accent-color, var(--gold));
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 1rem;
+    position: relative;
+    z-index: 1;
+    opacity: 0.8;
+  }
+  .channel-youtube {
+    font-size: 0.813rem;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    position: relative;
+    z-index: 1;
+  }
+  .channel-enter {
+    margin-top: 1rem;
+    color: var(--accent-color, var(--gold));
+    font-size: 0.813rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 500;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Add channel card */
+  .channel-card.add-new {
+    border: 2px dashed var(--border-strong);
+    background: transparent;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    min-height: 220px;
+  }
+  .channel-card.add-new:hover {
+    border-color: var(--gold);
+    background: rgba(212, 175, 55, 0.05);
+  }
+  .channel-card.add-new .channel-icon {
+    color: var(--text-muted);
+    font-weight: 300;
+  }
+  .channel-card.add-new:hover .channel-icon {
+    color: var(--gold);
+  }
+
+  /* Actions */
+  .actions {
+    text-align: center;
+    margin-top: auto;
+    padding-top: 2rem;
+  }
+  .actions a {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 0.813rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    transition: color 0.2s ease;
+    margin: 0 0.5rem;
+  }
+  .actions a:hover {
+    color: var(--gold);
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 4rem 1rem;
+    color: var(--text-muted);
+    font-family: var(--font-display);
+    font-size: 1.25rem;
+  }
+
+  @media (max-width: 640px) {
+    .container { padding: 3rem 1rem 2rem; }
+    .hero-mark { font-size: 3.5rem; }
+    .hero h1 { font-size: 2rem; }
+    .channels-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="stars" id="stars"></div>
+
+<div class="container">
+  <div class="hero">
+    <div class="hero-mark">✧</div>
+    <h1>Burç <em>Agent</em></h1>
+    <p>Çoklu Kanal Otomasyonu</p>
+  </div>
+
+  <div class="section-label">Kanalı Seçin</div>
+
+  <div class="channels-grid" id="channelsGrid">
+    <div class="empty-state">Kanallar yükleniyor...</div>
+  </div>
+
+  <div class="actions">
+    <a href="/admin/channels">⚙ Kanal Yönetimi</a>
+  </div>
+</div>
+
+<script>
+// Yıldızlar
+(function createStars() {
+  const container = document.getElementById('stars');
+  for (let i = 0; i < 80; i++) {
+    const star = document.createElement('div');
+    star.className = 'star';
+    star.style.left = Math.random() * 100 + '%';
+    star.style.top = Math.random() * 100 + '%';
+    star.style.animationDelay = Math.random() * 3 + 's';
+    star.style.animationDuration = (2 + Math.random() * 3) + 's';
+    container.appendChild(star);
+  }
+})();
+
+async function loadChannels() {
+  try {
+    const res = await fetch('/api/channels');
+    const data = await res.json();
+    const grid = document.getElementById('channelsGrid');
+    grid.innerHTML = '';
+
+    for (const ch of data.channels) {
+      const typeInfo = data.types[ch.type] || {};
+      const card = document.createElement('a');
+      card.className = 'channel-card';
+      card.href = `/channel/${ch.id}`;
+      card.style.setProperty('--accent-color', ch.color || '#d4af37');
+      card.innerHTML = `
+        <div class="channel-icon">${ch.icon || '✨'}</div>
+        <div class="channel-name">${escapeHtml(ch.name)}</div>
+        <div class="channel-type">${escapeHtml(typeInfo.name || ch.type)}</div>
+        <div class="channel-youtube">
+          ${ch.youtube_url
+            ? '▶ ' + ch.youtube_url.replace(/^https?:\/\//, '')
+            : '(YouTube bağlı değil)'}
+        </div>
+        <div class="channel-enter">Panele Gir →</div>
+      `;
+      grid.appendChild(card);
+    }
+
+    // + Yeni Kanal
+    const addCard = document.createElement('a');
+    addCard.className = 'channel-card add-new';
+    addCard.href = '/admin/channels';
+    addCard.innerHTML = `
+      <div class="channel-icon">+</div>
+      <div class="channel-name" style="color: var(--text-muted);">Yeni Kanal Ekle</div>
+    `;
+    grid.appendChild(addCard);
+  } catch (e) {
+    document.getElementById('channelsGrid').innerHTML =
+      '<div class="empty-state">Kanallar yüklenemedi: ' + e.message + '</div>';
+  }
+}
+
+function escapeHtml(s) {
+  if (s === null || s === undefined) return '';
+  const div = document.createElement('div');
+  div.textContent = String(s);
+  return div.innerHTML;
+}
+
+loadChannels();
+</script>
+
+</body>
+</html>
