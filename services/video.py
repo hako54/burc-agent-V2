@@ -551,22 +551,30 @@ def render_video(content: dict, output_path: str,
         show_hdr = (i == 0)
         sd = seg_durations[i]
 
-        # Altyazı metni: kısa "text" kullan (narration TTS'e gidiyor zaten)
-        # Section "giris"/"genel" için rozet yok, text alanı zaten kısa altyazı
-        # Diğerleri için "text" rozet (💕 Aşk, 💼 Kariyer...), altyazı olarak
-        # narration'un ilk cümlesini göster — kısa ve akıcı olsun.
         section = seg.get("section", "")
         raw_text = (seg.get("text") or "").strip()
         raw_narration = (seg.get("narration") or "").strip()
 
-        if section in ("giris", "genel"):
-            # Burada text alanı doğrudan altyazı olarak kullanılsın
-            subtitle_text = raw_text or _first_sentence(raw_narration)
-            section_label = ""
-        else:
-            # "text" rozet, altyazı olarak narration'un ilk cümlesini kullan
+        # Rozet ve altyazı mantığı:
+        # - "text" alanı duygu ikonlu kısa etiketse (💕 Aşk, 💼 Kariyer...)
+        #   onu rozet olarak kullan, altyazı olarak narration'un ilk cümlesi
+        # - Değilse (giris, genel veya düz metin) "text"i altyazı olarak kullan
+        text_is_label = bool(raw_text) and any(
+            emj in raw_text for emj in ["💕", "💼", "🌿", "✨", "💖", "💰", "🍀"]
+        )
+
+        if text_is_label:
+            section_label = raw_text           # rozet
             subtitle_text = _first_sentence(raw_narration)
-            section_label = raw_text  # rozet: 💕 Aşk, 💼 Kariyer...
+        else:
+            section_label = ""
+            # Önce text dene (kısa altyazı için ideal)
+            # Yoksa narration'un ilk cümlesini kullan
+            subtitle_text = raw_text if raw_text else _first_sentence(raw_narration)
+
+        # Altyazı kesinlikle boş olmasın — son çare olarak burç adı
+        if not subtitle_text:
+            subtitle_text = sign_name
 
         is_last = (i == len(segments) - 1)
 
