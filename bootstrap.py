@@ -56,7 +56,11 @@ def setup_credentials():
 
 def setup_directories():
     """Gerekli çalışma dizinlerini oluşturur."""
-    for d in ["data", "output", "static/preview", "shortmusic"]:
+    # DATA_DIR ve OUTPUT_DIR env var'dan gelebilir (Railway Volume için)
+    data_dir = os.environ.get("DATA_DIR", "data")
+    output_dir = os.environ.get("OUTPUT_DIR", "output")
+    dirs = [data_dir, output_dir, "static/preview", "shortmusic"]
+    for d in dirs:
         Path(d).mkdir(parents=True, exist_ok=True)
 
 
