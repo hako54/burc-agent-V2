@@ -53,8 +53,8 @@ def _calculate_publish_at_iso() -> str:
 
 
 def _daily_batch_job():
-    """09:00'da çalışır: günün grubu için 6 burç üretir ve YouTube'a 10:00
-    publishAt ile yükler."""
+    """09:00'da çalışır: Her kanal için günün grubundaki 6 burç üretilir,
+    YouTube'a 10:00 publishAt ile private yüklenir."""
     log.info("=" * 60)
     today = datetime.now(pytz.timezone(TIMEZONE))
     group = get_todays_group()
@@ -64,37 +64,64 @@ def _daily_batch_job():
     log.info(f"   Grup: {', '.join(group)}")
 
     group_names = ", ".join(get_sign(k)["name"] for k in group)
+    publish_at = _calculate_publish_at_iso()
+    log.info(f"   YouTube publishAt: {publish_at}")
+
+    # Tüm zodiac tipi kanallar için çalıştır
+    import channels as ch_registry
+    all_channels = [c for c in ch_registry.list_channels()
+                    if c.get("type") == "zodiac"]
+
+    if not all_channels:
+        log.warning("Zodiac tipi kanal bulunamadı, batch atlandı")
+        return
+
     tg_send(
         f"🌅 <b>Günlük otomatik üretim</b>\n"
         f"📅 {today.strftime('%d %B %Y')} ({day_type} gün)\n"
         f"🔮 Bugünün burçları: {group_names}\n"
+        f"📺 Kanallar: {len(all_channels)}\n"
         f"⏰ Yayın saati: {PUBLISH_TIME}"
     )
 
-    publish_at = _calculate_publish_at_iso()
-    log.info(f"   YouTube publishAt: {publish_at}")
+    total_success = 0
+    total_fail = 0
+    failed_details = []
 
-    try:
-        results = produce_signs(
-            group, upload=True, source="scheduler",
-            scheduled_publish_at=publish_at,
-        )
-        success_count = len(results["success"])
-        fail_count = len(results["failed"])
+    for ch in all_channels:
+        ch_id = ch["id"]
+        ch_name = ch["name"]
+        log.info(f"  ▶ {ch_name} ({ch_id}) başlıyor...")
+        try:
+            results = produce_signs(
+                group, upload=True, source="scheduler",
+                scheduled_publish_at=publish_at,
+                channel_id=ch_id,
+            )
+            s_count = len(results["success"])
+            f_count = len(results["failed"])
+            total_success += s_count
+            total_fail += f_count
+            if results["failed"]:
+                for r in results["failed"]:
+                    failed_details.append(f"{ch_name}/{r['sign_key']}")
+            tg_send(
+                f"✅ <b>{ch_name}</b>: {s_count}/{len(group)} başarılı"
+                + (f" · ❌ {f_count} başarısız" if f_count else "")
+            )
+        except Exception as e:
+            log.exception(f"{ch_name} batch hata")
+            total_fail += len(group)
+            tg_send(f"❌ <b>{ch_name}</b> batch hatası: {str(e)[:150]}")
 
-        msg = (
-            f"🏁 <b>Üretim tamamlandı</b>\n"
-            f"✅ Başarılı: {success_count}/{len(group)}\n"
-            f"❌ Başarısız: {fail_count}\n"
-            f"📤 YouTube {PUBLISH_TIME}'da otomatik yayınlayacak"
-        )
-        if results["failed"]:
-            failed_names = [r["sign_key"] for r in results["failed"]]
-            msg += f"\n⚠ Başarısız: {', '.join(failed_names)}"
-        tg_send(msg)
-    except Exception as e:
-        log.exception("Batch genel hatası")
-        tg_send(f"❌ Batch hatası: {str(e)[:200]}")
+    tg_send(
+        f"🏁 <b>Günlük batch tamamlandı</b>\n"
+        f"✅ Toplam başarılı: {total_success}\n"
+        f"❌ Toplam başarısız: {total_fail}\n"
+        f"📤 YouTube {PUBLISH_TIME}'da yayınlayacak"
+        + (f"\n⚠ Başarısızlar: {', '.join(failed_details[:10])}"
+           if failed_details else "")
+    )
 
 
 def start_scheduler():
