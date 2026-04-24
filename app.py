@@ -1,11 +1,17 @@
 """
-Flask Web Uygulaması
-Railway'de çalışan ana servis. İçeriği:
-- Web paneli (templates/dashboard.html)
-- REST API endpoints
-- Telegram bot (arka plan thread)
-- Günlük scheduler (arka plan)
-- Sağlık kontrolü (/health)
+Flask Web Uygulaması (Çoklu Kanal)
+
+Sayfa yapısı:
+- /                   → Giriş sayfası, kanal seçici
+- /channel/<id>       → Belirli bir kanalın paneli
+- /admin/channels     → Kanal yönetimi (ekle/sil/düzenle)
+
+API endpoint'leri kanal bazında çalışır:
+  /api/<channel_id>/signs
+  /api/<channel_id>/produce/<sign>
+  /api/<channel_id>/approve/<sign>
+  /api/<channel_id>/history
+  /api/<channel_id>/youtube/recent
 """
 
 import os
@@ -16,33 +22,50 @@ from pathlib import Path
 from datetime import datetime
 from flask import (
     Flask, render_template, jsonify, request,
-    send_from_directory, abort
+    send_from_directory, abort, redirect, url_for
 )
 
 import bootstrap
-bootstrap.setup_all()  # Ortam hazırlığı burada olmalı
+bootstrap.setup_all()
 
 from zodiac import ZODIAC_SIGNS, normalize_sign, get_sign, all_sign_keys
 from pipeline import produce_and_upload, produce_all_signs
 from telegram_bot import start_background as start_telegram_bg
 from scheduler import start_scheduler
 import job_tracker as jt
+import channels as ch_registry
+import approval
 
 log = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Batch iş için ayrı durum
-_batch_state = {"running": False, "started_at": None, "finished_at": None,
-                "success_count": 0, "fail_count": 0}
+# Batch iş durumu — kanal bazlı
+_batch_state = {}
 _batch_lock = threading.Lock()
 
 
-# ── Web Paneli ──────────────────────────────────────────────────────
+# ── Sayfalar ──────────────────────────────────────────────────────
 
 @app.route("/")
 def index():
-    return render_template("dashboard.html")
+    """Giriş sayfası — kanal seçici."""
+    return render_template("landing.html")
+
+
+@app.route("/channel/<channel_id>")
+def channel_panel(channel_id):
+    """Belirli bir kanalın paneli."""
+    channel = ch_registry.get_channel(channel_id)
+    if not channel:
+        return redirect(url_for("index"))
+    return render_template("dashboard.html", channel=channel)
+
+
+@app.route("/admin/channels")
+def admin_channels():
+    """Kanal yönetim sayfası."""
+    return render_template("channels_admin.html")
 
 
 @app.route("/health")
@@ -50,10 +73,68 @@ def health():
     return jsonify({"status": "ok", "time": datetime.now().isoformat()})
 
 
-# ── REST API ────────────────────────────────────────────────────────
+# ── Kanal Yönetimi API ────────────────────────────────────────────
 
-@app.route("/api/signs")
-def api_signs():
+@app.route("/api/channels")
+def api_channels():
+    """Tüm kanalları listele."""
+    return jsonify({
+        "channels": ch_registry.list_channels(),
+        "types": ch_registry.CHANNEL_TYPES,
+    })
+
+
+@app.route("/api/channels", methods=["POST"])
+def api_channel_create():
+    """Yeni kanal ekle."""
+    data = request.get_json() or {}
+    try:
+        channel = ch_registry.add_channel(
+            channel_id=data.get("id", "").strip(),
+            name=data.get("name", "").strip(),
+            channel_type=data.get("type", "zodiac"),
+            youtube_url=data.get("youtube_url", "").strip(),
+            color=data.get("color", "#d4af37"),
+        )
+        return jsonify({"channel": channel, "status": "created"})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/channels/<channel_id>", methods=["PUT"])
+def api_channel_update(channel_id):
+    """Kanal bilgilerini güncelle."""
+    data = request.get_json() or {}
+    try:
+        channel = ch_registry.update_channel(
+            channel_id,
+            name=data.get("name"),
+            youtube_url=data.get("youtube_url"),
+            color=data.get("color"),
+        )
+        return jsonify({"channel": channel})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/channels/<channel_id>", methods=["DELETE"])
+def api_channel_delete(channel_id):
+    try:
+        channel = ch_registry.remove_channel(channel_id)
+        return jsonify({"channel": channel, "status": "deleted"})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+
+# ── Kanal Bazlı Üretim API ────────────────────────────────────────
+
+@app.route("/api/<channel_id>/signs")
+def api_channel_signs(channel_id):
+    """Kanal detayı + 12 burç listesi."""
+    channel = ch_registry.get_channel(channel_id)
+    if not channel:
+        return jsonify({"error": "Kanal bulunamadı"}), 404
+
     signs = []
     for key in all_sign_keys():
         info = get_sign(key)
@@ -67,17 +148,18 @@ def api_signs():
             "color": info["color"],
         })
     return jsonify({
+        "channel": channel,
         "signs": signs,
-        "youtube_channel_url": os.environ.get("YOUTUBE_CHANNEL_URL", ""),
     })
 
 
-@app.route("/api/produce/<sign_key>", methods=["POST"])
-def api_produce(sign_key):
-    """Bir burç için üretim başlatır (arka planda).
-    Varsayılan: require_approval=True → video üretilir, onay beklenir.
-    Body: {"require_approval": true|false}
-    """
+@app.route("/api/<channel_id>/produce/<sign_key>", methods=["POST"])
+def api_channel_produce(channel_id, sign_key):
+    """Belirli kanala bir burç video üretimi başlat."""
+    channel = ch_registry.get_channel(channel_id)
+    if not channel:
+        return jsonify({"error": "Kanal bulunamadı"}), 404
+
     key = normalize_sign(sign_key)
     if not key:
         return jsonify({"error": "Geçersiz burç"}), 400
@@ -86,34 +168,37 @@ def api_produce(sign_key):
     upload = bool(data.get("upload", True))
     require_approval = bool(data.get("require_approval", True))
 
-    if jt.is_running(key):
+    job_key = f"{channel_id}:{key}"
+    if jt.is_running(job_key):
         return jsonify({
-            "error": "Bu burç için işlem zaten çalışıyor",
-            "job": jt.get_job(key),
+            "error": "Bu kanal + burç için işlem zaten çalışıyor",
+            "job": jt.get_job(job_key),
         }), 409
 
-    jt.start_job(key, source="web")
+    jt.start_job(job_key, source="web")
 
     def run():
         try:
             produce_and_upload(
                 key, upload=upload, source="web",
                 require_approval=require_approval,
+                channel_id=channel_id,
             )
         except Exception as e:
-            log.exception(f"Web job {key} hata")
+            log.exception(f"Web job {channel_id}/{key} hata")
 
     threading.Thread(target=run, daemon=True).start()
     return jsonify({
+        "channel_id": channel_id,
         "sign_key": key,
         "status": "running",
         "require_approval": require_approval,
     })
 
 
-@app.route("/api/approve/<sign_key>", methods=["POST"])
-def api_approve(sign_key):
-    """Onay bekleyen videoyu YouTube'a yükler."""
+@app.route("/api/<channel_id>/approve/<sign_key>", methods=["POST"])
+def api_channel_approve(channel_id, sign_key):
+    """Onay bekleyeni YouTube'a yükle."""
     from pipeline import approve_and_upload
     key = normalize_sign(sign_key)
     if not key:
@@ -121,99 +206,55 @@ def api_approve(sign_key):
 
     def run():
         try:
-            approve_and_upload(key, source="web")
+            approve_and_upload(key, source="web", channel_id=channel_id)
         except Exception as e:
-            log.exception(f"Approve {key} hata")
+            log.exception(f"Approve {channel_id}/{key} hata")
 
     threading.Thread(target=run, daemon=True).start()
-    return jsonify({"sign_key": key, "status": "uploading"})
+    return jsonify({"sign_key": key, "channel_id": channel_id,
+                    "status": "uploading"})
 
 
-@app.route("/api/reject/<sign_key>", methods=["POST"])
-def api_reject(sign_key):
-    """Onay bekleyen videoyu siler."""
+@app.route("/api/<channel_id>/reject/<sign_key>", methods=["POST"])
+def api_channel_reject(channel_id, sign_key):
     from pipeline import reject_pending
     key = normalize_sign(sign_key)
     if not key:
         return jsonify({"error": "Geçersiz burç"}), 400
     try:
-        reject_pending(key, source="web")
+        reject_pending(key, source="web", channel_id=channel_id)
         return jsonify({"sign_key": key, "status": "rejected"})
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
 
-@app.route("/api/pending")
-def api_pending():
-    """Onay bekleyen tüm videoları listeler."""
-    import approval
-    return jsonify({"pending": approval.list_pending()})
+@app.route("/api/<channel_id>/pending")
+def api_channel_pending(channel_id):
+    return jsonify({"pending": approval.list_pending(channel_id=channel_id)})
 
 
-@app.route("/api/produce-all", methods=["POST"])
-def api_produce_all():
-    """12 burç için batch üretim."""
-    data = request.get_json(silent=True) or {}
-    upload = bool(data.get("upload", True))
-
-    with _batch_lock:
-        if _batch_state["running"]:
-            return jsonify({"error": "Batch zaten çalışıyor"}), 409
-        _batch_state["running"] = True
-        _batch_state["started_at"] = datetime.now().isoformat()
-        _batch_state["finished_at"] = None
-        _batch_state["success_count"] = 0
-        _batch_state["fail_count"] = 0
-
-    def run():
-        try:
-            results = produce_all_signs(upload=upload, source="web")
-            with _batch_lock:
-                _batch_state["running"] = False
-                _batch_state["finished_at"] = datetime.now().isoformat()
-                _batch_state["success_count"] = len(results["success"])
-                _batch_state["fail_count"] = len(results["failed"])
-        except Exception as e:
-            log.exception("Batch hata")
-            with _batch_lock:
-                _batch_state["running"] = False
-                _batch_state["finished_at"] = datetime.now().isoformat()
-                _batch_state["error"] = str(e)
-
-    threading.Thread(target=run, daemon=True).start()
-    return jsonify({"status": "running"})
+@app.route("/api/<channel_id>/jobs")
+def api_channel_jobs(channel_id):
+    """O kanala ait aktif işleri filtrele."""
+    prefix = f"{channel_id}:"
+    all_jobs = jt.all_jobs()
+    channel_jobs = {}
+    for key, job in all_jobs.items():
+        if key.startswith(prefix):
+            sign_only = key[len(prefix):]
+            channel_jobs[sign_only] = job
+    return jsonify({"jobs": channel_jobs, "batch": _batch_state.get(channel_id, {})})
 
 
-@app.route("/api/jobs")
-def api_jobs():
-    """Aktif ve tamamlanmış tüm işlerin snapshot'ı."""
-    return jsonify({
-        "jobs": jt.all_jobs(),
-        "batch": dict(_batch_state),
-    })
-
-
-@app.route("/api/job/<sign_key>")
-def api_job(sign_key):
-    """Tek bir burcun güncel durumu."""
-    key = normalize_sign(sign_key)
-    if not key:
-        return jsonify({"error": "Geçersiz burç"}), 400
-    job = jt.get_job(key)
-    if not job:
-        return jsonify({"job": None})
-    return jsonify({"job": job})
-
-
-@app.route("/api/history")
-def api_history():
-    """Yerel history.json dosyasından son yayınları döner."""
-    history_file = Path(os.environ.get("DATA_DIR", "data")) / "history.json"
+@app.route("/api/<channel_id>/history")
+def api_channel_history(channel_id):
+    """Kanal bazlı history."""
+    history_file = (Path(os.environ.get("DATA_DIR", "data"))
+                    / channel_id / "history.json")
     if not history_file.exists():
         return jsonify({"history": []})
     try:
         data = json.loads(history_file.read_text(encoding="utf-8"))
-        # Tarihe göre tersine sırala (en yeni önce)
         data = sorted(data, key=lambda e: e.get("generated_at", ""),
                       reverse=True)
         return jsonify({"history": data[:50]})
@@ -221,18 +262,17 @@ def api_history():
         return jsonify({"history": [], "error": str(e)})
 
 
-@app.route("/api/youtube/recent")
-def api_youtube_recent():
-    """YouTube kanalından son yüklenen videoları fetch eder.
-    history.json olmadığında (deploy sonrası) UI'a veri sağlar."""
+@app.route("/api/<channel_id>/youtube/recent")
+def api_channel_youtube_recent(channel_id):
+    """O kanalın YouTube'dan son videolarını çeker."""
     try:
         from services.youtube import get_youtube_service
-        yt = get_youtube_service()
+        yt = get_youtube_service(channel_id=channel_id)
 
         ch_resp = yt.channels().list(part="snippet,contentDetails",
                                      mine=True).execute()
         if not ch_resp.get("items"):
-            return jsonify({"videos": [], "error": "Kanal bulunamadı"})
+            return jsonify({"videos": []})
 
         channel = ch_resp["items"][0]
         uploads_playlist = channel["contentDetails"]["relatedPlaylists"]["uploads"]
@@ -255,22 +295,22 @@ def api_youtube_recent():
                 "published_at": snip.get("publishedAt", ""),
                 "thumbnail": snip.get("thumbnails", {}).get("medium", {}).get("url", ""),
             })
-
         videos.sort(key=lambda v: v.get("published_at", ""), reverse=True)
-
         return jsonify({
             "videos": videos,
             "channel_title": channel["snippet"].get("title", ""),
             "channel_url": f"https://youtube.com/channel/{channel['id']}",
         })
     except Exception as e:
-        log.exception("YouTube recent fetch hata")
+        log.exception(f"YouTube recent fetch hata ({channel_id})")
         return jsonify({"videos": [], "error": str(e)[:200]}), 500
 
 
+# ── Videoları sun ──────────────────────────────────────────────────
+
 @app.route("/output/<path:filename>")
 def serve_output(filename):
-    output_dir = Path("output").resolve()
+    output_dir = Path(os.environ.get("OUTPUT_DIR", "output")).resolve()
     file_path = (output_dir / filename).resolve()
     if not str(file_path).startswith(str(output_dir)):
         abort(403)
@@ -279,7 +319,7 @@ def serve_output(filename):
     return send_from_directory(output_dir, filename)
 
 
-# ── Başlangıç hook'u ────────────────────────────────────────────────
+# ── Arka plan servisleri ──────────────────────────────────────────
 
 _bg_started = False
 _bg_lock = threading.Lock()
