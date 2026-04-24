@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Burç Agent · Kontrol Paneli</title>
+<title>{{ channel.name }} · Burç Agent</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -517,15 +517,16 @@
 <div class="container">
   <header class="header">
     <div class="brand">
-      <div class="brand-mark">✧</div>
+      <a href="/" style="color: var(--text-muted); text-decoration: none; font-size: 1.5rem; margin-right: 0.5rem; transition: color 0.2s;" onmouseover="this.style.color='var(--gold)'" onmouseout="this.style.color='var(--text-muted)'" title="Kanallara dön">←</a>
+      <div class="brand-mark">{{ channel.icon }}</div>
       <div class="brand-text">
-        <h1>Burç <em>Agent</em></h1>
-        <p>Günlük astroloji · otomatik yayın</p>
+        <h1>{{ channel.name }}</h1>
+        <p>{{ channel.type }} · otomatik yayın</p>
       </div>
     </div>
     <div style="display: flex; align-items: center; gap: 0.75rem;">
-      <a id="channelLink" href="#" target="_blank" style="
-        display: none;
+      <a id="channelLink" href="{{ channel.youtube_url }}" target="_blank" style="
+        {% if not channel.youtube_url %}display: none;{% else %}display: inline-flex;{% endif %}
         align-items: center;
         gap: 0.5rem;
         padding: 0.5rem 1rem;
@@ -600,6 +601,10 @@
 <div class="toast-container" id="toasts"></div>
 
 <script>
+// Kanal bilgileri — Flask template'ten inject edildi
+const CHANNEL_ID = "{{ channel.id }}";
+const CHANNEL_NAME = "{{ channel.name }}";
+
 // Yıldızlar
 (function createStars() {
   const container = document.getElementById('stars');
@@ -656,7 +661,7 @@ let CHANNEL_URL = '';
 
 async function loadSigns() {
   try {
-    const res = await fetch('/api/signs');
+    const res = await fetch(`/api/${CHANNEL_ID}/signs`);
     const data = await res.json();
     SIGNS_CACHE = data.signs;
 
@@ -713,7 +718,7 @@ async function produceSingle(key, name) {
   card.classList.add('working');
 
   try {
-    const res = await fetch(`/api/produce/${key}`, {
+    const res = await fetch(`/api/${CHANNEL_ID}/produce/${key}`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({upload: true, require_approval: true}),
@@ -736,7 +741,7 @@ async function produceSingle(key, name) {
 async function approvePending(key, name) {
   if (!confirm(`${name} YouTube'a yüklensin mi?`)) return;
   try {
-    const res = await fetch(`/api/approve/${key}`, {method: 'POST'});
+    const res = await fetch(`/api/${CHANNEL_ID}/approve/${key}`, {method: 'POST'});
     const data = await res.json();
     if (res.ok) {
       toast(`${name} YouTube'a yükleniyor...`, 'info');
@@ -752,7 +757,7 @@ async function approvePending(key, name) {
 async function rejectPending(key, name) {
   if (!confirm(`${name} videosu silinsin mi?`)) return;
   try {
-    const res = await fetch(`/api/reject/${key}`, {method: 'POST'});
+    const res = await fetch(`/api/${CHANNEL_ID}/reject/${key}`, {method: 'POST'});
     const data = await res.json();
     if (res.ok) {
       toast(`${name} silindi.`, 'info');
@@ -767,7 +772,7 @@ async function rejectPending(key, name) {
 
 async function loadPending() {
   try {
-    const res = await fetch('/api/pending');
+    const res = await fetch(`/api/${CHANNEL_ID}/pending`);
     const data = await res.json();
     const pending = data.pending || {};
     const section = document.getElementById('pendingSection');
@@ -844,7 +849,7 @@ async function loadPending() {
 async function produceAll() {
   if (!confirm('12 burcun tümü üretilip yüklensin mi? (~30-60 dakika)')) return;
   try {
-    const res = await fetch('/api/produce-all', {
+    const res = await fetch(`/api/${CHANNEL_ID}/produce-all`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({upload: true}),
@@ -863,7 +868,7 @@ async function produceAll() {
 // Canlı durum — tüm job'ları poll eder
 async function pollStatus() {
   try {
-    const res = await fetch('/api/jobs');
+    const res = await fetch(`/api/${CHANNEL_ID}/jobs`);
     const data = await res.json();
     const jobs = data.jobs || {};
     const batch = data.batch || {};
@@ -970,7 +975,7 @@ async function loadHistory() {
 
 async function loadLocalHistory() {
   try {
-    const res = await fetch('/api/history');
+    const res = await fetch(`/api/${CHANNEL_ID}/history`);
     const data = await res.json();
     const list = document.getElementById('historyList');
     if (!data.history || !data.history.length) {
@@ -994,7 +999,7 @@ async function loadYoutubeHistory() {
   const list = document.getElementById('historyList');
   list.innerHTML = '<div class="empty-state">YouTube\'dan videolar çekiliyor...</div>';
   try {
-    const res = await fetch('/api/youtube/recent');
+    const res = await fetch(`/api/${CHANNEL_ID}/youtube/recent`);
     const data = await res.json();
     if (data.error || !data.videos || !data.videos.length) {
       list.innerHTML = `<div class="empty-state">YouTube'dan video çekilemedi.${data.error ? ' (' + data.error + ')' : ''}</div>`;
