@@ -17,7 +17,7 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
-PENDING_FILE = Path("data/pending.json")
+PENDING_FILE = Path(os.environ.get("DATA_DIR", "data")) / "pending.json"
 _lock = threading.Lock()
 
 
