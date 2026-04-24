@@ -1,29 +1,22 @@
 """
-YouTube Upload Servisi
-OAuth 2.0 ile kimlik doğrulama + video yükleme.
+YouTube Upload Servisi (Çoklu Kanal)
+Her kanalın kendi OAuth token'ı vardır. Token dosyaları:
+  token_<channel_id>.json
 
-Kimlik bilgileri:
-- credentials_burc.json (OAuth client bilgileri)
-- token_burc.json (ilk yetkilendirme sonrası otomatik oluşur)
+Environment variables: TOKEN_<CHANNEL_ID> (base64)
+Fallback: credentials_burc.json tüm kanallar için ortak (aynı OAuth Client).
 
-Bu dosyalar Railway'de environment variable olarak saklanır:
-- CREDENTIALS_BURC (base64)
-- TOKEN_BURC (base64)
-Uygulama başlarken bootstrap.py bunları dosyaya dönüştürür.
-
-ÖNEMLİ: Sunucuda (Railway) tarayıcı yoktur. OAuth akışı yalnızca LOKAL
-makinede başlatılabilir. Token eksikse açık ve anlaşılır hata fırlatırız.
+ÖNEMLİ: Sunucuda (Railway) tarayıcı yoktur. Token eksikse lokalde OAuth
+yapıp yeni token'i base64 olarak Railway'e taşımak gerekir.
 """
 
 import os
 import logging
-import httplib2
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
-from googleapiclient.errors import HttpError
 
 log = logging.getLogger(__name__)
 
@@ -32,89 +25,74 @@ SCOPES = [
     "https://www.googleapis.com/auth/youtube",
 ]
 
-TOKEN_FILE = "token_burc.json"
 CREDS_FILE = "credentials_burc.json"
 
 
 def _is_server_environment() -> bool:
-    """Railway, Heroku veya başka bir sunucu ortamında mıyız tespit eder.
-    Bu ortamlarda tarayıcı açılamaz, OAuth başlatılamaz."""
-    # Railway, Render, Fly vs otomatik env var'lar
-    server_markers = [
-        "RAILWAY_ENVIRONMENT",
-        "RENDER",
-        "DYNO",          # Heroku
-        "FLY_APP_NAME",
-        "K_SERVICE",     # Google Cloud Run
-    ]
-    for marker in server_markers:
+    """Railway, Heroku vb. sunucu ortamında mıyız?"""
+    for marker in ["RAILWAY_ENVIRONMENT", "RENDER", "DYNO", "FLY_APP_NAME",
+                   "K_SERVICE"]:
         if os.environ.get(marker):
             return True
-    # DISPLAY yoksa X olmayan sistem
     if os.name != "nt" and not os.environ.get("DISPLAY"):
         return True
     return False
 
 
-def get_youtube_service():
-    """YouTube API istemcisi oluşturur. Token yoksa veya süresi dolduysa yeniler.
-    Sunucuda tarayıcı açılamaz, net hata fırlatır."""
+def get_youtube_service(channel_id: str = "burc"):
+    """Belirli kanal için YouTube API istemcisi oluşturur."""
+    token_file = f"token_{channel_id}.json"
     credentials = None
 
-    if os.path.exists(TOKEN_FILE):
+    if os.path.exists(token_file):
         try:
-            credentials = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
-            log.info("token_burc.json yüklendi")
+            credentials = Credentials.from_authorized_user_file(token_file, SCOPES)
+            log.info(f"{token_file} yüklendi")
         except Exception as e:
-            log.warning(f"Token okunamadı: {e}")
-            credentials = None
+            log.warning(f"Token okunamadı ({token_file}): {e}")
     else:
-        log.warning(f"{TOKEN_FILE} bulunamadı")
+        log.warning(f"{token_file} bulunamadı")
 
-    # Token var ama geçersizse, refresh dene
     if credentials and not credentials.valid:
         if credentials.expired and credentials.refresh_token:
-            log.info("Token süresi dolmuş, yenileniyor...")
+            log.info(f"Token yenileniyor ({channel_id})...")
             try:
                 credentials.refresh(Request())
-                # Yenilenmiş token'i geri kaydet
-                with open(TOKEN_FILE, "w", encoding="utf-8") as f:
+                with open(token_file, "w", encoding="utf-8") as f:
                     f.write(credentials.to_json())
-                log.info("✅ Token yenilendi")
+                log.info(f"✅ Token yenilendi: {token_file}")
             except Exception as e:
-                log.error(f"Token yenilenemedi: {e}")
+                log.error(f"Token yenilenemedi ({channel_id}): {e}")
                 credentials = None
         else:
-            log.warning("Token geçersiz ve refresh_token yok")
+            log.warning(f"Token geçersiz ({channel_id})")
             credentials = None
 
-    # Hala credentials yoksa — OAuth başlatmak gerekir
     if not credentials:
         if _is_server_environment():
-            # Bulutta tarayıcı açamayız. Net hata.
+            token_env = f"TOKEN_{channel_id.upper().replace('-', '_')}"
             raise RuntimeError(
-                "❌ YouTube token eksik veya geçersiz. "
-                "Sunucuda OAuth akışı başlatılamaz (tarayıcı yok). "
-                "ÇÖZÜM: Lokal makinende `python -c \"from services.youtube "
-                "import get_youtube_service; get_youtube_service()\"` "
-                "çalıştır, yeni token_burc.json oluştur, onu base64'e çevir "
-                "ve Railway'de TOKEN_BURC variable'ını güncelle."
+                f"❌ '{channel_id}' için YouTube token eksik/geçersiz. "
+                f"Sunucuda OAuth başlatılamaz. "
+                f"Lokal makinende: "
+                f"`python -c \"from services.youtube import get_youtube_service; "
+                f"get_youtube_service('{channel_id}')\"` "
+                f"Sonra token_{channel_id}.json'u base64'e çevir ve Railway'de "
+                f"{token_env} variable'ını güncelle."
             )
 
-        # Lokalde — tarayıcıyı açıp OAuth akışı başlat
         if not os.path.exists(CREDS_FILE):
             raise RuntimeError(
-                f"{CREDS_FILE} bulunamadı. Google Cloud Console'dan "
-                "OAuth Desktop Client credentials indir ve proje kök "
-                "klasörüne koy."
+                f"{CREDS_FILE} bulunamadı. OAuth credentials'i "
+                f"proje kök klasörüne koy."
             )
-        log.info("Yeni OAuth akışı başlatılıyor (yerel tarayıcı açılacak)...")
+        log.info(f"Yeni OAuth akışı ({channel_id}) — tarayıcı açılacak...")
         flow = InstalledAppFlow.from_client_secrets_file(CREDS_FILE, SCOPES)
         credentials = flow.run_local_server(port=0)
 
-        with open(TOKEN_FILE, "w", encoding="utf-8") as f:
+        with open(token_file, "w", encoding="utf-8") as f:
             f.write(credentials.to_json())
-        log.info(f"✅ Token kaydedildi: {TOKEN_FILE}")
+        log.info(f"✅ Token kaydedildi: {token_file}")
 
     return build("youtube", "v3", credentials=credentials,
                  cache_discovery=False)
@@ -123,14 +101,15 @@ def get_youtube_service():
 def upload_video(video_path: str, title: str, description: str,
                  tags: list = None, category_id: str = "22",
                  privacy: str = "public",
-                 scheduled_time: str = None) -> dict:
-    """Video'yu YouTube'a yükler. Dönüş: {'id': video_id, 'url': youtube_url}."""
+                 scheduled_time: str = None,
+                 channel_id: str = "burc") -> dict:
+    """Video'yu belirli bir kanala yükler."""
     if not os.path.exists(video_path):
         raise FileNotFoundError(f"Video bulunamadı: {video_path}")
 
-    youtube = get_youtube_service()
+    youtube = get_youtube_service(channel_id=channel_id)
 
-    title = (title or "Günlük Burç Yorumu")[:100]
+    title = (title or "Günlük Yorum")[:100]
 
     snippet = {
         "title": title,
@@ -152,7 +131,7 @@ def upload_video(video_path: str, title: str, description: str,
     media = MediaFileUpload(video_path, mimetype="video/mp4",
                             resumable=True, chunksize=1024 * 1024 * 8)
 
-    log.info(f"📤 YouTube'a yükleniyor: {title}")
+    log.info(f"📤 YouTube'a yükleniyor ({channel_id}): {title}")
     request = youtube.videos().insert(
         part="snippet,status",
         body=body,
@@ -173,8 +152,4 @@ def upload_video(video_path: str, title: str, description: str,
     url = f"https://youtube.com/shorts/{video_id}"
     log.info(f"✅ Yüklendi: {url}")
 
-    return {
-        "id": video_id,
-        "url": url,
-        "title": title,
-    }
+    return {"id": video_id, "url": url, "title": title}
