@@ -780,6 +780,35 @@ async function rejectPending(key, name) {
   }
 }
 
+async function cancelJob(key, name) {
+  // Onay ekranı: o ana kadar ne harcandı?
+  let reportText = '';
+  try {
+    const r = await fetch(`/api/${CHANNEL_ID}/resources/${key}`);
+    const rd = await r.json();
+    if (rd.report) {
+      const cost = rd.report.estimated_cost_usd || 0;
+      const lines = rd.report.summary_lines || [];
+      reportText = '\n\nŞu ana kadar harcanan:\n' + lines.join('\n');
+      if (cost) reportText += `\n💸 Tahmini maliyet: ~$${cost.toFixed(3)}`;
+    }
+  } catch (e) { /* ignore */ }
+
+  if (!confirm(`${name} üretimi iptal edilsin mi?${reportText}`)) return;
+
+  try {
+    const res = await fetch(`/api/${CHANNEL_ID}/cancel/${key}`, {method: 'POST'});
+    const data = await res.json();
+    if (data.cancelled) {
+      toast(`${name} iptal edildi.`, 'info');
+    } else {
+      toast(`${name} zaten tamamlanmış veya aktif değil.`, 'info');
+    }
+  } catch (e) {
+    toast('İptal hatası: ' + e.message, 'error');
+  }
+}
+
 async function loadPending() {
   try {
     const res = await fetch(`/api/${CHANNEL_ID}/pending`);
@@ -947,7 +976,7 @@ async function pollStatus() {
         const provider = job.provider ? ` · ${job.provider}` : '';
 
         row.innerHTML = `
-          <div class="job-row-symbol">${signInfo?.symbol || '✦'}</div>
+          <div class="job-row-symbol">${signInfo?.symbol || signInfo?.icon || '✦'}</div>
           <div class="job-row-content">
             <div class="job-row-title">
               <strong>${signInfo?.name || key}</strong>
@@ -957,6 +986,23 @@ async function pollStatus() {
             <div class="job-row-stage">${STAGE_ICONS[job.stage] || '⟳'} ${job.stage_label || 'hazırlanıyor'}${provider}</div>
             ${job.progress_detail ? '<div class="job-row-detail">' + escapeHtml(job.progress_detail) + '</div>' : ''}
             <div class="job-progress"><div class="job-progress-fill" style="width: ${progress}%"></div></div>
+            <div style="margin-top: 0.5rem;">
+              <button onclick="cancelJob('${key}', '${escapeHtml(signInfo?.name || key)}')" style="
+                padding: 0.375rem 0.875rem;
+                background: transparent;
+                color: var(--danger);
+                border: 1px solid var(--danger);
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 0.75rem;
+                letter-spacing: 0.05em;
+                text-transform: uppercase;
+                transition: all 0.2s ease;
+              " onmouseover="this.style.background='var(--danger)';this.style.color='white'"
+                 onmouseout="this.style.background='transparent';this.style.color='var(--danger)'">
+                ⛔ İptal Et
+              </button>
+            </div>
           </div>
         `;
         list.appendChild(row);
