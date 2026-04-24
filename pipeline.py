@@ -191,6 +191,33 @@ def produce_content(
         content["intro_text"] = module.get_intro_text(topic_key, content)
         content["outro_text"] = module.get_outro_text(topic_key, content)
         content["lucky_card"] = module.get_lucky_card(topic_key, content)
+
+        # Video template meta bilgileri — video.py bunları okur
+        # Motivasyon: kategori adı ve icon, Burç: sign_name + sembol
+        meta = getattr(module, "CHANNEL_META", {})
+        type_id = meta.get("type_id", "zodiac")
+
+        if type_id == "zodiac":
+            # Burç için mevcut sistem — LLM zaten sign_name/sign_symbol dolduruyor
+            content["intro_subtitle"] = "Günlük Burç Yorumu"
+        elif type_id == "motivation":
+            # Motivasyon için topic meta bilgilerini intro'ya yerleştir
+            topics = module.get_topics()
+            topic = next((t for t in topics if t["key"] == topic_key), None)
+            if topic:
+                content["main_label"] = topic["name"]
+                content["main_icon"] = topic.get("emoji",
+                                                 topic.get("icon", "✨"))
+            content["intro_subtitle"] = "Günün İlhamı"
+            # Burç alanlarını temizle — lucky_bar burç kartı çizmesin
+            content["sign_name"] = ""
+            content["sign_symbol"] = ""
+            content["lucky_number"] = ""
+            content["lucky_color"] = ""
+            content["compatible_sign"] = ""
+        else:
+            content["intro_subtitle"] = meta.get("type_name", "Günlük İçerik")
+
         content["provider"] = provider
         content["generated_at"] = datetime.now().isoformat()
 
