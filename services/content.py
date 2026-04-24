@@ -2,6 +2,7 @@
 İçerik Üretim Servisi
 Claude → Gemini → Groq fallback zinciri ile günlük burç yorumu üretir.
 Her LLM çağrısı ayrı fonksiyon, hata ayıklaması kolay.
+Üretilen metin post-process ile imla hatalarından arındırılır.
 """
 
 import os
@@ -12,6 +13,7 @@ from datetime import datetime
 from typing import Optional
 
 from zodiac import get_sign
+from services.text_cleaner import clean_content
 
 log = logging.getLogger(__name__)
 
@@ -35,6 +37,41 @@ bir günlük yorum yaz. Astroloji dilini akıcı Türkçe kullan, klişelerden
 kaçın ("dikkatli ol", "fırsatlar kapıda" gibi bayat ifadeler kullanma).
 
 Son kullanılan temalar (BUNLARI TEKRARLAMA): {used}
+
+══════════════════════════════════════════════════════════════════
+TÜRKÇE İMLA VE YAZIM KURALLARI — KESİNLİKLE UYGULA
+══════════════════════════════════════════════════════════════════
+
+1. BAĞLAÇLARIN YAZIMI:
+   ✅ "de / da" bağlacı AYRI yazılır: "bugün de", "sen de", "bu da"
+   ❌ YANLIŞ: "bugünde" (kelimede bağlaç anlamı varsa ayrı)
+   ✅ "ki" bağlacı AYRI yazılır: "inan ki", "öyle ki"
+   ✅ "mi / mı / mu / mü" soru eki AYRI: "geliyor mu", "olur mu"
+
+2. BİRLEŞİK KELİMELER:
+   ✅ "bir şey" (ayrı), "hiçbir", "herhangi", "herkes"
+   ✅ "hâlâ" (şapkalı a), "kâr", "kâğıt", "lâzım"
+
+3. YAYGIN HATALAR (KESİNLİKLE YAPMA):
+   ❌ "yalnış" → ✅ "yanlış"
+   ❌ "herkez" → ✅ "herkes"
+   ❌ "yanlız" → ✅ "yalnız"
+   ❌ "çünki" → ✅ "çünkü"
+   ❌ "eğerki" → ✅ "eğer"
+   ❌ "birşey" → ✅ "bir şey"
+   ❌ "hiçbirşey" → ✅ "hiçbir şey"
+
+4. NOKTALAMA:
+   - Her cümle nokta, soru veya ünlem ile bitsin
+   - Virgülden ve noktadan sonra bir boşluk bırak
+   - Tırnak ("") kullanma — JSON yapısını bozar
+
+5. TTS İÇİN:
+   - Rakamları yazıyla yaz: 3 → "üç"
+   - Kısaltma yapma: "vs." → "ve benzerleri"
+   - Akıcı ve doğal cümleler — okunurken doğal tınlasın
+
+══════════════════════════════════════════════════════════════════
 
 Sadece JSON döndür (başka hiçbir şey yazma):
 {{
@@ -202,6 +239,9 @@ def generate_content(sign_key: str, used_themes: list = None) -> dict:
             raw = fn(prompt)
             content = _parse_json(raw)
             log.info(f"  ✅ {name} başarılı")
+
+            # Türkçe imla post-processing
+            content = clean_content(content)
 
             # Meta bilgileri ekle
             content.update({
