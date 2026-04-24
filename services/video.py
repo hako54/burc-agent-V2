@@ -231,9 +231,17 @@ def _add_text_overlay(frame_arr, t: float, text: str, seg_dur: float,
 
 
 def _add_lucky_bar(frame_arr, t: float, duration: float, accent_hex: str,
-                   lucky_number: str, lucky_color: str,
-                   compatible_sign: str) -> np.ndarray:
-    """Son segment için şanslı sayı/renk/uyumlu burç bilgi kartı."""
+                   card: dict = None) -> np.ndarray:
+    """Son segment için alt bilgi kartı. card dict yapısı:
+    - type: 'triple' → 3 sütun (şanslı sayı/renk/uyumlu burç)
+      {'type':'triple', 'col1':(label,val), 'col2':..., 'col3':...}
+    - type: 'single' → tek mesaj (motivasyon key message)
+      {'type':'single', 'label':'...', 'value':'...'}
+    card None veya boşsa hiçbir şey çizmez.
+    """
+    if not card:
+        return frame_arr
+
     img = Image.fromarray(frame_arr).convert("RGBA")
     overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
@@ -243,43 +251,77 @@ def _add_lucky_bar(frame_arr, t: float, duration: float, accent_hex: str,
     fo = _ease_out((duration - t) / 0.4) if t > duration - 0.4 else 1.0
     alpha = min(fi, fo)
 
-    card_y = H - 560
-    card_h = 260
-    draw.rounded_rectangle(
-        [60, card_y, W - 60, card_y + card_h],
-        radius=24, fill=(0, 0, 0, int(200 * alpha)),
-        outline=(*ac, int(200 * alpha)), width=3
-    )
+    card_type = card.get("type", "triple")
 
-    cols = [
-        ("ŞANSLI SAYI", str(lucky_number)),
-        ("ŞANSLI RENK", str(lucky_color)),
-        ("UYUMLU BURÇ", str(compatible_sign)),
-    ]
-    col_w = (W - 120) // 3
-    lf = _get_font(24)
-    vf = _get_font(42)
+    if card_type == "triple":
+        # Klasik 3 sütun (burç)
+        cols = [
+            card.get("col1", ("", "")),
+            card.get("col2", ("", "")),
+            card.get("col3", ("", "")),
+        ]
+        card_y = H - 560
+        card_h = 260
+        draw.rounded_rectangle(
+            [60, card_y, W - 60, card_y + card_h],
+            radius=24, fill=(0, 0, 0, int(200 * alpha)),
+            outline=(*ac, int(200 * alpha)), width=3
+        )
+        col_w = (W - 120) // 3
+        lf = _get_font(24)
+        vf = _get_font(42)
 
-    for i, (label, val) in enumerate(cols):
-        cx = 60 + col_w * i + col_w // 2
+        for i, (label, val) in enumerate(cols):
+            cx = 60 + col_w * i + col_w // 2
+            lb = draw.textbbox((0, 0), str(label), font=lf)
+            draw.text((cx - lb[2] // 2, card_y + 40), str(label), font=lf,
+                      fill=(200, 200, 200, int(230 * alpha)))
+            vb = draw.textbbox((0, 0), str(val), font=vf)
+            draw.text((cx - vb[2] // 2, card_y + 100), str(val), font=vf,
+                      fill=(*ac, int(250 * alpha)))
+            if i < 2:
+                dx = 60 + col_w * (i + 1)
+                draw.line([(dx, card_y + 40), (dx, card_y + card_h - 40)],
+                          fill=(*ac, int(120 * alpha)), width=2)
+    elif card_type == "single":
+        # Tek büyük mesaj (motivasyon)
+        label = str(card.get("label", ""))
+        value = str(card.get("value", ""))
+        card_y = H - 480
+        card_h = 260
+        draw.rounded_rectangle(
+            [60, card_y, W - 60, card_y + card_h],
+            radius=24, fill=(0, 0, 0, int(210 * alpha)),
+            outline=(*ac, int(220 * alpha)), width=3
+        )
+        # Label üstte
+        lf = _get_font(24)
         lb = draw.textbbox((0, 0), label, font=lf)
-        draw.text((cx - lb[2] // 2, card_y + 40), label, font=lf,
-                  fill=(200, 200, 200, int(230 * alpha)))
-        vb = draw.textbbox((0, 0), val, font=vf)
-        draw.text((cx - vb[2] // 2, card_y + 100), val, font=vf,
-                  fill=(*ac, int(250 * alpha)))
-        if i < 2:
-            dx = 60 + col_w * (i + 1)
-            draw.line([(dx, card_y + 40), (dx, card_y + card_h - 40)],
-                      fill=(*ac, int(120 * alpha)), width=2)
+        lx = (W - lb[2]) // 2
+        draw.text((lx, card_y + 30), label, font=lf,
+                  fill=(*ac, int(230 * alpha)))
+        # Value altta, wrap ile
+        vf = _get_font(34)
+        lines = _wrap_text(draw, value, vf, W - 180)[:3]
+        lh = int(34 * 1.35)
+        th = len(lines) * lh
+        ty = card_y + 85 + max(0, (card_h - 85 - th) // 2)
+        for line in lines:
+            lb = draw.textbbox((0, 0), line, font=vf)
+            lx = (W - lb[2]) // 2
+            draw.text((lx, ty), line, font=vf,
+                      fill=(255, 245, 220, int(250 * alpha)))
+            ty += lh
 
     result = Image.alpha_composite(img, overlay)
     return np.array(result.convert("RGB"))
 
 
 def _make_intro_clip(duration: float, sign_name: str, sign_symbol: str,
-                     accent_hex: str, bg_hex: str) -> VideoClip:
-    """Burç sembolü + adı gösteren dinamik intro klibi."""
+                     accent_hex: str, bg_hex: str,
+                     subtitle: str = "Günlük Yorum") -> VideoClip:
+    """Dinamik intro klibi. subtitle kanal tipine göre değişir
+    (Burç: 'Günlük Burç Yorumu', Motivasyon: 'Bugünün İlhamı' vs.)."""
     ac = _hex_to_rgb(accent_hex)
     try:
         bg = _hex_to_rgb(bg_hex)
@@ -356,8 +398,8 @@ def _make_intro_clip(duration: float, sign_name: str, sign_symbol: str,
         d.text((dx, dy), datestr, font=df,
                fill=(220, 220, 220, int(230 * alpha)))
 
-        # Alt başlık
-        sub = "Günlük Burç Yorumu"
+        # Alt başlık — kanal tipine göre dinamik
+        sub = subtitle
         sbf = _get_font(30)
         sbb = d.textbbox((0, 0), sub.upper(), font=sbf)
         sbw = sbb[2]
@@ -474,13 +516,29 @@ def render_video(content: dict, output_path: str,
         if cancel_mgr and sign_key:
             cancel_mgr.check_is_cancelled(sign_key)
 
-    sign_name = content.get("sign_name", "")
-    sign_symbol = content.get("sign_symbol", "")
+    # Kanal tipine göre ana başlık ve sembol
+    # Burç: sign_name, sign_symbol (♈♉♊...)
+    # Motivasyon: topic_label, icon (🏆🎯🧘...)
+    # Generic: content.main_label, content.main_icon
+    sign_name = (content.get("main_label")
+                 or content.get("sign_name")
+                 or content.get("topic_label", ""))
+    sign_symbol = (content.get("main_icon")
+                   or content.get("sign_symbol", "")
+                   or content.get("topic_icon", ""))
+    # Intro alt yazısı — kanal tipine göre
+    intro_subtitle = content.get("intro_subtitle", "Günlük Yorum")
+
     segments = content.get("segments", [])[:6]
     accent = content.get("accent_color", "#7c3aed")
     bg = content.get("background_color", "#15081f")
     queries = content.get("pexels_queries", [])
 
+    # Lucky card — kanal modülünden gelen lucky_card yapısına göre
+    # (type: "triple" = burç 3 sütun, type: "single" = motivasyon tek mesaj)
+    lucky_card = content.get("lucky_card")
+
+    # Geriye uyumluluk — eski zodiac yapısı
     lucky_num = content.get("lucky_number", "")
     lucky_col = content.get("lucky_color", "")
     compat = content.get("compatible_sign", "")
@@ -576,7 +634,9 @@ def render_video(content: dict, output_path: str,
 
         def make_frame(t, _img=img_arr, _txt=narration_text, _sd=sd,
                        _zi=zoom_in, _dir=direction, _i=i, _sh=show_hdr,
-                       _sec=section_label, _last=is_last):
+                       _sec=section_label, _last=is_last,
+                       _card=lucky_card, _ln=lucky_num,
+                       _lc=lucky_col, _cp=compat):
             frame = _ken_burns(Image.fromarray(_img), t, _sd, _zi, _dir)
             frame = _add_text_overlay(
                 frame, t, _txt, _sd, accent,
@@ -586,12 +646,16 @@ def render_video(content: dict, output_path: str,
                 show_header=_sh,
             )
             if _last:
-                frame = _add_lucky_bar(
-                    frame, t, _sd, accent,
-                    lucky_number=lucky_num,
-                    lucky_color=lucky_col,
-                    compatible_sign=compat,
-                )
+                card = _card
+                if not card and (_ln or _lc or _cp):
+                    card = {
+                        "type": "triple",
+                        "col1": ("ŞANSLI SAYI", _ln),
+                        "col2": ("ŞANSLI RENK", _lc),
+                        "col3": ("UYUMLU BURÇ", _cp),
+                    }
+                if card:
+                    frame = _add_lucky_bar(frame, t, _sd, accent, card=card)
             return frame
 
         aclip = seg_audio_clips[i]
@@ -602,7 +666,8 @@ def render_video(content: dict, output_path: str,
         clips.append(vc)
 
     # 4) Intro/outro
-    intro_clip = _make_intro_clip(intro_dur, sign_name, sign_symbol, accent, bg)
+    intro_clip = _make_intro_clip(intro_dur, sign_name, sign_symbol,
+                                  accent, bg, subtitle=intro_subtitle)
     outro_clip = _make_outro_clip(2.8, sign_name, accent, bg)
 
     intro_audio_end = min(intro_dur, intro_audio.duration + 0.3)
