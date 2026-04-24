@@ -130,48 +130,64 @@ def api_channel_delete(channel_id):
 
 @app.route("/api/<channel_id>/signs")
 def api_channel_signs(channel_id):
-    """Kanal detayı + 12 burç listesi."""
+    """Kanal detayı + konu listesi (content_type'a göre)."""
     channel = ch_registry.get_channel(channel_id)
     if not channel:
         return jsonify({"error": "Kanal bulunamadı"}), 404
 
-    signs = []
-    for key in all_sign_keys():
-        info = get_sign(key)
-        signs.append({
-            "key": key,
-            "name": info["name"],
-            "symbol": info["symbol"],
-            "emoji": info["emoji"],
-            "element": info["element"],
-            "dates": info["dates"],
-            "color": info["color"],
-        })
+    from content_types import get_content_type
+    content_type = get_content_type(channel.get("type", "zodiac"), channel)
+    topics = content_type.get_topics()
+
+    # Geriye uyumluluk için eski "signs" formatında da veriyoruz
+    signs = [
+        {
+            "key": t["key"],
+            "name": t["name"],
+            "symbol": t.get("icon", t.get("emoji", "✨")),
+            "emoji": t.get("emoji", t.get("icon", "✨")),
+            "element": t.get("meta", ""),
+            "dates": t.get("subtitle", ""),
+            "color": t.get("color", "#d4af37"),
+        }
+        for t in topics
+    ]
     return jsonify({
         "channel": channel,
         "signs": signs,
+        "topics": topics,
+        "content_type": {
+            "id": content_type.type_id,
+            "name": content_type.type_name,
+            "icon": content_type.type_icon,
+            "supports_manual": content_type.supports_manual,
+            "supports_auto": content_type.supports_auto,
+        },
     })
 
 
 @app.route("/api/<channel_id>/produce/<sign_key>", methods=["POST"])
 def api_channel_produce(channel_id, sign_key):
-    """Belirli kanala bir burç video üretimi başlat."""
+    """Belirli kanala bir konu video üretimi başlat.
+    Body: {"upload": bool, "require_approval": bool, "custom_topic": str}
+    """
     channel = ch_registry.get_channel(channel_id)
     if not channel:
         return jsonify({"error": "Kanal bulunamadı"}), 404
 
-    key = normalize_sign(sign_key)
+    key = (sign_key or "").lower().strip()
     if not key:
-        return jsonify({"error": "Geçersiz burç"}), 400
+        return jsonify({"error": "Konu anahtarı eksik"}), 400
 
     data = request.get_json(silent=True) or {}
     upload = bool(data.get("upload", True))
     require_approval = bool(data.get("require_approval", True))
+    custom_topic = (data.get("custom_topic") or "").strip() or None
 
     job_key = f"{channel_id}:{key}"
     if jt.is_running(job_key):
         return jsonify({
-            "error": "Bu kanal + burç için işlem zaten çalışıyor",
+            "error": "Bu kanal + konu için işlem zaten çalışıyor",
             "job": jt.get_job(job_key),
         }), 409
 
@@ -179,10 +195,12 @@ def api_channel_produce(channel_id, sign_key):
 
     def run():
         try:
-            produce_and_upload(
-                key, upload=upload, source="web",
+            from pipeline import produce_content
+            produce_content(
+                channel_id=channel_id, topic_key=key,
+                custom_topic=custom_topic,
+                upload=upload, source="web",
                 require_approval=require_approval,
-                channel_id=channel_id,
             )
         except Exception as e:
             log.exception(f"Web job {channel_id}/{key} hata")
@@ -198,15 +216,15 @@ def api_channel_produce(channel_id, sign_key):
 
 @app.route("/api/<channel_id>/approve/<sign_key>", methods=["POST"])
 def api_channel_approve(channel_id, sign_key):
-    """Onay bekleyeni YouTube'a yükle."""
     from pipeline import approve_and_upload
-    key = normalize_sign(sign_key)
+    key = (sign_key or "").lower().strip()
     if not key:
-        return jsonify({"error": "Geçersiz burç"}), 400
+        return jsonify({"error": "Konu eksik"}), 400
 
     def run():
         try:
-            approve_and_upload(key, source="web", channel_id=channel_id)
+            approve_and_upload(topic_key=key, channel_id=channel_id,
+                               source="web")
         except Exception as e:
             log.exception(f"Approve {channel_id}/{key} hata")
 
@@ -218,11 +236,11 @@ def api_channel_approve(channel_id, sign_key):
 @app.route("/api/<channel_id>/reject/<sign_key>", methods=["POST"])
 def api_channel_reject(channel_id, sign_key):
     from pipeline import reject_pending
-    key = normalize_sign(sign_key)
+    key = (sign_key or "").lower().strip()
     if not key:
-        return jsonify({"error": "Geçersiz burç"}), 400
+        return jsonify({"error": "Konu eksik"}), 400
     try:
-        reject_pending(key, source="web", channel_id=channel_id)
+        reject_pending(topic_key=key, channel_id=channel_id, source="web")
         return jsonify({"sign_key": key, "status": "rejected"})
     except Exception as e:
         return jsonify({"error": str(e)}), 400
