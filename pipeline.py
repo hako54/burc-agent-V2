@@ -6,7 +6,8 @@ Tek bir burç için tüm akışı yönetir:
 3. YouTube upload
 
 İlerleme aşamaları job_tracker'a bildirilir, böylece hem web panel
-hem telegram canlı durumu görebilir.
+hem telegram canlı durumu görebilir. Web'den tetiklenen işlerin de
+özeti Telegram'a gönderilir.
 """
 
 import os
@@ -24,8 +25,21 @@ import approval
 
 log = logging.getLogger(__name__)
 
-DATA_DIR = Path("data")
-OUTPUT_DIR = Path("output")
+
+def _tg_notify(text: str):
+    """Web/scheduler kaynaklı olayları Telegram'a bildirir.
+    telegram_bot import'u burada yapılıyor (döngüsel import engellemek için)."""
+    try:
+        from telegram_bot import send as tg_send
+        tg_send(text)
+    except Exception as e:
+        log.warning(f"Telegram notify hata: {e}")
+
+
+# Railway'de Volume mount edilirse oraya kaydet (persistent).
+# DATA_DIR env var set edilmişse onu kullan, yoksa yerel 'data/'.
+DATA_DIR = Path(os.environ.get("DATA_DIR", "data"))
+OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", "output"))
 HISTORY_FILE = DATA_DIR / "history.json"
 THEMES_FILE = DATA_DIR / "used_themes.json"
 
@@ -97,6 +111,13 @@ def produce_and_upload(sign_input: str, upload: bool = True,
     log.info(f"{'='*50}")
     log.info(f"🔮 {info['emoji']} {info['name']} üretim başlıyor ({source})")
 
+    # Web'den tetiklendiyse Telegram'a bildir
+    if source == "web":
+        _tg_notify(
+            f"🌐 <b>Panelden üretim başladı</b>\n"
+            f"{info['emoji']} <b>{info['name']}</b>"
+        )
+
     # Job başlat (zaten başlatılmadıysa)
     if not jt.get_job(sign_key) or not jt.is_running(sign_key):
         jt.start_job(sign_key, source=source)
@@ -131,9 +152,18 @@ def produce_and_upload(sign_input: str, upload: bool = True,
             result["status"] = "pending_approval"
             result["awaiting_approval"] = True
             _save_to_history(result)
-            # İş durumunu "done" yerine özel bir durumla işaretle
             jt.finish_job(sign_key, result=result)
             log.info(f"⏸ {info['name']} onay bekliyor")
+
+            # Web'den tetiklendiyse Telegram'a bildir
+            if source == "web":
+                _tg_notify(
+                    f"🌐 <b>Panelden üretildi — onay bekliyor</b>\n"
+                    f"{info['emoji']} <b>{info['name']}</b>\n"
+                    f"📝 {content.get('title', '')[:80]}\n"
+                    f"🤖 {content.get('provider', '?')}\n\n"
+                    f"Panelden yayınla/iptal edebilirsin."
+                )
             return result
 
         # 3b) YouTube upload (normal akış)
@@ -172,6 +202,14 @@ def produce_and_upload(sign_input: str, upload: bool = True,
             result["youtube_id"] = upload_result["id"]
             result["youtube_url"] = upload_result["url"]
 
+            if source == "web":
+                _tg_notify(
+                    f"🌐 <b>Panelden yayınlandı</b>\n"
+                    f"{info['emoji']} <b>{info['name']}</b> yayında!\n"
+                    f"📝 {content.get('title', '')[:80]}\n"
+                    f"🔗 {upload_result['url']}"
+                )
+
         _save_to_history(result)
         jt.finish_job(sign_key, result=result)
         log.info(f"🎉 {info['name']} tamamlandı\n")
@@ -180,6 +218,11 @@ def produce_and_upload(sign_input: str, upload: bool = True,
     except Exception as e:
         log.exception(f"❌ {info['name']} başarısız")
         jt.finish_job(sign_key, error=str(e))
+        if source == "web":
+            _tg_notify(
+                f"🌐 <b>Panelden üretim hatası</b>\n"
+                f"{info['emoji']} {info['name']}: {str(e)[:150]}"
+            )
         raise
 
 
@@ -262,15 +305,28 @@ def approve_and_upload(sign_input: str, source: str = "telegram") -> dict:
         _save_to_history(result)
         jt.finish_job(sign_key, result=result)
         log.info(f"✅ {info['name']} onaylanıp yüklendi: {upload_result['url']}")
+
+        # Web'den tetiklendiyse Telegram'a da bildir
+        if source == "web":
+            _tg_notify(
+                f"🌐 <b>Panelden yayınlandı</b>\n"
+                f"{info['emoji']} <b>{info['name']}</b> yayında!\n"
+                f"🔗 {upload_result['url']}"
+            )
         return result
 
     except Exception as e:
         log.exception(f"approve_and_upload {sign_key} hata")
         jt.finish_job(sign_key, error=str(e))
+        if source == "web":
+            _tg_notify(
+                f"❌ <b>Panelden yayın hatası</b>\n"
+                f"{info['emoji']} {info['name']}: {str(e)[:150]}"
+            )
         raise
 
 
-def reject_pending(sign_input: str) -> dict:
+def reject_pending(sign_input: str, source: str = "telegram") -> dict:
     """Onay bekleyen videoyu reddeder ve siler."""
     sign_key = normalize_sign(sign_input)
     if not sign_key:
@@ -279,6 +335,13 @@ def reject_pending(sign_input: str) -> dict:
     item = approval.remove_pending(sign_key, delete_file=True)
     if not item:
         raise ValueError(f"{sign_key} için onay bekleyen video yok.")
+
+    if source == "web":
+        info = get_sign(sign_key)
+        _tg_notify(
+            f"🌐 <b>Panelden iptal edildi</b>\n"
+            f"{info['emoji']} <b>{info['name']}</b> silindi."
+        )
     return item
 
 
