@@ -40,8 +40,7 @@ CHANNEL_TYPES = {
 
 
 def _default_channels() -> list:
-    """Varsayılan tek bir burç kanalı. İlk kurulumda bu kullanılır.
-    Env var'daki eski tek-kanal ayarlarını taşır."""
+    """Varsayılan tek bir burç kanalı."""
     return [
         {
             "id": "burc",
@@ -53,9 +52,37 @@ def _default_channels() -> list:
             "token_env": "TOKEN_BURC",
             "token_file": "token_burc.json",
             "data_subdir": "burc",
+            "auto_schedule": True,
+            "voice_id": "XB0fDUnXU5powFXDhCwa",   # Charlotte - sakin mistik
+            "voice_stability": 0.50,
+            "voice_style": 0.35,
+            "voice_speed": 0.95,
             "created_at": datetime.now().isoformat(),
         }
     ]
+
+
+# Content type'a göre önerilen voice default'ları
+_TYPE_VOICE_DEFAULTS = {
+    "zodiac": {
+        "voice_id": "XB0fDUnXU5powFXDhCwa",  # Charlotte
+        "voice_stability": 0.50,
+        "voice_style": 0.35,
+        "voice_speed": 0.95,
+    },
+    "motivation": {
+        "voice_id": "21m00Tcm4TlvDq8ikWAM",  # Rachel
+        "voice_stability": 0.45,
+        "voice_style": 0.50,    # daha duygusal
+        "voice_speed": 0.96,
+    },
+    "custom": {
+        "voice_id": "21m00Tcm4TlvDq8ikWAM",
+        "voice_stability": 0.50,
+        "voice_style": 0.40,
+        "voice_speed": 1.00,
+    },
+}
 
 
 def _load_channels() -> list:
@@ -95,7 +122,12 @@ def get_channel(channel_id: str) -> Optional[dict]:
 
 
 def add_channel(channel_id: str, name: str, channel_type: str,
-                youtube_url: str = "", color: str = "#d4af37") -> dict:
+                youtube_url: str = "", color: str = "#d4af37",
+                auto_schedule: bool = False,
+                voice_id: str = "",
+                voice_stability: float = None,
+                voice_style: float = None,
+                voice_speed: float = None) -> dict:
     """Yeni kanal ekle."""
     if channel_type not in CHANNEL_TYPES:
         raise ValueError(
@@ -103,13 +135,17 @@ def add_channel(channel_id: str, name: str, channel_type: str,
             f"Geçerli: {', '.join(CHANNEL_TYPES.keys())}"
         )
 
-    # ID normalize et — sadece küçük harf, rakam, tire
     channel_id = "".join(
         c if c.isalnum() or c == "-" else "-"
         for c in channel_id.lower().strip()
     )
     if not channel_id:
         raise ValueError("Geçerli bir kanal ID'si ver")
+
+    # Content type'a göre voice default'ları
+    voice_defaults = _TYPE_VOICE_DEFAULTS.get(
+        channel_type, _TYPE_VOICE_DEFAULTS["custom"]
+    )
 
     with _lock:
         channels = _load_channels()
@@ -129,16 +165,44 @@ def add_channel(channel_id: str, name: str, channel_type: str,
             "token_env": token_env,
             "token_file": token_file,
             "data_subdir": channel_id,
+            "auto_schedule": bool(auto_schedule),
+            "voice_id": voice_id or voice_defaults["voice_id"],
+            "voice_stability": (voice_stability
+                               if voice_stability is not None
+                               else voice_defaults["voice_stability"]),
+            "voice_style": (voice_style
+                           if voice_style is not None
+                           else voice_defaults["voice_style"]),
+            "voice_speed": (voice_speed
+                           if voice_speed is not None
+                           else voice_defaults["voice_speed"]),
             "created_at": datetime.now().isoformat(),
         }
         channels.append(new_channel)
         _save_channels(channels)
 
-        # Kanal klasörünü oluştur
         (DATA_DIR / channel_id).mkdir(parents=True, exist_ok=True)
 
         log.info(f"Yeni kanal eklendi: {channel_id}")
         return new_channel
+
+
+def update_channel(channel_id: str, **updates) -> dict:
+    """Kanal bilgilerini güncelle."""
+    allowed = {
+        "name", "youtube_url", "color", "auto_schedule",
+        "voice_id", "voice_stability", "voice_style", "voice_speed",
+    }
+    with _lock:
+        channels = _load_channels()
+        for ch in channels:
+            if ch["id"] == channel_id:
+                for k, v in updates.items():
+                    if k in allowed and v is not None:
+                        ch[k] = v
+                _save_channels(channels)
+                return ch
+        raise ValueError(f"Kanal bulunamadı: {channel_id}")
 
 
 def remove_channel(channel_id: str) -> dict:
@@ -154,21 +218,6 @@ def remove_channel(channel_id: str) -> dict:
         _save_channels(channels)
         log.info(f"Kanal silindi: {channel_id}")
         return channel
-
-
-def update_channel(channel_id: str, **updates) -> dict:
-    """Kanal bilgilerini güncelle (name, youtube_url, color)."""
-    allowed = {"name", "youtube_url", "color"}
-    with _lock:
-        channels = _load_channels()
-        for ch in channels:
-            if ch["id"] == channel_id:
-                for k, v in updates.items():
-                    if k in allowed:
-                        ch[k] = v
-                _save_channels(channels)
-                return ch
-        raise ValueError(f"Kanal bulunamadı: {channel_id}")
 
 
 def channel_data_dir(channel_id: str) -> Path:

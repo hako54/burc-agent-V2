@@ -289,6 +289,54 @@ def cmd_iptal(chat_id: str, sign_input: str):
         send(f"ℹ️ {str(e)[:200]}", chat_id)
 
 
+def cmd_durdur(chat_id: str, sign_input: str):
+    """Çalışan üretimi iptal eder (render/upload durur)."""
+    import cancel_manager
+    if not sign_input:
+        # Tüm çalışan işleri listele
+        jobs = jt.all_jobs()
+        running = {k: v for k, v in jobs.items() if v.get("status") == "running"}
+        if not running:
+            send("⏹ Çalışan iş yok.", chat_id)
+            return
+        lines = ["⚙ <b>Çalışan işler:</b>", ""]
+        for job_key, job in running.items():
+            # job_key: "channel_id:topic" formatında
+            if ":" in job_key:
+                ch, topic = job_key.split(":", 1)
+                lines.append(f"  🔹 /durdur {topic} ({ch})")
+            else:
+                lines.append(f"  🔹 /durdur {job_key}")
+        send("\n".join(lines), chat_id)
+        return
+
+    sign_key = normalize_sign(sign_input) or sign_input.lower().strip()
+
+    # Varsayılan kanal "burc" — ama birden fazla kanalda aynı topic çalışıyorsa
+    # tümünü iptal et
+    cancelled_any = False
+    jobs = jt.all_jobs()
+    for job_key in list(jobs.keys()):
+        if ":" in job_key:
+            _, topic = job_key.split(":", 1)
+            if topic == sign_key and jobs[job_key].get("status") == "running":
+                report = cancel_manager.get_resource_report(job_key)
+                cost = report.get("estimated_cost_usd", 0) if report else 0
+                lines = report.get("summary_lines", []) if report else []
+                cancel_manager.cancel_job(job_key)
+                summary = "\n".join(lines)
+                send(
+                    f"⛔ <b>{sign_key.capitalize()}</b> iptal edildi\n"
+                    f"💸 Harcanan: ~${cost:.3f}\n"
+                    f"{summary}",
+                    chat_id,
+                )
+                cancelled_any = True
+
+    if not cancelled_any:
+        send(f"ℹ️ {sign_key.capitalize()} için aktif iş yok.", chat_id)
+
+
 def cmd_bekleyenler(chat_id: str):
     """Onay bekleyen tüm videoları listeler."""
     pending = approval.list_pending()
@@ -420,11 +468,13 @@ def cmd_yardim(chat_id: str):
         "/yayinla &lt;burç&gt; — Onaylıyı YouTube'a yükle\n"
         "/iptal &lt;burç&gt; — Onay bekleyeni sil\n"
         "/bekleyenler — Onay bekleyenleri listele\n\n"
+        "⛔ <b>Çalışan üretimi durdur:</b>\n"
+        "/durdur &lt;burç&gt; — Devam eden üretimi iptal et\n"
+        "/durdur (argümansız) — Çalışan işleri listele\n\n"
         "🌟 <b>Batch (onaysız):</b>\n"
         "/tumburclar — 12 burç direkt yükle\n\n"
         "📊 <b>Diğer:</b>\n"
         "/durum — Canlı durum\n"
-        "/iptal — Batch üretimi durdur\n"
         "/yardim — Bu mesaj",
         chat_id,
     )
@@ -474,6 +524,8 @@ def _handle_update(update: dict):
         cmd_yayinla(chat_id, args)
     elif cmd == "/iptal":
         cmd_iptal(chat_id, args)
+    elif cmd == "/durdur":
+        cmd_durdur(chat_id, args)
     elif cmd == "/bekleyenler":
         cmd_bekleyenler(chat_id)
     elif cmd == "/tumburclar":

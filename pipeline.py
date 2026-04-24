@@ -24,6 +24,7 @@ from services.text_cleaner import clean_content
 import job_tracker as jt
 import approval
 import channels as ch_registry
+import cancel_manager as cancel_mgr
 from content_types import get_content_type
 
 log = logging.getLogger(__name__)
@@ -144,8 +145,20 @@ def produce_content(
     if not jt.get_job(jkey) or not jt.is_running(jkey):
         jt.start_job(jkey, source=source)
 
+    # Cancel event kaydet
+    cancel_mgr.register_job(jkey)
+
+    # Voice config'ı kanaldan al
+    voice_config = {
+        "voice_id": channel.get("voice_id"),
+        "stability": channel.get("voice_stability", 0.50),
+        "style": channel.get("voice_style", 0.35),
+        "speed": channel.get("voice_speed", 0.95),
+    }
+
     try:
         # 1) Prompt hazırla ve LLM çağır
+        cancel_mgr.check_is_cancelled(jkey)
         jt.update_stage(jkey, jt.STAGE_CONTENT)
         used_themes = _get_used_themes(topic_key, channel_id)
         prompt = content_type.build_prompt(
@@ -154,6 +167,8 @@ def produce_content(
             used_themes=used_themes,
         )
         raw, provider = call_llm_with_fallback(prompt)
+        cancel_mgr.record_llm_call(jkey, chars_in=len(prompt),
+                                   chars_out=len(raw))
         content = parse_llm_json(raw)
         content = clean_content(content)
 
@@ -180,10 +195,13 @@ def produce_content(
         content["generated_at"] = datetime.now().isoformat()
 
         # 2) Video render
+        cancel_mgr.check_is_cancelled(jkey)
+        cancel_mgr.mark_render_started(jkey)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         safe_topic = re.sub(r"[^a-z0-9\-]", "-", topic_key.lower())[:20] or "content"
         video_path = str(OUTPUT_DIR / f"{channel_id}_{safe_topic}_{ts}.mp4")
-        render_video(content, video_path, sign_key=jkey)
+        render_video(content, video_path, sign_key=jkey,
+                     voice_config=voice_config)
 
         result = {
             "channel_id": channel_id,
@@ -206,6 +224,7 @@ def produce_content(
             result["awaiting_approval"] = True
             _save_to_history(result, channel_id=channel_id)
             jt.finish_job(jkey, result=result)
+            cancel_mgr.cleanup_job(jkey)
             log.info(f"⏸ {channel['name']}/{topic_key} onay bekliyor")
 
             if source == "web":
@@ -219,6 +238,8 @@ def produce_content(
 
         # 3b) YouTube upload
         if upload:
+            cancel_mgr.check_is_cancelled(jkey)
+            cancel_mgr.mark_upload_started(jkey)
             jt.update_stage(jkey, jt.STAGE_UPLOAD)
 
             title = content_type.format_title(topic_key, content)
@@ -248,12 +269,32 @@ def produce_content(
 
         _save_to_history(result, channel_id=channel_id)
         jt.finish_job(jkey, result=result)
+        cancel_mgr.cleanup_job(jkey)
         log.info(f"🎉 {channel['name']}/{topic_key} tamamlandı\n")
         return result
+
+    except cancel_mgr.JobCancelled:
+        log.info(f"⛔ {channel['name']}/{topic_key} iptal edildi")
+        report = cancel_mgr.get_resource_report(jkey)
+        jt.finish_job(jkey, error="İptal edildi")
+        cancel_mgr.cleanup_job(jkey)
+
+        # Kullanıcıya bildir
+        if source in ("web", "telegram"):
+            summary = "\n".join(report.get("summary_lines", []))
+            cost = report.get("estimated_cost_usd", 0) if report else 0
+            _tg_notify(
+                f"⛔ <b>İptal edildi</b>\n"
+                f"{channel.get('icon', '📺')} {channel['name']} / {topic_key}\n"
+                f"💸 Harcanan: ~${cost:.3f}\n"
+                f"{summary}"
+            )
+        raise
 
     except Exception as e:
         log.exception(f"❌ {channel['name']}/{topic_key} başarısız")
         jt.finish_job(jkey, error=str(e))
+        cancel_mgr.cleanup_job(jkey)
         if source == "web":
             _tg_notify(
                 f"🌐 <b>Panelden üretim hatası</b>\n"

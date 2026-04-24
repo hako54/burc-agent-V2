@@ -214,6 +214,31 @@ def api_channel_produce(channel_id, sign_key):
     })
 
 
+@app.route("/api/<channel_id>/cancel/<sign_key>", methods=["POST"])
+def api_channel_cancel(channel_id, sign_key):
+    """Çalışan bir üretimi iptal eder."""
+    import cancel_manager
+    key = (sign_key or "").lower().strip()
+    job_key = f"{channel_id}:{key}"
+    cancelled = cancel_manager.cancel_job(job_key)
+    report = cancel_manager.get_resource_report(job_key)
+    return jsonify({
+        "cancelled": cancelled,
+        "sign_key": key,
+        "channel_id": channel_id,
+        "report": report,
+    })
+
+
+@app.route("/api/<channel_id>/resources/<sign_key>")
+def api_channel_resources(channel_id, sign_key):
+    """O an harcanan kaynakların özeti."""
+    import cancel_manager
+    key = (sign_key or "").lower().strip()
+    job_key = f"{channel_id}:{key}"
+    return jsonify({"report": cancel_manager.get_resource_report(job_key)})
+
+
 @app.route("/api/<channel_id>/approve/<sign_key>", methods=["POST"])
 def api_channel_approve(channel_id, sign_key):
     from pipeline import approve_and_upload
