@@ -103,6 +103,30 @@ def _wrap_text(draw, text: str, font, max_w: int) -> list:
     return lines
 
 
+def _first_sentence(text: str, max_chars: int = 70) -> str:
+    """Bir metinden altyazıya uygun kısa ifade çıkarır.
+    Önce ilk cümleyi dener; çok uzunsa max_chars'e keser."""
+    if not text:
+        return ""
+    text = text.strip()
+    # İlk cümle sonu noktası bul
+    for i, ch in enumerate(text):
+        if ch in ".!?":
+            first = text[:i + 1].strip()
+            if len(first) <= max_chars:
+                return first
+            break
+    # Cümle sonu bulunmadı veya ilk cümle çok uzun — kelime sınırında kes
+    if len(text) <= max_chars:
+        return text
+    cut = text[:max_chars]
+    # Son boşluğa kadar kırp, ortada kelime kırılmasın
+    last_space = cut.rfind(" ")
+    if last_space > max_chars * 0.6:
+        cut = cut[:last_space]
+    return cut.rstrip(" ,;:") + "..."
+
+
 def _add_text_overlay(frame_arr, t: float, text: str, seg_dur: float,
                       accent_hex: str, sign_name: str = "",
                       section_label: str = "", seg_idx: int = 0,
@@ -526,13 +550,27 @@ def render_video(content: dict, output_path: str,
         direction = dirs[i % len(dirs)]
         show_hdr = (i == 0)
         sd = seg_durations[i]
-        narration_text = seg.get("narration") or seg.get("text", "")
-        section_label = seg.get("text", "")
-        if seg.get("section") in ("giris", "genel"):
+
+        # Altyazı metni: kısa "text" kullan (narration TTS'e gidiyor zaten)
+        # Section "giris"/"genel" için rozet yok, text alanı zaten kısa altyazı
+        # Diğerleri için "text" rozet (💕 Aşk, 💼 Kariyer...), altyazı olarak
+        # narration'un ilk cümlesini göster — kısa ve akıcı olsun.
+        section = seg.get("section", "")
+        raw_text = (seg.get("text") or "").strip()
+        raw_narration = (seg.get("narration") or "").strip()
+
+        if section in ("giris", "genel"):
+            # Burada text alanı doğrudan altyazı olarak kullanılsın
+            subtitle_text = raw_text or _first_sentence(raw_narration)
             section_label = ""
+        else:
+            # "text" rozet, altyazı olarak narration'un ilk cümlesini kullan
+            subtitle_text = _first_sentence(raw_narration)
+            section_label = raw_text  # rozet: 💕 Aşk, 💼 Kariyer...
+
         is_last = (i == len(segments) - 1)
 
-        def make_frame(t, _img=img_arr, _txt=narration_text, _sd=sd,
+        def make_frame(t, _img=img_arr, _txt=subtitle_text, _sd=sd,
                        _zi=zoom_in, _dir=direction, _i=i, _sh=show_hdr,
                        _sec=section_label, _last=is_last):
             frame = _ken_burns(Image.fromarray(_img), t, _sd, _zi, _dir)
