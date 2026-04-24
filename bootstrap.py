@@ -49,9 +49,19 @@ def _decode_env_to_file(env_key: str, file_path: str) -> bool:
 
 
 def setup_credentials():
-    """YouTube OAuth dosyalarını env variable'lardan oluşturur."""
+    """YouTube OAuth dosyalarını env variable'lardan oluşturur.
+    Tüm TOKEN_* env var'larını işler (çoklu kanal desteği)."""
+    # Ortak credentials (OAuth Client) — tüm kanallar paylaşır
     _decode_env_to_file("CREDENTIALS_BURC", "credentials_burc.json")
-    _decode_env_to_file("TOKEN_BURC", "token_burc.json")
+
+    # Her TOKEN_* env var'ı için ayrı token dosyası oluştur
+    # TOKEN_BURC -> token_burc.json
+    # TOKEN_YEMEK -> token_yemek.json
+    for env_key, env_value in os.environ.items():
+        if env_key.startswith("TOKEN_") and env_key != "TOKEN_SOZLER":
+            channel_id = env_key[6:].lower().replace("_", "-")
+            file_name = f"token_{channel_id}.json"
+            _decode_env_to_file(env_key, file_name)
 
 
 def setup_directories():
