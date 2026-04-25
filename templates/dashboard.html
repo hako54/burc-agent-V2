@@ -831,51 +831,95 @@ async function loadPending() {
       const row = document.createElement('div');
       row.className = 'job-row';
       row.style.setProperty('--accent-color', signInfo?.color || 'var(--gold)');
+      row.style.flexDirection = 'column';
+      row.style.alignItems = 'stretch';
 
       const videoUrl = `/output/${item.video_path.split('/').pop()}`;
+      const description = item.description || '(açıklama yok)';
+      const tags = item.tags || [];
+      const hashtags = item.hashtags || [];
+
+      // Açıklama + hashtag birleşik (YouTube'a giden hali)
+      const finalDescription = description + (hashtags.length
+        ? '\n\n' + hashtags.slice(0, 15).join(' ')
+        : '');
+
       row.innerHTML = `
-        <div class="job-row-symbol">${signInfo?.symbol || '✦'}</div>
-        <div class="job-row-content">
-          <div class="job-row-title">
-            <strong>${signInfo?.name || key}</strong>
-            <span class="source-badge ${item.source || 'web'}">${(item.source || 'web').toUpperCase()}</span>
+        <div style="display: flex; align-items: flex-start; gap: 1rem; width: 100%;">
+          <div class="job-row-symbol">${signInfo?.symbol || '✦'}</div>
+          <div class="job-row-content" style="flex: 1; min-width: 0;">
+            <div class="job-row-title">
+              <strong>${signInfo?.name || key}</strong>
+              <span class="source-badge ${item.source || 'web'}">${(item.source || 'web').toUpperCase()}</span>
+              ${item.provider ? '<span style="font-size: 0.75rem; color: var(--text-muted);">· 🤖 ' + item.provider + '</span>' : ''}
+            </div>
+            <div class="job-row-stage" style="color: var(--text); font-size: 0.95rem; margin-top: 0.25rem;">
+              ${escapeHtml(item.title || '(başlık yok)')}
+            </div>
           </div>
-          <div class="job-row-stage" style="color: var(--text);">
-            ${escapeHtml(item.title || '(başlık yok)')}
+        </div>
+
+        <!-- YouTube önizleme: video + açıklama yan yana -->
+        <div style="display: grid; grid-template-columns: 240px 1fr; gap: 1rem; margin-top: 1rem; align-items: flex-start;">
+          <video src="${videoUrl}" controls preload="metadata"
+                 style="width: 240px; max-width: 100%; aspect-ratio: 9/16;
+                        border-radius: 8px; background: #000;
+                        border: 1px solid var(--border);"></video>
+          <div style="display: flex; flex-direction: column; gap: 0.875rem; min-width: 0;">
+            <!-- Başlık -->
+            <div>
+              <div style="font-size: 0.688rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.25rem;">YouTube Başlığı</div>
+              <div style="font-size: 0.938rem; color: var(--text); padding: 0.5rem 0.75rem; background: rgba(0,0,0,0.3); border-radius: 6px; border: 1px solid var(--border);">
+                ${escapeHtml(item.title || '(boş)')}
+              </div>
+            </div>
+            <!-- Açıklama (genişleyebilir) -->
+            <div>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+                <span style="font-size: 0.688rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em;">YouTube Açıklaması</span>
+                <button onclick="copyToClipboard(this.parentElement.nextElementSibling.textContent.trim(), event)"
+                        class="copy-btn" style="font-size: 0.688rem;">📋 Kopyala</button>
+              </div>
+              <div style="font-size: 0.813rem; color: var(--text-dim); padding: 0.625rem 0.75rem;
+                          background: rgba(0,0,0,0.3); border-radius: 6px; border: 1px solid var(--border);
+                          max-height: 140px; overflow-y: auto; white-space: pre-wrap;
+                          line-height: 1.5;">${escapeHtml(finalDescription)}</div>
+            </div>
+            <!-- Etiketler -->
+            ${tags.length || hashtags.length ? `
+            <div>
+              <div style="font-size: 0.688rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.375rem;">Etiketler ve Hashtagler</div>
+              <div style="display: flex; flex-wrap: wrap; gap: 0.375rem;">
+                ${tags.slice(0, 15).map(t => `<span style="font-size: 0.75rem; padding: 0.25rem 0.625rem; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 100px; color: var(--text-dim);">${escapeHtml(t)}</span>`).join('')}
+                ${hashtags.slice(0, 10).map(t => `<span style="font-size: 0.75rem; padding: 0.25rem 0.625rem; background: rgba(212, 175, 55, 0.1); border: 1px solid var(--gold-dim); border-radius: 100px; color: var(--gold-soft);">${escapeHtml(t)}</span>`).join('')}
+              </div>
+            </div>` : ''}
           </div>
-          <div class="job-row-detail">
-            ${item.provider ? '🤖 ' + item.provider : ''}
-          </div>
-          <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
-            <a href="${videoUrl}" target="_blank" style="
-              padding: 0.5rem 1rem;
-              background: transparent;
-              color: var(--text-dim);
-              border: 1px solid var(--border-strong);
-              border-radius: 6px;
-              text-decoration: none;
-              font-size: 0.813rem;
-            ">👀 Önizle</a>
-            <button onclick="approvePending('${key}', '${escapeHtml(signInfo?.name || key)}')" style="
-              padding: 0.5rem 1rem;
-              background: linear-gradient(135deg, var(--success) 0%, #22c55e 100%);
-              color: var(--bg-void);
-              border: none;
-              border-radius: 6px;
-              cursor: pointer;
-              font-size: 0.813rem;
-              font-weight: 500;
-            ">✅ Yayınla</button>
-            <button onclick="rejectPending('${key}', '${escapeHtml(signInfo?.name || key)}')" style="
-              padding: 0.5rem 1rem;
-              background: transparent;
-              color: var(--danger);
-              border: 1px solid var(--danger);
-              border-radius: 6px;
-              cursor: pointer;
-              font-size: 0.813rem;
-            ">❌ İptal</button>
-          </div>
+        </div>
+
+        <!-- Aksiyon butonları -->
+        <div style="margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-end;">
+          <button onclick="approvePending('${key}', '${escapeHtml(signInfo?.name || key)}')" style="
+            padding: 0.625rem 1.5rem;
+            background: linear-gradient(135deg, var(--success) 0%, #22c55e 100%);
+            color: var(--bg-void);
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.875rem;
+            font-weight: 500;
+            letter-spacing: 0.05em;
+          ">✅ YOUTUBE'A YAYINLA</button>
+          <button onclick="rejectPending('${key}', '${escapeHtml(signInfo?.name || key)}')" style="
+            padding: 0.625rem 1.5rem;
+            background: transparent;
+            color: var(--danger);
+            border: 1px solid var(--danger);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.875rem;
+            letter-spacing: 0.05em;
+          ">❌ İPTAL</button>
         </div>
       `;
       list.appendChild(row);
