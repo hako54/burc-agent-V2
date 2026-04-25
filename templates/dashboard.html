@@ -550,13 +550,49 @@
     </div>
   </header>
 
-  <div class="actions">
-    <button class="btn btn-primary" id="batchBtn" onclick="produceAll()" style="display: none;">
-      ✦ Bugün tüm konuları üret
-    </button>
+  <div class="actions" id="actionsBar">
+    <!-- İçerik tipine göre dinamik olarak doldurulur -->
     <button class="btn btn-ghost" onclick="refresh()">
       Geçmişi yenile
     </button>
+  </div>
+
+  <!-- Manuel konu girişi (motivasyon vb. için) -->
+  <div id="manualTopicArea" style="display: none; margin-bottom: 3rem;">
+    <div style="background: var(--bg-card); border: 1px solid var(--gold-dim);
+                border-radius: 12px; padding: 1.5rem; backdrop-filter: blur(20px);">
+      <div style="font-family: var(--font-display); font-size: 1.25rem;
+                  color: var(--gold); margin-bottom: 0.5rem;">
+        ✍️ Özel Konu ile Üret
+      </div>
+      <div style="color: var(--text-muted); font-size: 0.875rem; margin-bottom: 1rem;">
+        Aşağıdaki kategorilerden birine bağlı kalmak yerine kendi konunu
+        veya kelimeni yaz. Yapay zeka o tema üzerine içerik üretsin.
+      </div>
+      <div style="display: flex; gap: 0.75rem; align-items: stretch;">
+        <input type="text" id="customTopicInput"
+               placeholder="Örn: yalnızlık, büyümek acısı, bir kapı kapanırsa..."
+               style="flex: 1; background: rgba(0,0,0,0.3);
+                      border: 1px solid var(--border-strong);
+                      border-radius: 8px; padding: 0.75rem 1rem;
+                      color: var(--text); font-family: var(--font-body);
+                      font-size: 0.938rem;"
+               onkeydown="if(event.key==='Enter') produceCustomTopic()">
+        <button onclick="produceCustomTopic()"
+                style="padding: 0.75rem 1.5rem;
+                       background: linear-gradient(135deg, var(--gold), var(--gold-soft));
+                       color: var(--bg-void); border: none; border-radius: 8px;
+                       cursor: pointer; font-weight: 500;
+                       letter-spacing: 0.05em; text-transform: uppercase;
+                       white-space: nowrap;">
+          ✨ Üret
+        </button>
+      </div>
+      <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.625rem;
+                  font-style: italic;">
+        Onay isteyeceğim — yayına almadan önce videoyu izleyebilirsin.
+      </div>
+    </div>
   </div>
 
   <!-- Canlı Aktif İşler Banner -->
@@ -664,22 +700,29 @@ async function loadSigns() {
   try {
     const res = await fetch(`/api/${CHANNEL_ID}/signs`);
     const data = await res.json();
-    SIGNS_CACHE = data.topics || data.signs;  // yeni veya eski format
+    SIGNS_CACHE = data.topics || data.signs;
     CONTENT_TYPE_INFO = data.content_type || {};
 
-    // Content type'a göre başlığı ve batch butonunu güncelle
+    // Actions bar — kanal tipine göre özelleştir
+    _setupActionsBar();
+
+    // Manuel konu alanı (motivasyon, custom için)
+    const manualArea = document.getElementById('manualTopicArea');
+    if (CONTENT_TYPE_INFO.supports_manual && CONTENT_TYPE_INFO.id !== 'zodiac') {
+      manualArea.style.display = 'block';
+    } else {
+      manualArea.style.display = 'none';
+    }
+
+    // Konular başlığı
     const titleEl = document.getElementById('topicsTitle');
-    const batchBtn = document.getElementById('batchBtn');
     if (titleEl) {
       if (CONTENT_TYPE_INFO.id === 'zodiac') {
         titleEl.textContent = 'Bugünün Burçları';
-        if (batchBtn) { batchBtn.style.display = ''; batchBtn.textContent = '✦ 12 Burcu Birden Üret'; }
       } else if (CONTENT_TYPE_INFO.id === 'motivation') {
-        titleEl.textContent = 'Motivasyon Kategorileri';
-        if (batchBtn) batchBtn.style.display = 'none';
+        titleEl.textContent = 'Hazır Kategoriler';
       } else {
         titleEl.textContent = 'Konular';
-        if (batchBtn) batchBtn.style.display = 'none';
       }
     }
 
@@ -932,10 +975,10 @@ async function loadPending() {
 async function produceAll() {
   if (!confirm('12 burcun tümü üretilip yüklensin mi? (~30-60 dakika)')) return;
   try {
-    const res = await fetch(`/api/${CHANNEL_ID}/produce-all`, {
+    const res = await fetch(`/api/${CHANNEL_ID}/batch`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({upload: true}),
+      body: JSON.stringify({group: 'all'}),
     });
     const data = await res.json();
     if (res.ok) {
@@ -946,6 +989,127 @@ async function produceAll() {
   } catch (e) {
     toast('Batch hatası: ' + e.message, 'error');
   }
+}
+
+async function produceBatch(group) {
+  // group: "today" veya "tomorrow"
+  let label = group === 'today' ? 'Bugünün 6 burcu' : 'Yarının 6 burcu';
+
+  // Hangi burçların üretileceğini önce göster
+  let preview = '';
+  try {
+    const r = await fetch(`/api/${CHANNEL_ID}/group-info`);
+    const info = await r.json();
+    const target = group === 'today' ? info.today : info.tomorrow;
+    if (target) {
+      const names = target.topics.map(t => `${t.symbol} ${t.name}`).join(', ');
+      preview = `\n\n${target.date} (${target.day_type} gün)\n${names}`;
+    }
+  } catch (e) { /* ignore */ }
+
+  if (!confirm(`${label} üretilip yüklensin mi?${preview}\n\nYaklaşık 20-30 dakika sürer.`)) return;
+
+  try {
+    const res = await fetch(`/api/${CHANNEL_ID}/batch`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({group: group}),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      toast(`${label} üretimi başladı.`, 'info');
+    } else {
+      throw new Error(data.error || 'hata');
+    }
+  } catch (e) {
+    toast('Batch hatası: ' + e.message, 'error');
+  }
+}
+
+async function produceCustomTopic() {
+  const input = document.getElementById('customTopicInput');
+  const topic = input.value.trim();
+  if (!topic) {
+    toast('Önce bir konu yaz', 'info');
+    return;
+  }
+  if (topic.length < 3) {
+    toast('Konu en az 3 karakter olmalı', 'info');
+    return;
+  }
+
+  if (!confirm(`"${topic}" konusu üzerine video üretilsin mi?\n(Onay isteyeceğim, yayına otomatik almıyorum)`)) return;
+
+  // Custom topic için topic_key olarak basit bir slug üret
+  const slug = topic.toLowerCase()
+    .replace(/[^a-zçğıöşü0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .substring(0, 30) || 'custom';
+
+  try {
+    const res = await fetch(`/api/${CHANNEL_ID}/produce/${slug}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        upload: true,
+        require_approval: true,
+        custom_topic: topic,
+      }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      toast(`"${topic}" üretimi başladı. Canlı takip yukarıda.`, 'info');
+      input.value = '';
+    } else if (res.status === 409) {
+      toast('Bu konu için zaten bir üretim var', 'info');
+    } else {
+      throw new Error(data.error || 'hata');
+    }
+  } catch (e) {
+    toast('Hata: ' + e.message, 'error');
+  }
+}
+
+function _setupActionsBar() {
+  const bar = document.getElementById('actionsBar');
+  if (!bar) return;
+
+  // Geçmişi yenile butonu hep kalsın
+  let html = '';
+
+  if (CONTENT_TYPE_INFO.id === 'zodiac') {
+    // Burç kanalı: bugün + yarın batch + 12 burç
+    html = `
+      <button class="btn btn-primary" onclick="produceBatch('today')">
+        ✦ Bugünün 6 Burcu
+      </button>
+      <button class="btn btn-primary" onclick="produceBatch('tomorrow')"
+              style="background: linear-gradient(135deg, var(--violet), #a855f7);">
+        ☽ Yarının 6 Burcu
+      </button>
+      <button class="btn btn-ghost" onclick="produceAll()">
+        Tüm 12 Burç
+      </button>
+      <button class="btn btn-ghost" onclick="refresh()">
+        Geçmişi yenile
+      </button>
+    `;
+  } else if (CONTENT_TYPE_INFO.id === 'motivation') {
+    // Motivasyon: sadece geçmişi yenile (üretim manuel topic veya kategori ile)
+    html = `
+      <button class="btn btn-ghost" onclick="refresh()">
+        Geçmişi yenile
+      </button>
+    `;
+  } else {
+    html = `
+      <button class="btn btn-ghost" onclick="refresh()">
+        Geçmişi yenile
+      </button>
+    `;
+  }
+
+  bar.innerHTML = html;
 }
 
 // Canlı durum — tüm job'ları poll eder

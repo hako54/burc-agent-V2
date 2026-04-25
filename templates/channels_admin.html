@@ -276,6 +276,53 @@
     <div id="channelsList"></div>
   </div>
 
+  <!-- Özel Sesler -->
+  <div class="card">
+    <div class="card-title">🎙 Özel Sesler</div>
+    <div style="color: var(--text-dim); font-size: 0.875rem; margin-bottom: 1rem;">
+      Önerilen seslerin yanı sıra, ElevenLabs'tan bulduğun her sesi
+      Voice ID ile ekleyebilirsin. Eklenen sesler kanal yönetiminde
+      ses dropdown'unda görünür.
+      <br><br>
+      <strong>Voice ID nasıl bulunur?</strong>
+      ElevenLabs Voice Library'de bir sese tıkla → "Use Voice" yanında
+      <code>...</code> menüsü → "Copy Voice ID".
+    </div>
+
+    <form id="customVoiceForm" onsubmit="return addCustomVoice(event)">
+      <div style="display: grid; grid-template-columns: 2fr 2fr 1fr auto; gap: 0.75rem; align-items: end;">
+        <div class="form-group" style="margin-bottom: 0;">
+          <label class="form-label">Voice ID</label>
+          <input class="form-input" type="text" id="cv-id" required
+                 placeholder="ElevenLabs Voice ID">
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+          <label class="form-label">İsim (Görüntü)</label>
+          <input class="form-input" type="text" id="cv-name" required
+                 placeholder="Örn: Ahmet (Türkçe)">
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+          <label class="form-label">Cinsiyet</label>
+          <select class="form-select" id="cv-gender">
+            <option value="female">Kadın</option>
+            <option value="male">Erkek</option>
+            <option value="unknown">Belirsiz</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary"
+                style="font-size: 0.875rem; padding: 0.75rem 1.5rem; height: 42px;">
+          Ekle
+        </button>
+      </div>
+      <div style="margin-top: 0.75rem;">
+        <input class="form-input" type="text" id="cv-description"
+               placeholder="Kısa açıklama (opsiyonel) — örn: Sıcak anlatımcı, derin">
+      </div>
+    </form>
+
+    <div id="customVoicesList" style="margin-top: 1.5rem;"></div>
+  </div>
+
   <!-- Kurulum Rehberi -->
   <div class="card">
     <div class="card-title">🔧 Yeni kanal eklendikten sonra</div>
@@ -386,6 +433,127 @@ async function addChannel(event) {
 }
 
 async function deleteChannel(id, name) {
+  if (!confirm(`${name} kanalı silinsin mi? (Token ve video dosyaları silinmez, sadece tanım kaldırılır.)`)) return;
+  try {
+    const res = await fetch(`/api/channels/${id}`, {method: 'DELETE'});
+    const body = await res.json();
+    if (res.ok) {
+      toast(`${name} silindi.`, 'success');
+      loadChannels();
+    } else {
+      toast('Hata: ' + (body.error || 'Bilinmeyen'), 'error');
+    }
+  } catch (e) {
+    toast('Hata: ' + e.message, 'error');
+  }
+}
+
+async function addCustomVoice(event) {
+  event.preventDefault();
+  const data = {
+    id: document.getElementById('cv-id').value.trim(),
+    name: document.getElementById('cv-name').value.trim(),
+    gender: document.getElementById('cv-gender').value,
+    description: document.getElementById('cv-description').value.trim(),
+  };
+  if (!data.id || !data.name) {
+    toast('Voice ID ve isim zorunlu', 'error');
+    return false;
+  }
+  try {
+    const res = await fetch('/api/voices/custom', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(data),
+    });
+    const body = await res.json();
+    if (res.ok) {
+      toast(`${data.name} eklendi!`, 'success');
+      document.getElementById('customVoiceForm').reset();
+      loadCustomVoices();
+      // Kanallar listesini de yenile (dropdown'lar güncellensin)
+      loadChannels();
+    } else {
+      toast('Hata: ' + (body.error || 'Bilinmeyen'), 'error');
+    }
+  } catch (e) {
+    toast('Hata: ' + e.message, 'error');
+  }
+  return false;
+}
+
+async function deleteCustomVoice(voiceId, name) {
+  if (!confirm(`${name} sesi silinsin mi?`)) return;
+  try {
+    const res = await fetch(`/api/voices/custom/${voiceId}`, {method: 'DELETE'});
+    if (res.ok) {
+      toast(`${name} silindi`, 'success');
+      loadCustomVoices();
+      loadChannels();
+    } else {
+      const body = await res.json();
+      toast('Hata: ' + (body.error || ''), 'error');
+    }
+  } catch (e) {
+    toast('Hata: ' + e.message, 'error');
+  }
+}
+
+async function loadCustomVoices() {
+  try {
+    const res = await fetch('/api/voices');
+    const data = await res.json();
+    const customs = (data.voices || []).filter(v => v.source === 'custom');
+    const elevenlabs = (data.voices || []).filter(v => v.source === 'elevenlabs');
+    const list = document.getElementById('customVoicesList');
+
+    let html = '';
+
+    if (customs.length === 0 && elevenlabs.length === 0) {
+      list.innerHTML = '<p style="color: var(--text-muted); font-style: italic; font-size: 0.875rem;">Henüz özel ses yok.</p>';
+      return;
+    }
+
+    if (customs.length > 0) {
+      html += `<div style="font-size: 0.75rem; color: var(--text-muted); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 0.5rem;">Manuel Eklenen (${customs.length})</div>`;
+      for (const v of customs) {
+        html += `
+          <div style="display: flex; align-items: center; gap: 0.75rem; padding: 0.625rem 1rem; background: rgba(0,0,0,0.2); border: 1px solid var(--border); border-radius: 6px; margin-bottom: 0.5rem;">
+            <span style="font-size: 1.5rem;">${v.gender === 'female' ? '👩' : v.gender === 'male' ? '👨' : '🎙'}</span>
+            <div style="flex: 1;">
+              <div style="font-weight: 500;">${escapeHtml(v.name)}</div>
+              <div style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(v.description || '')} · <code>${v.id}</code></div>
+            </div>
+            <button class="btn btn-danger" onclick="deleteCustomVoice('${v.id}', '${escapeHtml(v.name)}')"
+                    style="font-size: 0.75rem;">Sil</button>
+          </div>
+        `;
+      }
+    }
+
+    if (elevenlabs.length > 0) {
+      html += `<div style="font-size: 0.75rem; color: var(--text-muted); letter-spacing: 0.1em; text-transform: uppercase; margin: 1rem 0 0.5rem 0;">ElevenLabs Hesabından (${elevenlabs.length})</div>`;
+      for (const v of elevenlabs) {
+        html += `
+          <div style="display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 1rem; background: rgba(0,0,0,0.15); border: 1px solid var(--border); border-radius: 6px; margin-bottom: 0.375rem;">
+            <span style="font-size: 1.25rem;">${v.gender === 'female' ? '👩' : v.gender === 'male' ? '👨' : '🎙'}</span>
+            <div style="flex: 1;">
+              <div style="font-size: 0.875rem;">${escapeHtml(v.name)}</div>
+              <div style="font-size: 0.688rem; color: var(--text-muted);">${escapeHtml(v.description || '')}${v.category ? ' · ' + v.category : ''}</div>
+            </div>
+            <span style="font-size: 0.75rem; color: var(--text-muted); font-style: italic;">otomatik</span>
+          </div>
+        `;
+      }
+    }
+
+    list.innerHTML = html;
+  } catch (e) {
+    console.error('loadCustomVoices error:', e);
+  }
+}
+
+
   if (!confirm(`${name} kanalı silinsin mi? (Token ve video dosyaları silinmez, sadece tanım kaldırılır.)`)) return;
   try {
     const res = await fetch(`/api/channels/${id}`, {method: 'DELETE'});
@@ -622,6 +790,7 @@ function escapeHtml(s) {
 }
 
 loadChannels();
+loadCustomVoices();
 </script>
 
 </body>
