@@ -554,21 +554,6 @@ async function loadCustomVoices() {
 }
 
 
-  if (!confirm(`${name} kanalı silinsin mi? (Token ve video dosyaları silinmez, sadece tanım kaldırılır.)`)) return;
-  try {
-    const res = await fetch(`/api/channels/${id}`, {method: 'DELETE'});
-    const body = await res.json();
-    if (res.ok) {
-      toast(`${name} silindi.`, 'success');
-      loadChannels();
-    } else {
-      toast('Hata: ' + (body.error || 'Bilinmeyen'), 'error');
-    }
-  } catch (e) {
-    toast('Hata: ' + e.message, 'error');
-  }
-}
-
 async function loadChannels() {
   try {
     const res = await fetch('/api/channels');
