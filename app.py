@@ -661,18 +661,70 @@ def api_channel_youtube_recent(channel_id):
 
 @app.route("/output/<path:filename>")
 def serve_output(filename):
+    """Video dosyasını Range header destekli olarak servis eder.
+    HTML5 <video> elementi seek/oynatma için Range request gönderir."""
     output_dir = Path(os.environ.get("OUTPUT_DIR", "output")).resolve()
     file_path = (output_dir / filename).resolve()
     if not str(file_path).startswith(str(output_dir)):
         abort(403)
     if not file_path.exists():
         abort(404)
-    # conditional=True → Range header desteği (video seek için kritik)
-    return send_from_directory(
-        output_dir, filename,
-        conditional=True,
-        mimetype="video/mp4" if filename.endswith(".mp4") else None,
-    )
+
+    file_size = file_path.stat().st_size
+    range_header = request.headers.get("Range", None)
+
+    # MIME type
+    if filename.endswith(".mp4"):
+        mime = "video/mp4"
+    elif filename.endswith(".mp3"):
+        mime = "audio/mpeg"
+    elif filename.endswith(".webm"):
+        mime = "video/webm"
+    else:
+        mime = "application/octet-stream"
+
+    # Range yoksa tüm dosyayı dön
+    if not range_header:
+        from flask import Response
+        with open(file_path, "rb") as f:
+            data = f.read()
+        resp = Response(data, mimetype=mime)
+        resp.headers["Accept-Ranges"] = "bytes"
+        resp.headers["Content-Length"] = str(file_size)
+        return resp
+
+    # Range parse et: "bytes=START-END"
+    import re as _re
+    m = _re.match(r"bytes=(\d+)-(\d*)", range_header)
+    if not m:
+        abort(416)
+    start = int(m.group(1))
+    end = int(m.group(2)) if m.group(2) else file_size - 1
+    end = min(end, file_size - 1)
+    if start > end:
+        abort(416)
+
+    chunk_size = end - start + 1
+
+    def generate():
+        with open(file_path, "rb") as f:
+            f.seek(start)
+            remaining = chunk_size
+            while remaining > 0:
+                read_size = min(8192, remaining)
+                chunk = f.read(read_size)
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+                yield chunk
+
+    from flask import Response
+    resp = Response(generate(), status=206, mimetype=mime,
+                    direct_passthrough=True)
+    resp.headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+    resp.headers["Accept-Ranges"] = "bytes"
+    resp.headers["Content-Length"] = str(chunk_size)
+    return resp
 
 
 # ── Arka plan servisleri ──────────────────────────────────────────
