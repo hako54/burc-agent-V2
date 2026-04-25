@@ -410,29 +410,207 @@ async function loadChannels() {
       list.innerHTML = '<p style="color: var(--text-muted); font-style: italic;">Henüz kanal yok.</p>';
       return;
     }
+
+    // Voice listesini de çekiyoruz
+    const vRes = await fetch('/api/voices');
+    const vData = await vRes.json();
+    const voices = vData.voices || [];
+
     list.innerHTML = '';
     for (const ch of data.channels) {
       const item = document.createElement('div');
       item.className = 'channel-item';
+      item.style.flexDirection = 'column';
+      item.style.alignItems = 'stretch';
+
+      // Voice select options
+      const voiceOptions = voices.map(v => `
+        <option value="${v.id}" ${v.id === ch.voice_id ? 'selected' : ''}>
+          ${v.gender === 'female' ? '👩' : '👨'} ${v.name} — ${v.description}
+        </option>
+      `).join('');
+
+      const stability = ch.voice_stability ?? 0.5;
+      const style = ch.voice_style ?? 0.35;
+      const speed = ch.voice_speed ?? 0.95;
+
       item.innerHTML = `
-        <div class="channel-item-icon">${ch.icon || '✨'}</div>
-        <div class="channel-item-info">
-          <div class="channel-item-name">${escapeHtml(ch.name)}</div>
-          <div class="channel-item-meta">
-            <code>${ch.id}</code> · ${data.types[ch.type]?.name || ch.type}
-            ${ch.youtube_url ? ' · <a href="' + ch.youtube_url + '" target="_blank" style="color: var(--gold);">YouTube ↗</a>' : ' · <span style="color: var(--danger);">YouTube bağlı değil</span>'}
+        <div style="display: flex; align-items: center; gap: 1rem;">
+          <div class="channel-item-icon">${ch.icon || '✨'}</div>
+          <div class="channel-item-info">
+            <div class="channel-item-name">${escapeHtml(ch.name)}</div>
+            <div class="channel-item-meta">
+              <code>${ch.id}</code> · ${data.types[ch.type]?.name || ch.type}
+              ${ch.youtube_url ? ' · <a href="' + ch.youtube_url + '" target="_blank" style="color: var(--gold);">YouTube ↗</a>' : ' · <span style="color: var(--danger);">YouTube bağlı değil</span>'}
+            </div>
+          </div>
+          <div class="channel-item-actions">
+            <a href="/channel/${ch.id}" class="btn btn-danger" style="color: var(--gold); border-color: var(--gold); text-decoration: none;">Panel →</a>
+            ${ch.id !== 'burc' ? `<button class="btn btn-danger" onclick="deleteChannel('${ch.id}', '${escapeHtml(ch.name)}')">Sil</button>` : ''}
           </div>
         </div>
-        <div class="channel-item-actions">
-          <a href="/channel/${ch.id}" class="btn btn-danger" style="color: var(--gold); border-color: var(--gold); text-decoration: none;">Panel →</a>
-          ${ch.id !== 'burc' ? `<button class="btn btn-danger" onclick="deleteChannel('${ch.id}', '${escapeHtml(ch.name)}')">Sil</button>` : ''}
-        </div>
+
+        <!-- Ses ayarları (collapsible) -->
+        <details style="margin-top: 1rem; border-top: 1px dashed var(--border); padding-top: 1rem;">
+          <summary style="cursor: pointer; color: var(--gold); font-size: 0.875rem;
+                          letter-spacing: 0.05em; text-transform: uppercase;
+                          padding: 0.25rem 0;">
+            🎙 Ses Ayarları
+          </summary>
+          <div style="margin-top: 1rem; display: grid; gap: 1rem;">
+
+            <div>
+              <label class="form-label">Ses</label>
+              <select class="form-select" data-channel="${ch.id}" data-field="voice_id">
+                ${voiceOptions}
+              </select>
+            </div>
+
+            <div>
+              <label class="form-label">
+                Stability (Sabitlik)
+                <span style="color: var(--text-muted); font-weight: normal; text-transform: none;">— Düşük = duygusal/değişken, Yüksek = sabit/monoton</span>
+              </label>
+              <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <input type="range" min="0" max="1" step="0.05" value="${stability}"
+                       data-channel="${ch.id}" data-field="voice_stability"
+                       oninput="this.nextElementSibling.textContent = parseFloat(this.value).toFixed(2)"
+                       style="flex: 1;">
+                <span style="min-width: 3rem; text-align: right; font-family: monospace; color: var(--gold);">${stability.toFixed(2)}</span>
+              </div>
+            </div>
+
+            <div>
+              <label class="form-label">
+                Style (Karakter / Ekspresyon)
+                <span style="color: var(--text-muted); font-weight: normal; text-transform: none;">— Yüksek = dramatik, karakterli</span>
+              </label>
+              <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <input type="range" min="0" max="1" step="0.05" value="${style}"
+                       data-channel="${ch.id}" data-field="voice_style"
+                       oninput="this.nextElementSibling.textContent = parseFloat(this.value).toFixed(2)"
+                       style="flex: 1;">
+                <span style="min-width: 3rem; text-align: right; font-family: monospace; color: var(--gold);">${style.toFixed(2)}</span>
+              </div>
+            </div>
+
+            <div>
+              <label class="form-label">
+                Speed (Hız)
+                <span style="color: var(--text-muted); font-weight: normal; text-transform: none;">— 1.0 = normal, &lt;1 yavaş, &gt;1 hızlı</span>
+              </label>
+              <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <input type="range" min="0.7" max="1.2" step="0.05" value="${speed}"
+                       data-channel="${ch.id}" data-field="voice_speed"
+                       oninput="this.nextElementSibling.textContent = parseFloat(this.value).toFixed(2)"
+                       style="flex: 1;">
+                <span style="min-width: 3rem; text-align: right; font-family: monospace; color: var(--gold);">${speed.toFixed(2)}</span>
+              </div>
+            </div>
+
+            <div>
+              <label class="form-label">Test metni (opsiyonel)</label>
+              <textarea class="form-input" rows="2"
+                        data-channel="${ch.id}" data-field="test_text"
+                        placeholder="Boş bırakırsan varsayılan bir cümle kullanılır...">${ch.id === 'burc' ? 'Koç burcu için bugün cesaret ve yenilik enerjisi yüksek.' : 'Bugün kendine iyi davranmayı unutma. Yarın daha güzel olacak.'}</textarea>
+            </div>
+
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+              <button class="btn btn-primary" style="font-size: 0.813rem; padding: 0.625rem 1.25rem;"
+                      onclick="testVoice('${ch.id}')">
+                🔊 Sesi Test Et
+              </button>
+              <button class="btn btn-primary" style="font-size: 0.813rem; padding: 0.625rem 1.25rem; background: linear-gradient(135deg, var(--success), #22c55e);"
+                      onclick="saveVoiceSettings('${ch.id}')">
+                💾 Ayarları Kaydet
+              </button>
+            </div>
+
+            <!-- Test ses oynatıcı, görünür olunca buraya enjekte edilir -->
+            <div id="voicePlayer-${ch.id}" style="display: none;">
+              <audio controls autoplay style="width: 100%;"></audio>
+            </div>
+          </div>
+        </details>
       `;
       list.appendChild(item);
     }
   } catch (e) {
     document.getElementById('channelsList').innerHTML =
       '<p style="color: var(--danger);">Kanallar yüklenemedi: ' + e.message + '</p>';
+  }
+}
+
+function _getVoiceFormData(channelId) {
+  const fields = ['voice_id', 'voice_stability', 'voice_style',
+                  'voice_speed', 'test_text'];
+  const data = {};
+  for (const f of fields) {
+    const el = document.querySelector(
+      `[data-channel="${channelId}"][data-field="${f}"]`
+    );
+    if (!el) continue;
+    let val = el.value;
+    if (f.endsWith('stability') || f.endsWith('style') || f.endsWith('speed')) {
+      val = parseFloat(val);
+    }
+    data[f] = val;
+  }
+  return data;
+}
+
+async function testVoice(channelId) {
+  const formData = _getVoiceFormData(channelId);
+  const playerWrap = document.getElementById('voicePlayer-' + channelId);
+  const audio = playerWrap.querySelector('audio');
+
+  toast('Ses üretiliyor... (~5-10 sn)', 'info');
+  try {
+    const res = await fetch('/api/voice-test', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        voice_id: formData.voice_id,
+        stability: formData.voice_stability,
+        style: formData.voice_style,
+        speed: formData.voice_speed,
+        text: formData.test_text || undefined,
+      }),
+    });
+    const data = await res.json();
+    if (res.ok && data.url) {
+      audio.src = data.url;
+      playerWrap.style.display = 'block';
+      toast('Sesi dinle', 'success');
+    } else {
+      toast('Test başarısız: ' + (data.error || 'bilinmiyor'), 'error');
+    }
+  } catch (e) {
+    toast('Test hatası: ' + e.message, 'error');
+  }
+}
+
+async function saveVoiceSettings(channelId) {
+  const formData = _getVoiceFormData(channelId);
+  try {
+    const res = await fetch(`/api/channels/${channelId}`, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        voice_id: formData.voice_id,
+        voice_stability: formData.voice_stability,
+        voice_style: formData.voice_style,
+        voice_speed: formData.voice_speed,
+      }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      toast('Ayarlar kaydedildi!', 'success');
+    } else {
+      toast('Kaydetme hatası: ' + (data.error || 'bilinmiyor'), 'error');
+    }
+  } catch (e) {
+    toast('Kaydetme hatası: ' + e.message, 'error');
   }
 }
 
