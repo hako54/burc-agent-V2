@@ -124,36 +124,267 @@ def api_channel_update(channel_id):
 
 @app.route("/api/voices")
 def api_voices():
-    """Önerilen ElevenLabs sesleri (Türkçe için)."""
-    voices = [
+    """Sesleri 3 kaynaktan toplar:
+    1. Önerilen Türkçe-uyumlu ElevenLabs sesleri (hardcoded)
+    2. Kullanıcının ElevenLabs hesabındaki özel sesler (API'den)
+    3. Kullanıcının manuel eklediği sesler (data/custom_voices.json)
+    """
+    # 1) Hardcoded öneri listesi
+    recommended = [
         {"id": "21m00Tcm4TlvDq8ikWAM", "name": "Rachel",
-         "description": "Sıcak anlatımcı, kadın", "gender": "female"},
+         "description": "Sıcak anlatımcı, kadın", "gender": "female",
+         "source": "recommended"},
         {"id": "XB0fDUnXU5powFXDhCwa", "name": "Charlotte",
-         "description": "Sakin, mistik, kadın", "gender": "female"},
+         "description": "Sakin, mistik, kadın", "gender": "female",
+         "source": "recommended"},
         {"id": "EXAVITQu4vr4xnSDxMaL", "name": "Bella",
-         "description": "Yumuşak, genç kadın", "gender": "female"},
+         "description": "Yumuşak, genç kadın", "gender": "female",
+         "source": "recommended"},
         {"id": "9BWtsMINqrJLrRacOk9x", "name": "Aria",
-         "description": "Duygusal, empatik", "gender": "female"},
+         "description": "Duygusal, empatik", "gender": "female",
+         "source": "recommended"},
         {"id": "XrExE9yKIg1WjnnlVkGX", "name": "Matilda",
-         "description": "Tatlı, naif", "gender": "female"},
+         "description": "Tatlı, naif", "gender": "female",
+         "source": "recommended"},
         {"id": "pFZP5JQG7iQjIQuC4Bku", "name": "Lily",
-         "description": "Sıcak, genç", "gender": "female"},
+         "description": "Sıcak, genç", "gender": "female",
+         "source": "recommended"},
         {"id": "AZnzlk1XvdvUeBnXmlld", "name": "Domi",
-         "description": "Güçlü, kararlı", "gender": "female"},
+         "description": "Güçlü, kararlı", "gender": "female",
+         "source": "recommended"},
         {"id": "ThT5KcBeYPX3keUQqHPh", "name": "Dorothy",
-         "description": "Olgun, sakin", "gender": "female"},
+         "description": "Olgun, sakin", "gender": "female",
+         "source": "recommended"},
         {"id": "pNInz6obpgDQGcFmaJgB", "name": "Adam",
-         "description": "Derin, anlatımcı", "gender": "male"},
+         "description": "Derin, anlatımcı", "gender": "male",
+         "source": "recommended"},
         {"id": "VR6AewLTigWG4xSOukaG", "name": "Arnold",
-         "description": "Vurgulu, etkileyici", "gender": "male"},
+         "description": "Vurgulu, etkileyici", "gender": "male",
+         "source": "recommended"},
         {"id": "yoZ06aMxZJJ28mfd3POQ", "name": "Sam",
-         "description": "Genç, dinamik", "gender": "male"},
+         "description": "Genç, dinamik", "gender": "male",
+         "source": "recommended"},
         {"id": "TxGEqnHWrfWFTfGW9XjX", "name": "Josh",
-         "description": "Sıcak, anlatımcı erkek", "gender": "male"},
+         "description": "Sıcak, anlatımcı erkek", "gender": "male",
+         "source": "recommended"},
         {"id": "onwK4e9ZLuTAKqWW03F9", "name": "Daniel",
-         "description": "Profesyonel, ciddi", "gender": "male"},
+         "description": "Profesyonel, ciddi", "gender": "male",
+         "source": "recommended"},
     ]
-    return jsonify({"voices": voices})
+
+    # 2) ElevenLabs hesabından çek (API key ile)
+    elevenlabs_voices = []
+    api_key = os.environ.get("ELEVENLABS_API_KEY")
+    if api_key:
+        try:
+            import requests
+            r = requests.get(
+                "https://api.elevenlabs.io/v1/voices",
+                headers={"xi-api-key": api_key},
+                timeout=10, verify=False,
+            )
+            if r.status_code == 200:
+                voices_resp = r.json().get("voices", [])
+                recommended_ids = {v["id"] for v in recommended}
+                for v in voices_resp:
+                    vid = v.get("voice_id")
+                    if not vid or vid in recommended_ids:
+                        continue
+                    labels = v.get("labels", {}) or {}
+                    elevenlabs_voices.append({
+                        "id": vid,
+                        "name": v.get("name", "(adsız)"),
+                        "description": labels.get("description")
+                                       or labels.get("description_short")
+                                       or labels.get("accent", "")
+                                       or "ElevenLabs hesabından",
+                        "gender": labels.get("gender", "unknown"),
+                        "source": "elevenlabs",
+                        "category": v.get("category", ""),
+                    })
+        except Exception as e:
+            log.warning(f"ElevenLabs voices fetch hata: {e}")
+
+    # 3) Custom (kullanıcının manuel eklediği)
+    custom_voices = _load_custom_voices()
+
+    return jsonify({
+        "voices": recommended + custom_voices + elevenlabs_voices,
+        "recommended_count": len(recommended),
+        "elevenlabs_count": len(elevenlabs_voices),
+        "custom_count": len(custom_voices),
+    })
+
+
+def _custom_voices_file():
+    return Path(os.environ.get("DATA_DIR", "data")) / "custom_voices.json"
+
+
+def _load_custom_voices() -> list:
+    p = _custom_voices_file()
+    if not p.exists():
+        return []
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def _save_custom_voices(voices: list):
+    p = _custom_voices_file()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(voices, ensure_ascii=False, indent=2),
+                 encoding="utf-8")
+
+
+@app.route("/api/voices/custom", methods=["POST"])
+def api_voice_add_custom():
+    """Manuel ses ekle.
+    Body: {"id": "voice_id", "name": "...", "description": "...", "gender": "..."}
+    """
+    data = request.get_json() or {}
+    vid = (data.get("id") or "").strip()
+    name = (data.get("name") or "").strip()
+    if not vid or not name:
+        return jsonify({"error": "id ve name zorunlu"}), 400
+
+    voices = _load_custom_voices()
+    if any(v["id"] == vid for v in voices):
+        return jsonify({"error": "Bu Voice ID zaten ekli"}), 400
+
+    new_voice = {
+        "id": vid,
+        "name": name,
+        "description": (data.get("description") or "Özel").strip(),
+        "gender": data.get("gender", "unknown"),
+        "source": "custom",
+    }
+    voices.append(new_voice)
+    _save_custom_voices(voices)
+    return jsonify({"voice": new_voice, "status": "added"})
+
+
+@app.route("/api/voices/custom/<voice_id>", methods=["DELETE"])
+def api_voice_delete_custom(voice_id):
+    voices = _load_custom_voices()
+    new_voices = [v for v in voices if v["id"] != voice_id]
+    if len(new_voices) == len(voices):
+        return jsonify({"error": "Ses bulunamadı"}), 404
+    _save_custom_voices(new_voices)
+    return jsonify({"status": "deleted"})
+
+
+@app.route("/api/<channel_id>/batch", methods=["POST"])
+def api_channel_batch(channel_id):
+    """Manuel batch üretimi başlatır.
+    Body: {
+      "group": "today" | "tomorrow" | "all",
+      "require_approval": false (varsayılan)
+    }
+    """
+    channel = ch_registry.get_channel(channel_id)
+    if not channel:
+        return jsonify({"error": "Kanal bulunamadı"}), 404
+
+    if channel.get("type") != "zodiac":
+        return jsonify({
+            "error": "Batch sadece zodiac (burç) kanallarında çalışır"
+        }), 400
+
+    data = request.get_json(silent=True) or {}
+    group_type = data.get("group", "today")
+    require_approval = bool(data.get("require_approval", False))
+
+    from zodiac import (get_todays_group, GROUP_EVEN_DAYS,
+                        GROUP_ODD_DAYS, all_sign_keys)
+    from datetime import datetime as _dt, timedelta
+
+    if group_type == "today":
+        topic_keys = get_todays_group()
+        label = "Bugünün 6 burcu"
+    elif group_type == "tomorrow":
+        # Yarın çift mi tek mi?
+        tomorrow_day = (_dt.now() + timedelta(days=1)).day
+        topic_keys = (GROUP_EVEN_DAYS if tomorrow_day % 2 == 0
+                      else GROUP_ODD_DAYS)
+        label = "Yarının 6 burcu"
+    elif group_type == "all":
+        topic_keys = all_sign_keys()
+        label = "12 burç"
+    else:
+        return jsonify({"error": "Geçersiz grup"}), 400
+
+    def run():
+        try:
+            from pipeline import produce_topics
+            log.info(f"Manuel batch başladı: {label} ({channel_id})")
+            results = produce_topics(
+                channel_id=channel_id,
+                topic_keys=topic_keys,
+                upload=True,
+                source="web",
+                scheduled_publish_at=None,
+            )
+            try:
+                from telegram_bot import send as tg_send
+                s = len(results["success"])
+                f = len(results["failed"])
+                tg_send(
+                    f"🌐 <b>Manuel batch tamamlandı</b>\n"
+                    f"📺 {channel.get('name')}\n"
+                    f"✅ {s}/{len(topic_keys)} başarılı"
+                    + (f"\n❌ {f} başarısız" if f else "")
+                )
+            except Exception:
+                pass
+        except Exception as e:
+            log.exception(f"Manuel batch {channel_id} hata")
+
+    threading.Thread(target=run, daemon=True).start()
+    return jsonify({
+        "channel_id": channel_id,
+        "group": group_type,
+        "topics": topic_keys,
+        "label": label,
+        "status": "running",
+    })
+
+
+@app.route("/api/<channel_id>/group-info")
+def api_channel_group_info(channel_id):
+    """Bugün/yarın hangi grup üretiliyor öğren."""
+    from zodiac import (get_todays_group, GROUP_EVEN_DAYS,
+                        GROUP_ODD_DAYS, get_sign)
+    from datetime import datetime as _dt, timedelta
+
+    today = _dt.now()
+    tomorrow = today + timedelta(days=1)
+
+    today_group = get_todays_group()
+    tomorrow_keys = (GROUP_EVEN_DAYS if tomorrow.day % 2 == 0
+                     else GROUP_ODD_DAYS)
+
+    def keys_to_meta(keys):
+        return [
+            {"key": k, "name": get_sign(k)["name"],
+             "symbol": get_sign(k)["symbol"]}
+            for k in keys
+        ]
+
+    return jsonify({
+        "today": {
+            "date": today.strftime("%d %B %Y"),
+            "day_type": "ÇİFT" if today.day % 2 == 0 else "TEK",
+            "keys": today_group,
+            "topics": keys_to_meta(today_group),
+        },
+        "tomorrow": {
+            "date": tomorrow.strftime("%d %B %Y"),
+            "day_type": "ÇİFT" if tomorrow.day % 2 == 0 else "TEK",
+            "keys": tomorrow_keys,
+            "topics": keys_to_meta(tomorrow_keys),
+        },
+    })
 
 
 @app.route("/api/voice-test", methods=["POST"])

@@ -206,12 +206,25 @@ def produce_content(
             topics = module.get_topics()
             topic = next((t for t in topics if t["key"] == topic_key), None)
             if topic:
+                # Hazır kategori
                 content["main_label"] = topic["name"]
                 content["main_icon"] = topic.get("emoji",
                                                  topic.get("icon", "✨"))
+            elif custom_topic:
+                # Kullanıcı yazdığı özel konu — başlığı normalize et
+                # "yalnızlık" → "Yalnızlık" gibi
+                ct = custom_topic.strip()
+                # İlk 30 karakteri al, ortadan kesilmesin
+                if len(ct) > 30:
+                    ct = ct[:30].rsplit(" ", 1)[0] + "..."
+                content["main_label"] = ct.title()
+                content["main_icon"] = "✨"
+            else:
+                content["main_label"] = topic_key.title()
+                content["main_icon"] = "✨"
             content["intro_subtitle"] = "Bugün İçin"
             content["outro_subtitle"] = "Her gün dünyaya farklı bak"
-            # Burç alanlarını temizle — lucky_bar burç kartı çizmesin
+            # Burç alanlarını temizle
             content["sign_name"] = ""
             content["sign_symbol"] = ""
             content["lucky_number"] = ""
