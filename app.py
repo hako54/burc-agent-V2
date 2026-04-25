@@ -104,7 +104,7 @@ def api_channel_create():
 
 @app.route("/api/channels/<channel_id>", methods=["PUT"])
 def api_channel_update(channel_id):
-    """Kanal bilgilerini güncelle."""
+    """Kanal bilgilerini güncelle (name, youtube_url, color, voice_*)."""
     data = request.get_json() or {}
     try:
         channel = ch_registry.update_channel(
@@ -112,10 +112,86 @@ def api_channel_update(channel_id):
             name=data.get("name"),
             youtube_url=data.get("youtube_url"),
             color=data.get("color"),
+            voice_id=data.get("voice_id"),
+            voice_stability=data.get("voice_stability"),
+            voice_style=data.get("voice_style"),
+            voice_speed=data.get("voice_speed"),
         )
         return jsonify({"channel": channel})
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/voices")
+def api_voices():
+    """Önerilen ElevenLabs sesleri (Türkçe için)."""
+    voices = [
+        {"id": "21m00Tcm4TlvDq8ikWAM", "name": "Rachel",
+         "description": "Sıcak anlatımcı, kadın", "gender": "female"},
+        {"id": "XB0fDUnXU5powFXDhCwa", "name": "Charlotte",
+         "description": "Sakin, mistik, kadın", "gender": "female"},
+        {"id": "EXAVITQu4vr4xnSDxMaL", "name": "Bella",
+         "description": "Yumuşak, genç kadın", "gender": "female"},
+        {"id": "9BWtsMINqrJLrRacOk9x", "name": "Aria",
+         "description": "Duygusal, empatik", "gender": "female"},
+        {"id": "XrExE9yKIg1WjnnlVkGX", "name": "Matilda",
+         "description": "Tatlı, naif", "gender": "female"},
+        {"id": "pFZP5JQG7iQjIQuC4Bku", "name": "Lily",
+         "description": "Sıcak, genç", "gender": "female"},
+        {"id": "AZnzlk1XvdvUeBnXmlld", "name": "Domi",
+         "description": "Güçlü, kararlı", "gender": "female"},
+        {"id": "ThT5KcBeYPX3keUQqHPh", "name": "Dorothy",
+         "description": "Olgun, sakin", "gender": "female"},
+        {"id": "pNInz6obpgDQGcFmaJgB", "name": "Adam",
+         "description": "Derin, anlatımcı", "gender": "male"},
+        {"id": "VR6AewLTigWG4xSOukaG", "name": "Arnold",
+         "description": "Vurgulu, etkileyici", "gender": "male"},
+        {"id": "yoZ06aMxZJJ28mfd3POQ", "name": "Sam",
+         "description": "Genç, dinamik", "gender": "male"},
+        {"id": "TxGEqnHWrfWFTfGW9XjX", "name": "Josh",
+         "description": "Sıcak, anlatımcı erkek", "gender": "male"},
+        {"id": "onwK4e9ZLuTAKqWW03F9", "name": "Daniel",
+         "description": "Profesyonel, ciddi", "gender": "male"},
+    ]
+    return jsonify({"voices": voices})
+
+
+@app.route("/api/voice-test", methods=["POST"])
+def api_voice_test():
+    """Verilen voice config ile kısa bir test sesi üretir.
+    Body: {"voice_id": "...", "stability": 0.5, "style": 0.4, "speed": 1.0,
+           "text": "test metni" (opsiyonel)}
+    Dönüş: dosya URL'si"""
+    data = request.get_json() or {}
+    voice_id = data.get("voice_id", "21m00Tcm4TlvDq8ikWAM")
+    text = data.get("text") or (
+        "Merhaba, bu bir ses testidir. "
+        "Bugün kendine iyi davranmayı unutma."
+    )
+
+    voice_config = {
+        "voice_id": voice_id,
+        "stability": float(data.get("stability", 0.50)),
+        "style": float(data.get("style", 0.35)),
+        "speed": float(data.get("speed", 0.95)),
+        "similarity_boost": 0.75,
+    }
+
+    try:
+        from services.tts import generate_tts
+        # Output dizinine geçici dosya
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:18]
+        filename = f"voice_test_{ts}.mp3"
+        out_path = str(Path(os.environ.get("OUTPUT_DIR", "output")) / filename)
+        generate_tts(text, out_path, voice_config=voice_config)
+        return jsonify({
+            "ok": True,
+            "url": f"/output/{filename}",
+            "filename": filename,
+        })
+    except Exception as e:
+        log.exception("Voice test hata")
+        return jsonify({"error": str(e)[:200]}), 500
 
 
 @app.route("/api/channels/<channel_id>", methods=["DELETE"])
