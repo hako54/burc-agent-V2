@@ -667,7 +667,12 @@ def serve_output(filename):
         abort(403)
     if not file_path.exists():
         abort(404)
-    return send_from_directory(output_dir, filename)
+    # conditional=True → Range header desteği (video seek için kritik)
+    return send_from_directory(
+        output_dir, filename,
+        conditional=True,
+        mimetype="video/mp4" if filename.endswith(".mp4") else None,
+    )
 
 
 # ── Arka plan servisleri ──────────────────────────────────────────
