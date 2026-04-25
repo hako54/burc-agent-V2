@@ -718,7 +718,7 @@ def render_video(content: dict, output_path: str,
         logger=None,
         threads=4,
         preset="ultrafast",
-        ffmpeg_params=["-crf", "26"],
+        ffmpeg_params=["-crf", "26", "-movflags", "+faststart"],
     )
 
     # 8) Temp ses dosyalarını temizle
