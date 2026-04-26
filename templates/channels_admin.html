@@ -266,6 +266,15 @@
                  value="#d4af37" style="flex: 1;">
         </div>
       </div>
+      <div class="form-group" style="display: flex; align-items: center; gap: 0.625rem; padding: 0.75rem; background: rgba(212, 175, 55, 0.05); border: 1px solid var(--gold-dim); border-radius: 8px;">
+        <input type="checkbox" id="ch-auto" style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--gold);">
+        <label for="ch-auto" style="cursor: pointer; flex: 1;">
+          <div style="color: var(--gold); font-size: 0.875rem; font-weight: 500;">⏰ Otomatik üretim aç</div>
+          <div style="color: var(--text-muted); font-size: 0.75rem; margin-top: 0.125rem;">
+            Burç kanalı için: günde 6 burç (06:00) · Motivasyon: günde 2 video (10:30 + 19:00)
+          </div>
+        </label>
+      </div>
       <button type="submit" class="btn btn-primary">Kanal Ekle</button>
     </form>
   </div>
@@ -405,6 +414,7 @@ async function addChannel(event) {
     type: document.getElementById('ch-type').value,
     youtube_url: document.getElementById('ch-youtube').value.trim(),
     color: document.getElementById('ch-color-hex').value.trim(),
+    auto_schedule: document.getElementById('ch-auto').checked,
   };
   if (!data.id || !data.name) {
     toast('Kanal ID ve adı zorunlu', 'error');
@@ -430,6 +440,29 @@ async function addChannel(event) {
     toast('Hata: ' + e.message, 'error');
   }
   return false;
+}
+
+async function toggleAutoSchedule(channelId, enabled) {
+  try {
+    const res = await fetch(`/api/channels/${channelId}`, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({auto_schedule: enabled}),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      toast(enabled
+        ? 'Otomatik üretim açıldı'
+        : 'Otomatik üretim kapatıldı',
+        'success');
+      // Listede meta yazıyı güncelle
+      loadChannels();
+    } else {
+      toast('Hata: ' + (data.error || 'bilinmiyor'), 'error');
+    }
+  } catch (e) {
+    toast('Hata: ' + e.message, 'error');
+  }
 }
 
 async function deleteChannel(id, name) {
@@ -595,6 +628,20 @@ async function loadChannels() {
             <div class="channel-item-meta">
               <code>${ch.id}</code> · ${data.types[ch.type]?.name || ch.type}
               ${ch.youtube_url ? ' · <a href="' + ch.youtube_url + '" target="_blank" style="color: var(--gold);">YouTube ↗</a>' : ' · <span style="color: var(--danger);">YouTube bağlı değil</span>'}
+              ${ch.auto_schedule
+                ? ' · <span style="color: var(--success);">⏰ Otomatik açık</span>'
+                : ' · <span style="color: var(--text-muted);">⏸ Otomatik kapalı</span>'}
+            </div>
+            <div style="margin-top: 0.625rem; display: flex; align-items: center; gap: 0.5rem;">
+              <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.813rem; color: var(--text-dim);">
+                <input type="checkbox" ${ch.auto_schedule ? 'checked' : ''}
+                       onchange="toggleAutoSchedule('${ch.id}', this.checked)"
+                       style="width: 16px; height: 16px; cursor: pointer; accent-color: var(--gold);">
+                Otomatik üretim
+              </label>
+              <span style="font-size: 0.75rem; color: var(--text-muted); font-style: italic;">
+                ${ch.type === 'zodiac' ? '(her gün 06:00)' : '(her gün 10:30 + 19:00)'}
+              </span>
             </div>
           </div>
           <div class="channel-item-actions">
