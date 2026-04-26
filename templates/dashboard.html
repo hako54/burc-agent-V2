@@ -1026,6 +1026,27 @@ async function produceBatch(group) {
   }
 }
 
+async function smartProduce(timeOfDay) {
+  // timeOfDay: "sabah" veya "akşam"
+  const label = timeOfDay === 'sabah' ? 'Sabah üretimi' : 'Akşam üretimi';
+  if (!confirm(`${label} için yaratıcı bir konu önerip video üretilsin mi?\n(Onay isteyeceğim, otomatik yayına çıkmaz)`)) return;
+  try {
+    const res = await fetch(`/api/${CHANNEL_ID}/smart-produce`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({time_of_day: timeOfDay}),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      toast(`${label} başlatıldı. Yaratıcı bir konu seçiliyor...`, 'info');
+    } else {
+      throw new Error(data.error || 'hata');
+    }
+  } catch (e) {
+    toast('Hata: ' + e.message, 'error');
+  }
+}
+
 async function produceCustomTopic() {
   const input = document.getElementById('customTopicInput');
   const topic = input.value.trim();
@@ -1095,8 +1116,15 @@ function _setupActionsBar() {
       </button>
     `;
   } else if (CONTENT_TYPE_INFO.id === 'motivation') {
-    // Motivasyon: sadece geçmişi yenile (üretim manuel topic veya kategori ile)
+    // Motivasyon: smart üretim butonları (yaratıcı konu)
     html = `
+      <button class="btn btn-primary" onclick="smartProduce('sabah')">
+        🌅 Sabah Üretimi (Yaratıcı Konu)
+      </button>
+      <button class="btn btn-primary" onclick="smartProduce('akşam')"
+              style="background: linear-gradient(135deg, var(--violet), #a855f7);">
+        🌆 Akşam Üretimi (Yaratıcı Konu)
+      </button>
       <button class="btn btn-ghost" onclick="refresh()">
         Geçmişi yenile
       </button>
