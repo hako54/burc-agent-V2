@@ -124,6 +124,92 @@ def _daily_batch_job():
     )
 
 
+def _produce_smart_motivation(channel_id: str, time_of_day: str = "sabah",
+                              source: str = "scheduler"):
+    """Bir motivasyon kanalı için yaratıcı bir konu üret + video yap + yükle."""
+    import channel_registry
+    from services.topic_suggester import suggest_topic_for_motivation
+    from pipeline import produce_content
+
+    channel = channel_registry.get_channel(channel_id)
+    if not channel:
+        log.warning(f"Kanal bulunamadı: {channel_id}")
+        return
+
+    if channel.get("type") != "motivation":
+        log.warning(f"Kanal '{channel_id}' motivation tipi değil, atlandı")
+        return
+
+    log.info(f"🌱 {channel['name']} ({time_of_day}) smart üretim başlıyor")
+
+    try:
+        suggestion = suggest_topic_for_motivation(
+            channel_id=channel_id, time_of_day=time_of_day,
+        )
+        topic = suggestion["topic"]
+        slug = suggestion["slug"]
+
+        tg_send(
+            f"🌅 <b>{channel['name']} — {time_of_day} üretimi</b>\n"
+            f"🤖 Önerilen konu: <i>{topic}</i>\n"
+            f"⏳ Üretim başlıyor..."
+        )
+
+        result = produce_content(
+            channel_id=channel_id,
+            topic_key=slug,
+            custom_topic=topic,
+            upload=True,
+            source=source,
+            require_approval=False,
+        )
+
+        tg_send(
+            f"✅ <b>{channel['name']}</b> ({time_of_day}) yayında!\n"
+            f"📝 {result.get('title', '')[:80]}\n"
+            f"🔗 {result.get('youtube_url', '?')}"
+        )
+    except Exception as e:
+        log.exception(f"Smart üretim {channel_id}/{time_of_day} hata")
+        tg_send(
+            f"❌ <b>{channel.get('name', channel_id)}</b> "
+            f"({time_of_day}) hata: {str(e)[:200]}"
+        )
+
+
+def _morning_motivation_job():
+    """10:30'da çalışır: motivasyon tipi auto_schedule'lı kanallar için
+    sabah videosu üretir."""
+    import channel_registry
+    log.info("=" * 60)
+    log.info("🌅 Sabah motivasyon üretimi (10:30)")
+    motivation_channels = [
+        c for c in channel_registry.list_channels()
+        if c.get("type") == "motivation" and c.get("auto_schedule", False)
+    ]
+    if not motivation_channels:
+        log.info("Auto-schedule motivasyon kanalı yok, atlandı")
+        return
+    for ch in motivation_channels:
+        _produce_smart_motivation(ch["id"], "sabah", "scheduler")
+
+
+def _evening_motivation_job():
+    """19:00'da çalışır: motivasyon kanalları için akşam videosu."""
+    import channel_registry
+    log.info("=" * 60)
+    log.info("🌆 Akşam motivasyon üretimi (19:00)")
+    motivation_channels = [
+        c for c in channel_registry.list_channels()
+        if c.get("type") == "motivation" and c.get("auto_schedule", False)
+    ]
+    if not motivation_channels:
+        log.info("Auto-schedule motivasyon kanalı yok, atlandı")
+        return
+    for ch in motivation_channels:
+        _produce_smart_motivation(ch["id"], "akşam", "scheduler")
+
+
 def start_scheduler():
     """APScheduler'ı başlatır."""
     tz = pytz.timezone(TIMEZONE)
@@ -143,11 +229,43 @@ def start_scheduler():
         misfire_grace_time=3600,
         replace_existing=True,
     )
+
+    # Motivasyon kanalları için sabah ve akşam yapay zeka destekli üretim
+    morning_time = os.environ.get("MOTIVATION_MORNING_TIME", "10:30")
+    evening_time = os.environ.get("MOTIVATION_EVENING_TIME", "19:00")
+    try:
+        mh, mm = map(int, morning_time.split(":"))
+        scheduler.add_job(
+            _morning_motivation_job,
+            CronTrigger(hour=mh, minute=mm, timezone=tz),
+            id="morning_motivation",
+            name="Sabah Motivasyon (yaratıcı konu)",
+            misfire_grace_time=1800,
+            replace_existing=True,
+        )
+        log.info(f"📅 Sabah motivasyon: her gün {morning_time} ({TIMEZONE})")
+    except Exception as e:
+        log.warning(f"Sabah motivasyon cron eklenemedi: {e}")
+
+    try:
+        eh, em = map(int, evening_time.split(":"))
+        scheduler.add_job(
+            _evening_motivation_job,
+            CronTrigger(hour=eh, minute=em, timezone=tz),
+            id="evening_motivation",
+            name="Akşam Motivasyon (yaratıcı konu)",
+            misfire_grace_time=1800,
+            replace_existing=True,
+        )
+        log.info(f"📅 Akşam motivasyon: her gün {evening_time} ({TIMEZONE})")
+    except Exception as e:
+        log.warning(f"Akşam motivasyon cron eklenemedi: {e}")
+
     scheduler.start()
-    log.info(f"📅 Scheduler başladı: her gün {BURC_TIME} "
-             f"({TIMEZONE}), yayın {PUBLISH_TIME}")
-    log.info(f"   Çift gün grubu: koc, boga, ikizler, yengec, aslan, basak")
-    log.info(f"   Tek gün grubu:  terazi, akrep, yay, oglak, kova, balik")
+    log.info(f"📅 Scheduler başladı: bur\u00e7 {BURC_TIME} "
+             f"({TIMEZONE}), bur\u00e7 yay\u0131n {PUBLISH_TIME}")
+    log.info(f"   \u00c7ift g\u00fcn: koc, boga, ikizler, yengec, aslan, basak")
+    log.info(f"   Tek g\u00fcn:  terazi, akrep, yay, oglak, kova, balik")
     return scheduler
 
 

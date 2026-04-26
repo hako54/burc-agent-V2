@@ -274,6 +274,54 @@ def api_voice_delete_custom(voice_id):
     return jsonify({"status": "deleted"})
 
 
+@app.route("/api/<channel_id>/smart-produce", methods=["POST"])
+def api_channel_smart_produce(channel_id):
+    """Motivasyon kanalı için yaratıcı konu önerisi + üretim.
+    Body: {"time_of_day": "sabah" | "akşam"}
+    """
+    channel = ch_registry.get_channel(channel_id)
+    if not channel:
+        return jsonify({"error": "Kanal bulunamadı"}), 404
+
+    if channel.get("type") != "motivation":
+        return jsonify({
+            "error": "Smart üretim sadece motivasyon kanallarında çalışır"
+        }), 400
+
+    data = request.get_json(silent=True) or {}
+    time_of_day = data.get("time_of_day", "sabah")
+    if time_of_day not in ("sabah", "akşam"):
+        time_of_day = "sabah"
+
+    def run():
+        try:
+            from services.topic_suggester import suggest_topic_for_motivation
+            from pipeline import produce_content
+
+            suggestion = suggest_topic_for_motivation(
+                channel_id=channel_id, time_of_day=time_of_day,
+            )
+            log.info(f"Smart suggestion ({channel_id}, {time_of_day}): "
+                     f"{suggestion['topic']}")
+            produce_content(
+                channel_id=channel_id,
+                topic_key=suggestion["slug"],
+                custom_topic=suggestion["topic"],
+                upload=True,
+                source="web",
+                require_approval=True,  # Manuel tetikleme = onay iste
+            )
+        except Exception as e:
+            log.exception(f"Smart produce {channel_id} hata")
+
+    threading.Thread(target=run, daemon=True).start()
+    return jsonify({
+        "channel_id": channel_id,
+        "time_of_day": time_of_day,
+        "status": "running",
+    })
+
+
 @app.route("/api/<channel_id>/batch", methods=["POST"])
 def api_channel_batch(channel_id):
     """Manuel batch üretimi başlatır.
