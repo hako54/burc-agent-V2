@@ -53,6 +53,7 @@ def _default_channels() -> list:
             "token_file": "token_burc.json",
             "data_subdir": "burc",
             "auto_schedule": True,
+            "schedule_times": ["06:00"],
             "voice_id": "XB0fDUnXU5powFXDhCwa",   # Charlotte - sakin mistik
             "voice_stability": 0.50,
             "voice_style": 0.35,
@@ -84,6 +85,52 @@ _TYPE_VOICE_DEFAULTS = {
     },
 }
 
+# Content type'a göre varsayılan otomatik üretim saatleri
+_TYPE_DEFAULT_SCHEDULE = {
+    "zodiac": ["06:00"],
+    "motivation": ["10:30", "19:00"],
+    "custom": ["10:00"],
+}
+
+
+def _validate_time(s: str) -> str:
+    """'HH:MM' formatını kontrol eder ve normalize eder. Geçersizse hata."""
+    s = (s or "").strip()
+    parts = s.split(":")
+    if len(parts) != 2:
+        raise ValueError(f"Geçersiz saat: '{s}' (HH:MM olmalı)")
+    try:
+        h = int(parts[0])
+        m = int(parts[1])
+    except ValueError:
+        raise ValueError(f"Geçersiz saat: '{s}'")
+    if not (0 <= h <= 23 and 0 <= m <= 59):
+        raise ValueError(f"Geçersiz saat: '{s}'")
+    return f"{h:02d}:{m:02d}"
+
+
+def _normalize_schedule(times, channel_type: str) -> list:
+    """Saat listesini doğrula, normalize et, sıralı tutarlı dön.
+    Boşsa type default'unu kullan."""
+    if not times:
+        return list(_TYPE_DEFAULT_SCHEDULE.get(channel_type, ["10:00"]))
+    if isinstance(times, str):
+        times = [t.strip() for t in times.split(",") if t.strip()]
+    cleaned = []
+    seen = set()
+    for t in times:
+        try:
+            normalized = _validate_time(t)
+            if normalized not in seen:
+                seen.add(normalized)
+                cleaned.append(normalized)
+        except ValueError as e:
+            log.warning(f"Skipping invalid time: {e}")
+    if not cleaned:
+        return list(_TYPE_DEFAULT_SCHEDULE.get(channel_type, ["10:00"]))
+    cleaned.sort()
+    return cleaned
+
 
 def _load_channels() -> list:
     """Kanal listesini JSON'dan yükle. Yoksa default dön."""
@@ -107,10 +154,18 @@ def list_channels() -> list:
     """Tanımlı tüm kanalların listesi."""
     with _lock:
         channels = _load_channels()
-        # Her kanalın veri klasörü yoksa oluştur
+        # Migration: eski kayıtların schedule_times'ı yoksa default ekle
+        modified = False
         for ch in channels:
+            if "schedule_times" not in ch:
+                ch["schedule_times"] = list(_TYPE_DEFAULT_SCHEDULE.get(
+                    ch.get("type", "custom"), ["10:00"]
+                ))
+                modified = True
             subdir = DATA_DIR / ch.get("data_subdir", ch["id"])
             subdir.mkdir(parents=True, exist_ok=True)
+        if modified:
+            _save_channels(channels)
         return channels
 
 
@@ -124,11 +179,19 @@ def get_channel(channel_id: str) -> Optional[dict]:
 def add_channel(channel_id: str, name: str, channel_type: str,
                 youtube_url: str = "", color: str = "#d4af37",
                 auto_schedule: bool = False,
+                schedule_times: list = None,
                 voice_id: str = "",
                 voice_stability: float = None,
                 voice_style: float = None,
                 voice_speed: float = None) -> dict:
-    """Yeni kanal ekle."""
+    """Yeni kanal ekle.
+
+    schedule_times: ['HH:MM', 'HH:MM', ...] — günde kaç kez ve hangi saatte
+        otomatik üretim yapılacağı. Boş/None ise default kullanılır:
+        - zodiac: ['06:00']
+        - motivation: ['10:30', '19:00']
+        - custom: ['10:00']
+    """
     if channel_type not in CHANNEL_TYPES:
         raise ValueError(
             f"Geçersiz tip: {channel_type}. "
@@ -166,6 +229,8 @@ def add_channel(channel_id: str, name: str, channel_type: str,
             "token_file": token_file,
             "data_subdir": channel_id,
             "auto_schedule": bool(auto_schedule),
+            "schedule_times": _normalize_schedule(schedule_times,
+                                                  channel_type),
             "voice_id": voice_id or voice_defaults["voice_id"],
             "voice_stability": (voice_stability
                                if voice_stability is not None
@@ -190,7 +255,7 @@ def add_channel(channel_id: str, name: str, channel_type: str,
 def update_channel(channel_id: str, **updates) -> dict:
     """Kanal bilgilerini güncelle."""
     allowed = {
-        "name", "youtube_url", "color", "auto_schedule",
+        "name", "youtube_url", "color", "auto_schedule", "schedule_times",
         "voice_id", "voice_stability", "voice_style", "voice_speed",
     }
     with _lock:
@@ -199,6 +264,9 @@ def update_channel(channel_id: str, **updates) -> dict:
             if ch["id"] == channel_id:
                 for k, v in updates.items():
                     if k in allowed and v is not None:
+                        # schedule_times için doğrula+normalize
+                        if k == "schedule_times":
+                            v = _normalize_schedule(v, ch.get("type", "custom"))
                         ch[k] = v
                 _save_channels(channels)
                 return ch

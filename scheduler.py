@@ -211,62 +211,115 @@ def _evening_motivation_job():
 
 
 def start_scheduler():
-    """APScheduler'ı başlatır."""
+    """APScheduler'ı başlatır.
+    Her kanal için kendi schedule_times'ına göre dinamik cron job
+    register eder. auto_schedule=False olan kanallar atlanır."""
+    import channel_registry
+
     tz = pytz.timezone(TIMEZONE)
     scheduler = BackgroundScheduler(timezone=tz)
 
-    try:
-        hour, minute = map(int, BURC_TIME.split(":"))
-    except Exception:
-        log.warning(f"Geçersiz BURC_BATCH_TIME '{BURC_TIME}', 09:00 kullanılıyor")
-        hour, minute = 9, 0
+    job_count = 0
+    for ch in channel_registry.list_channels():
+        if not ch.get("auto_schedule"):
+            continue
+        ch_id = ch["id"]
+        ch_type = ch.get("type", "zodiac")
+        times = ch.get("schedule_times") or []
 
-    scheduler.add_job(
-        _daily_batch_job,
-        CronTrigger(hour=hour, minute=minute, timezone=tz),
-        id="daily_burc_batch",
-        name="Günlük 6 Burç Üretimi",
-        misfire_grace_time=3600,
-        replace_existing=True,
-    )
+        for idx, time_str in enumerate(times):
+            try:
+                h, m = map(int, time_str.split(":"))
+            except Exception:
+                log.warning(f"Geçersiz saat {ch_id}/{time_str}")
+                continue
 
-    # Motivasyon kanalları için sabah ve akşam yapay zeka destekli üretim
-    morning_time = os.environ.get("MOTIVATION_MORNING_TIME", "10:30")
-    evening_time = os.environ.get("MOTIVATION_EVENING_TIME", "19:00")
-    try:
-        mh, mm = map(int, morning_time.split(":"))
-        scheduler.add_job(
-            _morning_motivation_job,
-            CronTrigger(hour=mh, minute=mm, timezone=tz),
-            id="morning_motivation",
-            name="Sabah Motivasyon (yaratıcı konu)",
-            misfire_grace_time=1800,
-            replace_existing=True,
-        )
-        log.info(f"📅 Sabah motivasyon: her gün {morning_time} ({TIMEZONE})")
-    except Exception as e:
-        log.warning(f"Sabah motivasyon cron eklenemedi: {e}")
+            job_id = f"auto_{ch_id}_{idx}"
 
-    try:
-        eh, em = map(int, evening_time.split(":"))
-        scheduler.add_job(
-            _evening_motivation_job,
-            CronTrigger(hour=eh, minute=em, timezone=tz),
-            id="evening_motivation",
-            name="Akşam Motivasyon (yaratıcı konu)",
-            misfire_grace_time=1800,
-            replace_existing=True,
-        )
-        log.info(f"📅 Akşam motivasyon: her gün {evening_time} ({TIMEZONE})")
-    except Exception as e:
-        log.warning(f"Akşam motivasyon cron eklenemedi: {e}")
+            if ch_type == "zodiac":
+                # Burç tipi: günün grubunu üret
+                scheduler.add_job(
+                    _channel_zodiac_job,
+                    CronTrigger(hour=h, minute=m, timezone=tz),
+                    args=[ch_id],
+                    id=job_id,
+                    name=f"Bur\u00e7 {ch_id} {time_str}",
+                    misfire_grace_time=3600,
+                    replace_existing=True,
+                )
+            elif ch_type == "motivation":
+                # Motivasyon: yaratıcı konu öner üret
+                # Saat 06:00-12:00 arası "sabah", sonra "akşam"
+                tod = "sabah" if h < 13 else "akşam"
+                scheduler.add_job(
+                    _channel_motivation_job,
+                    CronTrigger(hour=h, minute=m, timezone=tz),
+                    args=[ch_id, tod],
+                    id=job_id,
+                    name=f"Motivasyon {ch_id} {time_str} ({tod})",
+                    misfire_grace_time=1800,
+                    replace_existing=True,
+                )
+            else:
+                log.info(f"Bilinmeyen tip atlandı: {ch_id} ({ch_type})")
+                continue
+
+            job_count += 1
+            log.info(f"📅 Cron registered: {ch_id} @ {time_str} "
+                     f"({ch_type})")
 
     scheduler.start()
-    log.info(f"📅 Scheduler başladı: bur\u00e7 {BURC_TIME} "
-             f"({TIMEZONE}), bur\u00e7 yay\u0131n {PUBLISH_TIME}")
-    log.info(f"   \u00c7ift g\u00fcn: koc, boga, ikizler, yengec, aslan, basak")
-    log.info(f"   Tek g\u00fcn:  terazi, akrep, yay, oglak, kova, balik")
+    log.info(f"📅 Scheduler başladı: {job_count} cron job aktif "
+             f"({TIMEZONE})")
+    log.info(f"   Bur\u00e7 yay\u0131n saati: {PUBLISH_TIME}")
     return scheduler
+
+
+def _channel_zodiac_job(channel_id: str):
+    """Belirli bir burç kanalı için günün grubunu üretir."""
+    import channel_registry
+    log.info("=" * 60)
+    today = datetime.now(pytz.timezone(TIMEZONE))
+    group = get_todays_group()
+    day_type = "ÇİFT" if today.day % 2 == 0 else "TEK"
+
+    log.info(f"🔮 Bur\u00e7 batch: {channel_id} — "
+             f"{today.strftime('%d %B %Y')} ({day_type})")
+
+    channel = channel_registry.get_channel(channel_id)
+    if not channel:
+        log.warning(f"Kanal yok: {channel_id}")
+        return
+
+    publish_at = _calculate_publish_at_iso()
+    group_names = ", ".join(get_sign(k)["name"] for k in group)
+    tg_send(
+        f"🌅 <b>{channel['name']}</b> otomatik üretim\n"
+        f"📅 {today.strftime('%d %B %Y')} ({day_type} g\u00fcn)\n"
+        f"🔮 {group_names}\n"
+        f"⏰ Yay\u0131n: {PUBLISH_TIME}"
+    )
+
+    try:
+        results = produce_signs(
+            group, upload=True, source="scheduler",
+            scheduled_publish_at=publish_at,
+            channel_id=channel_id,
+        )
+        s = len(results["success"])
+        f = len(results["failed"])
+        msg = f"✅ <b>{channel['name']}</b>: {s}/{len(group)} ba\u015far\u0131l\u0131"
+        if f:
+            msg += f"\n❌ {f} ba\u015far\u0131s\u0131z"
+        tg_send(msg)
+    except Exception as e:
+        log.exception(f"Burç batch {channel_id} hata")
+        tg_send(f"❌ <b>{channel['name']}</b> hata: {str(e)[:200]}")
+
+
+def _channel_motivation_job(channel_id: str, time_of_day: str):
+    """Motivasyon kanalı için yaratıcı konu önerip üretir."""
+    _produce_smart_motivation(channel_id, time_of_day, "scheduler")
 
 
 if __name__ == "__main__":

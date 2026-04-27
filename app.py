@@ -45,6 +45,9 @@ app = Flask(__name__)
 _batch_state = {}
 _batch_lock = threading.Lock()
 
+# Scheduler instance — yeniden yüklemeler için tutulur
+_scheduler_instance = None
+
 
 # ── Sayfalar ──────────────────────────────────────────────────────
 
@@ -274,6 +277,26 @@ def api_voice_delete_custom(voice_id):
         return jsonify({"error": "Ses bulunamadı"}), 404
     _save_custom_voices(new_voices)
     return jsonify({"status": "deleted"})
+
+
+@app.route("/api/scheduler/reload", methods=["POST"])
+def api_scheduler_reload():
+    """Scheduler'ı yeniden yükler — kanal saatleri değiştiğinde çağrılır."""
+    try:
+        from scheduler import start_scheduler
+        global _scheduler_instance
+        # Mevcut scheduler'ı durdur
+        if _scheduler_instance is not None:
+            try:
+                _scheduler_instance.shutdown(wait=False)
+            except Exception:
+                pass
+        # Yeniden başlat
+        _scheduler_instance = start_scheduler()
+        return jsonify({"status": "reloaded"})
+    except Exception as e:
+        log.exception("Scheduler reload hata")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/<channel_id>/smart-produce", methods=["POST"])
@@ -799,7 +822,8 @@ def _start_background_services():
 
     if os.environ.get("START_SCHEDULER", "1") == "1":
         try:
-            start_scheduler()
+            global _scheduler_instance
+            _scheduler_instance = start_scheduler()
             log.info("Scheduler başlatıldı")
         except Exception as e:
             log.warning(f"Scheduler başlatılamadı: {e}")
