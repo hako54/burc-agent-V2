@@ -267,14 +267,32 @@
         </div>
       </div>
       <div class="form-group" style="display: flex; align-items: center; gap: 0.625rem; padding: 0.75rem; background: rgba(212, 175, 55, 0.05); border: 1px solid var(--gold-dim); border-radius: 8px;">
-        <input type="checkbox" id="ch-auto" style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--gold);">
+        <input type="checkbox" id="ch-auto" style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--gold);"
+               onchange="document.getElementById('ch-times-area').style.display = this.checked ? 'block' : 'none'">
         <label for="ch-auto" style="cursor: pointer; flex: 1;">
           <div style="color: var(--gold); font-size: 0.875rem; font-weight: 500;">⏰ Otomatik üretim aç</div>
           <div style="color: var(--text-muted); font-size: 0.75rem; margin-top: 0.125rem;">
-            Burç kanalı için: günde 6 burç (06:00) · Motivasyon: günde 2 video (10:30 + 19:00)
+            Belirlediğin saatlerde her gün otomatik çalışır
           </div>
         </label>
       </div>
+
+      <div id="ch-times-area" style="display: none; margin-bottom: 1rem; padding: 1rem; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid var(--border);">
+        <label class="form-label">Üretim Saatleri</label>
+        <div id="ch-times-list" style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem;"></div>
+        <div style="display: flex; gap: 0.5rem; align-items: stretch;">
+          <input type="time" id="ch-time-input" class="form-input"
+                 style="flex: 1;" value="10:00">
+          <button type="button" onclick="addTime()" class="btn btn-primary"
+                  style="padding: 0.625rem 1.25rem; font-size: 0.813rem;">
+            + Saat Ekle
+          </button>
+        </div>
+        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.625rem; font-style: italic;">
+          Tip varsayılanı: Burç → 06:00 · Motivasyon → 10:30 + 19:00
+        </div>
+      </div>
+
       <button type="submit" class="btn btn-primary">Kanal Ekle</button>
     </form>
   </div>
@@ -406,6 +424,50 @@ document.getElementById('ch-id').addEventListener('input', e => {
   document.getElementById('hint-env').textContent = envId || 'YENI_KANAL_ID';
 });
 
+// Yeni kanal formundaki saat listesi
+let _newChannelTimes = [];
+
+function _renderTimesList() {
+  const container = document.getElementById('ch-times-list');
+  if (!container) return;
+  if (_newChannelTimes.length === 0) {
+    container.innerHTML = '<span style="color: var(--text-muted); font-style: italic; font-size: 0.875rem;">Henüz saat eklenmedi (boş bırakırsan kanal tipi varsayılanı kullanılır)</span>';
+    return;
+  }
+  container.innerHTML = _newChannelTimes.map(t => `
+    <span style="display: inline-flex; align-items: center; gap: 0.4rem;
+                 padding: 0.4rem 0.75rem; background: rgba(212, 175, 55, 0.15);
+                 border: 1px solid var(--gold-dim); border-radius: 100px;
+                 font-family: monospace; color: var(--gold);">
+      ⏰ ${t}
+      <button type="button" onclick="removeTime('${t}')"
+              style="background: transparent; border: none; color: var(--danger);
+                     cursor: pointer; padding: 0; font-size: 1rem; line-height: 1;">×</button>
+    </span>
+  `).join('');
+}
+
+function addTime() {
+  const input = document.getElementById('ch-time-input');
+  const t = (input.value || '').trim();
+  if (!t || !t.match(/^\d{2}:\d{2}$/)) {
+    toast('Geçerli bir saat seç', 'error');
+    return;
+  }
+  if (_newChannelTimes.includes(t)) {
+    toast('Bu saat zaten ekli', 'info');
+    return;
+  }
+  _newChannelTimes.push(t);
+  _newChannelTimes.sort();
+  _renderTimesList();
+}
+
+function removeTime(t) {
+  _newChannelTimes = _newChannelTimes.filter(x => x !== t);
+  _renderTimesList();
+}
+
 async function addChannel(event) {
   event.preventDefault();
   const data = {
@@ -415,6 +477,7 @@ async function addChannel(event) {
     youtube_url: document.getElementById('ch-youtube').value.trim(),
     color: document.getElementById('ch-color-hex').value.trim(),
     auto_schedule: document.getElementById('ch-auto').checked,
+    schedule_times: _newChannelTimes.length > 0 ? _newChannelTimes : null,
   };
   if (!data.id || !data.name) {
     toast('Kanal ID ve adı zorunlu', 'error');
@@ -432,6 +495,11 @@ async function addChannel(event) {
       document.getElementById('newChannelForm').reset();
       document.getElementById('ch-color-hex').value = '#d4af37';
       document.getElementById('ch-color').value = '#d4af37';
+      _newChannelTimes = [];
+      _renderTimesList();
+      document.getElementById('ch-times-area').style.display = 'none';
+      // Scheduler'ı yenile (yeni cron job'lar için)
+      fetch('/api/scheduler/reload', {method: 'POST'}).catch(() => {});
       loadChannels();
     } else {
       toast('Hata: ' + (body.error || 'Bilinmeyen'), 'error');
@@ -440,6 +508,78 @@ async function addChannel(event) {
     toast('Hata: ' + e.message, 'error');
   }
   return false;
+}
+
+async function addScheduleTime(channelId) {
+  const input = document.getElementById('schedule-input-' + channelId);
+  const t = (input.value || '').trim();
+  if (!t || !t.match(/^\d{2}:\d{2}$/)) {
+    toast('Geçerli bir saat seç', 'error');
+    return;
+  }
+  try {
+    // Önce mevcut saatleri çek
+    const r = await fetch('/api/channels');
+    const all = await r.json();
+    const ch = (all.channels || []).find(c => c.id === channelId);
+    if (!ch) return;
+    let times = (ch.schedule_times || []).slice();
+    if (times.includes(t)) {
+      toast('Bu saat zaten ekli', 'info');
+      return;
+    }
+    times.push(t);
+    times.sort();
+
+    const res = await fetch('/api/channels/' + channelId, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({schedule_times: times}),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      toast(t + ' eklendi', 'success');
+      // Scheduler reload
+      fetch('/api/scheduler/reload', {method: 'POST'}).catch(() => {});
+      loadChannels();
+    } else {
+      toast('Hata: ' + (data.error || ''), 'error');
+    }
+  } catch (e) {
+    toast('Hata: ' + e.message, 'error');
+  }
+}
+
+async function removeScheduleTime(channelId, t) {
+  try {
+    const r = await fetch('/api/channels');
+    const all = await r.json();
+    const ch = (all.channels || []).find(c => c.id === channelId);
+    if (!ch) return;
+    let times = (ch.schedule_times || []).filter(x => x !== t);
+
+    if (times.length === 0) {
+      if (!confirm('Tüm saatleri kaldırırsan otomatik üretim çalışmaz. Devam edilsin mi?')) {
+        return;
+      }
+    }
+
+    const res = await fetch('/api/channels/' + channelId, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({schedule_times: times}),
+    });
+    if (res.ok) {
+      toast(t + ' kaldırıldı', 'success');
+      fetch('/api/scheduler/reload', {method: 'POST'}).catch(() => {});
+      loadChannels();
+    } else {
+      const data = await res.json();
+      toast('Hata: ' + (data.error || ''), 'error');
+    }
+  } catch (e) {
+    toast('Hata: ' + e.message, 'error');
+  }
 }
 
 async function toggleAutoSchedule(channelId, enabled) {
@@ -455,7 +595,8 @@ async function toggleAutoSchedule(channelId, enabled) {
         ? 'Otomatik üretim açıldı'
         : 'Otomatik üretim kapatıldı',
         'success');
-      // Listede meta yazıyı güncelle
+      // Scheduler'ı yenile (cron job'u ekle/kaldır)
+      fetch('/api/scheduler/reload', {method: 'POST'}).catch(() => {});
       loadChannels();
     } else {
       toast('Hata: ' + (data.error || 'bilinmiyor'), 'error');
@@ -632,15 +773,18 @@ async function loadChannels() {
                 ? ' · <span style="color: var(--success);">⏰ Otomatik açık</span>'
                 : ' · <span style="color: var(--text-muted);">⏸ Otomatik kapalı</span>'}
             </div>
-            <div style="margin-top: 0.625rem; display: flex; align-items: center; gap: 0.5rem;">
+            <div style="margin-top: 0.625rem; display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
               <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.813rem; color: var(--text-dim);">
                 <input type="checkbox" ${ch.auto_schedule ? 'checked' : ''}
                        onchange="toggleAutoSchedule('${ch.id}', this.checked)"
                        style="width: 16px; height: 16px; cursor: pointer; accent-color: var(--gold);">
                 Otomatik üretim
               </label>
-              <span style="font-size: 0.75rem; color: var(--text-muted); font-style: italic;">
-                ${ch.type === 'zodiac' ? '(her gün 06:00)' : '(her gün 10:30 + 19:00)'}
+              <span style="font-size: 0.75rem; color: var(--text-muted);">
+                ⏰ ${(ch.schedule_times || []).join(', ') || 'saat tanımlı değil'}
+                <span style="color: var(--gold-soft);">
+                  (günde ${(ch.schedule_times || []).length} kez)
+                </span>
               </span>
             </div>
           </div>
@@ -649,6 +793,42 @@ async function loadChannels() {
             ${ch.id !== 'burc' ? `<button class="btn btn-danger" onclick="deleteChannel('${ch.id}', '${escapeHtml(ch.name)}')">Sil</button>` : ''}
           </div>
         </div>
+
+        <!-- Saat editörü (accordion) -->
+        <details style="margin-top: 1rem; border-top: 1px dashed var(--border); padding-top: 1rem;">
+          <summary style="cursor: pointer; color: var(--gold); font-size: 0.875rem;
+                          letter-spacing: 0.05em; text-transform: uppercase;
+                          padding: 0.25rem 0;">
+            ⏰ Üretim Saatleri
+          </summary>
+          <div style="margin-top: 1rem;">
+            <div id="schedule-list-${ch.id}" style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem;">
+              ${(ch.schedule_times || []).map(t => `
+                <span style="display: inline-flex; align-items: center; gap: 0.4rem;
+                             padding: 0.4rem 0.75rem; background: rgba(212, 175, 55, 0.15);
+                             border: 1px solid var(--gold-dim); border-radius: 100px;
+                             font-family: monospace; color: var(--gold);">
+                  ⏰ ${t}
+                  <button type="button" onclick="removeScheduleTime('${ch.id}', '${t}')"
+                          style="background: transparent; border: none; color: var(--danger);
+                                 cursor: pointer; padding: 0; font-size: 1rem; line-height: 1;">×</button>
+                </span>
+              `).join('') || '<span style="color: var(--text-muted); font-style: italic; font-size: 0.875rem;">Saat yok</span>'}
+            </div>
+            <div style="display: flex; gap: 0.5rem; align-items: stretch;">
+              <input type="time" id="schedule-input-${ch.id}" class="form-input"
+                     style="flex: 1; max-width: 200px;" value="10:00">
+              <button type="button" onclick="addScheduleTime('${ch.id}')"
+                      class="btn btn-primary"
+                      style="padding: 0.625rem 1.25rem; font-size: 0.813rem;">
+                + Saat Ekle
+              </button>
+            </div>
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.625rem; font-style: italic;">
+              Saatler her gün tetiklenir (sadece otomatik üretim açıkken).
+            </div>
+          </div>
+        </details>
 
         <!-- Ses ayarları (collapsible) -->
         <details style="margin-top: 1rem; border-top: 1px dashed var(--border); padding-top: 1rem;">
