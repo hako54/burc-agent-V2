@@ -210,21 +210,29 @@ def produce_content(
                 content["main_label"] = topic["name"]
                 content["main_icon"] = topic.get("emoji",
                                                  topic.get("icon", "✨"))
+                # Kadın yüzü thumbnail için face_queries
+                from channel_modules.motivasyon.config import CATEGORIES
+                cat = CATEGORIES.get(topic_key, {})
+                content["face_queries"] = cat.get("face_queries", [])
             elif custom_topic:
                 # Kullanıcı yazdığı özel konu — başlığı normalize et
-                # "yalnızlık" → "Yalnızlık" gibi
                 ct = custom_topic.strip()
-                # İlk 30 karakteri al, ortadan kesilmesin
                 if len(ct) > 30:
                     ct = ct[:30].rsplit(" ", 1)[0] + "..."
                 content["main_label"] = ct.title()
                 content["main_icon"] = "✨"
+                # Custom için generic kadın yüzü
+                content["face_queries"] = [
+                    "woman portrait emotional close up",
+                    "woman face thoughtful soft light",
+                    "woman portrait expressive",
+                ]
             else:
                 content["main_label"] = topic_key.title()
                 content["main_icon"] = "✨"
+                content["face_queries"] = ["woman portrait expressive"]
             content["intro_subtitle"] = "Bugün İçin"
             content["outro_subtitle"] = "Her gün dünyaya farklı bak"
-            # Burç alanlarını temizle
             content["sign_name"] = ""
             content["sign_symbol"] = ""
             content["lucky_number"] = ""
