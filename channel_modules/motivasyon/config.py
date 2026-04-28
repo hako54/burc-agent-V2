@@ -39,9 +39,10 @@ CATEGORIES = {
         "visual_queries": ["golden success mountain", "sunrise achievement",
                            "winner medal", "champion success"],
         "face_queries": [
-            "woman portrait confident smile golden hour",
-            "woman face determined inspiring",
-            "woman portrait strong achievement",
+            "beautiful young woman model glamorous portrait",
+            "stunning woman fashion portrait makeup",
+            "attractive woman confident close up",
+            "beautiful woman elegant studio portrait",
         ],
     },
     "odaklanma": {
@@ -52,9 +53,10 @@ CATEGORIES = {
         "visual_queries": ["arrow target bullseye", "focused concentration",
                            "zen meditation focus", "laser precision"],
         "face_queries": [
-            "woman portrait focused eyes intense",
-            "woman face concentration serious",
-            "woman determined gaze portrait",
+            "beautiful young woman model intense gaze portrait",
+            "stunning woman fashion makeup serious look",
+            "gorgeous woman portrait dramatic lighting",
+            "beautiful woman close up eyes intense",
         ],
     },
     "direnc": {
@@ -65,9 +67,10 @@ CATEGORIES = {
         "visual_queries": ["storm lighthouse resilient", "strong tree wind",
                            "mountain climbing struggle", "warrior strength"],
         "face_queries": [
-            "woman portrait resilient strong",
-            "woman face determined fierce",
-            "woman strong gaze powerful",
+            "beautiful young woman model strong fierce portrait",
+            "stunning woman bold powerful look makeup",
+            "gorgeous woman dramatic portrait fashion",
+            "attractive woman fierce gaze close up",
         ],
     },
     "huzur": {
@@ -78,9 +81,10 @@ CATEGORIES = {
         "visual_queries": ["peaceful lake mountain", "calm forest morning",
                            "zen garden water", "sunset horizon peaceful"],
         "face_queries": [
-            "woman portrait peaceful serene smile",
-            "woman face calm meditation",
-            "woman serene portrait soft light",
+            "beautiful young woman model serene smile portrait",
+            "stunning woman peaceful gentle portrait makeup",
+            "gorgeous woman soft glamorous close up",
+            "attractive woman calm beautiful portrait",
         ],
     },
     "sukran": {
@@ -91,9 +95,10 @@ CATEGORIES = {
         "visual_queries": ["sunrise gratitude hands", "golden light hope",
                            "nature flower beauty", "warm morning peaceful"],
         "face_queries": [
-            "woman portrait grateful warm smile",
-            "woman face gentle thankful",
-            "woman peaceful smile golden",
+            "beautiful young woman model warm smile portrait",
+            "stunning woman happy glamorous makeup close up",
+            "gorgeous woman radiant smile portrait",
+            "attractive woman golden hour beautiful",
         ],
     },
     "cesaret": {
@@ -104,9 +109,10 @@ CATEGORIES = {
         "visual_queries": ["lion brave roaring", "eagle flying mountain",
                            "jumping cliff adventure", "courage warrior"],
         "face_queries": [
-            "woman portrait brave fierce strong",
-            "woman face courageous bold",
-            "woman strong powerful gaze",
+            "beautiful young woman model bold portrait fashion",
+            "stunning woman fierce confident makeup",
+            "gorgeous woman dramatic powerful close up",
+            "attractive woman strong elegant portrait",
         ],
     },
     "sevgi": {
@@ -117,9 +123,10 @@ CATEGORIES = {
         "visual_queries": ["heart love romantic sunset", "couple love nature",
                            "flowers pink soft", "kindness people warm"],
         "face_queries": [
-            "woman portrait warm loving smile",
-            "woman face tender soft kind",
-            "woman gentle smile warm",
+            "beautiful young woman model romantic portrait pink",
+            "stunning woman tender glamorous makeup",
+            "gorgeous woman soft pink portrait fashion",
+            "attractive woman romantic beautiful close up",
         ],
     },
     "degisim": {
@@ -131,9 +138,10 @@ CATEGORIES = {
                            "phoenix rising fire", "season change autumn",
                            "caterpillar butterfly metamorphosis"],
         "face_queries": [
-            "woman portrait transformation contemplative",
-            "woman face mysterious change",
-            "woman dramatic portrait emotion",
+            "beautiful young woman model artistic portrait colorful",
+            "stunning woman creative makeup portrait fashion",
+            "gorgeous woman dramatic transformation close up",
+            "attractive woman vibrant portrait fashion",
         ],
     },
     "bilgelik": {
@@ -144,9 +152,10 @@ CATEGORIES = {
         "visual_queries": ["old book library wisdom", "ancient scroll paper",
                            "philosophy statue thinker", "owl wise night"],
         "face_queries": [
-            "woman portrait wise thoughtful",
-            "woman face contemplative deep",
-            "woman pensive thinking portrait",
+            "beautiful young woman model thoughtful portrait elegant",
+            "stunning woman pensive deep portrait makeup",
+            "gorgeous woman intelligent close up fashion",
+            "attractive woman elegant thoughtful portrait",
         ],
     },
     "umut": {
@@ -158,9 +167,10 @@ CATEGORIES = {
                            "light end tunnel dawn",
                            "spring blossom fresh", "rainbow after storm"],
         "face_queries": [
-            "woman portrait hopeful smile sunrise",
-            "woman face hopeful golden light",
-            "woman optimistic warm portrait",
+            "beautiful young woman model bright smile portrait",
+            "stunning woman hopeful glamorous makeup",
+            "gorgeous woman radiant golden portrait",
+            "attractive woman optimistic beautiful close up",
         ],
     },
 }
