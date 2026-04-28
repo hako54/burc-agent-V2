@@ -878,6 +878,9 @@ async function loadPending() {
       row.style.alignItems = 'stretch';
 
       const videoUrl = `/output/${item.video_path.split('/').pop()}`;
+      const thumbUrl = item.thumbnail_path
+        ? `/output/${item.thumbnail_path.split('/').pop()}`
+        : '';
       const description = item.description || '(açıklama yok)';
       const tags = item.tags || [];
       const hashtags = item.hashtags || [];
@@ -904,10 +907,29 @@ async function loadPending() {
 
         <!-- YouTube önizleme: video + açıklama yan yana -->
         <div style="display: grid; grid-template-columns: 240px 1fr; gap: 1rem; margin-top: 1rem; align-items: flex-start;">
-          <video src="${videoUrl}" controls preload="metadata"
-                 style="width: 240px; max-width: 100%; aspect-ratio: 9/16;
-                        border-radius: 8px; background: #000;
-                        border: 1px solid var(--border);"></video>
+          <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+            <video src="${videoUrl}" controls preload="metadata"
+                   style="width: 240px; max-width: 100%; aspect-ratio: 9/16;
+                          border-radius: 8px; background: #000;
+                          border: 1px solid var(--border);"></video>
+            ${thumbUrl ? `
+            <div>
+              <div style="font-size: 0.625rem; color: var(--text-muted);
+                          text-transform: uppercase; letter-spacing: 0.1em;
+                          margin-bottom: 0.25rem; text-align: center;">
+                🎨 YouTube Thumbnail
+              </div>
+              <a href="${thumbUrl}" target="_blank" style="display: block;">
+                <img src="${thumbUrl}" alt="thumbnail"
+                     style="width: 240px; max-width: 100%; aspect-ratio: 16/9;
+                            object-fit: cover; border-radius: 6px;
+                            border: 1px solid var(--gold-dim); cursor: pointer;
+                            transition: transform 0.2s ease;"
+                     onmouseover="this.style.transform='scale(1.02)'"
+                     onmouseout="this.style.transform='scale(1)'">
+              </a>
+            </div>` : ''}
+          </div>
           <div style="display: flex; flex-direction: column; gap: 0.875rem; min-width: 0;">
             <!-- Başlık -->
             <div>
