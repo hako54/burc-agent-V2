@@ -26,6 +26,10 @@ log = logging.getLogger(__name__)
 THUMB_W = 1280
 THUMB_H = 720
 
+# Shorts için dikey thumbnail (9:16)
+SHORTS_THUMB_W = 1080
+SHORTS_THUMB_H = 1920
+
 # Font yolu - mevcut sisteme uygun
 _FONT_CANDIDATES = [
     "font/Montserrat-ExtraBold.ttf",
@@ -150,9 +154,16 @@ Sadece başlığı yaz, başka hiçbir şey yazma. Tırnak da koyma."""
 
 def _fetch_background_image(queries: list,
                             accent_hex: str,
-                            bg_hex: str) -> Image.Image:
-    """Pixabay'den landscape (16:9) görsel çeker. Olmazsa fallback gradient."""
+                            bg_hex: str,
+                            target_w: int = None,
+                            target_h: int = None) -> Image.Image:
+    """Pixabay'den uygun aspect görsel çeker. Olmazsa fallback gradient."""
     api_key = os.environ.get("PIXABAY_API_KEY")
+    tw = target_w or THUMB_W
+    th = target_h or THUMB_H
+    is_vertical = th > tw
+    orientation = "vertical" if is_vertical else "horizontal"
+
     if api_key:
         for q in (queries or [])[:3]:
             try:
@@ -163,8 +174,8 @@ def _fetch_background_image(queries: list,
                         "q": q,
                         "per_page": 5,
                         "image_type": "photo",
-                        "orientation": "horizontal",
-                        "min_width": 1280,
+                        "orientation": orientation,
+                        "min_width": 720 if is_vertical else 1280,
                         "safesearch": "true",
                     },
                     timeout=15, verify=False,
@@ -181,12 +192,14 @@ def _fetch_background_image(queries: list,
             except Exception as e:
                 log.warning(f"Pixabay thumbnail ({q}): {e}")
 
-    # Fallback: gradient
-    return _gradient_image(accent_hex, bg_hex)
+    return _gradient_image(accent_hex, bg_hex, w=tw, h=th)
 
 
-def _gradient_image(accent_hex: str, bg_hex: str) -> Image.Image:
+def _gradient_image(accent_hex: str, bg_hex: str,
+                    w: int = None, h: int = None) -> Image.Image:
     """Accent renkten bg renge gradient."""
+    tw = w or THUMB_W
+    th = h or THUMB_H
     try:
         ac = _hex_to_rgb(accent_hex)
     except Exception:
@@ -196,37 +209,39 @@ def _gradient_image(accent_hex: str, bg_hex: str) -> Image.Image:
     except Exception:
         bg = (15, 10, 30)
 
-    img = Image.new("RGB", (THUMB_W, THUMB_H))
+    img = Image.new("RGB", (tw, th))
     draw = ImageDraw.Draw(img)
-    # Diagonal gradient
-    for y in range(THUMB_H):
-        t = y / THUMB_H
+    for y in range(th):
+        t = y / th
         r = int(bg[0] * (1 - t) + ac[0] * t * 0.5)
         g = int(bg[1] * (1 - t) + ac[1] * t * 0.5)
         b = int(bg[2] * (1 - t) + ac[2] * t * 0.5)
-        draw.line([(0, y), (THUMB_W, y)], fill=(r, g, b))
+        draw.line([(0, y), (tw, y)], fill=(r, g, b))
     return img
 
 
-def _crop_to_aspect(img: Image.Image) -> Image.Image:
-    """Görseli 1280x720'ye uyarla (merkezden kırp)."""
+def _crop_to_aspect(img: Image.Image, target_w: int = None,
+                    target_h: int = None) -> Image.Image:
+    """Görseli hedef boyuta uyarla (merkezden kırp)."""
+    tw = target_w or THUMB_W
+    th = target_h or THUMB_H
     iw, ih = img.size
-    target_ratio = THUMB_W / THUMB_H
+    target_ratio = tw / th
 
     if iw / ih > target_ratio:
-        new_h = THUMB_H
-        new_w = int(iw * THUMB_H / ih)
+        new_h = th
+        new_w = int(iw * th / ih)
         img = img.resize((new_w, new_h), Image.LANCZOS)
-        left = (new_w - THUMB_W) // 2
-        img = img.crop((left, 0, left + THUMB_W, THUMB_H))
+        left = (new_w - tw) // 2
+        img = img.crop((left, 0, left + tw, th))
     else:
-        new_w = THUMB_W
-        new_h = int(ih * THUMB_W / iw)
+        new_w = tw
+        new_h = int(ih * tw / iw)
         img = img.resize((new_w, new_h), Image.LANCZOS)
-        top = (new_h - THUMB_H) // 2
-        img = img.crop((0, top, THUMB_W, top + THUMB_H))
+        top = (new_h - tw) // 2
+        img = img.crop((0, top, tw, top + th))
 
-    return img.resize((THUMB_W, THUMB_H), Image.LANCZOS)
+    return img.resize((tw, th), Image.LANCZOS)
 
 
 def _wrap_text(draw, text: str, font, max_w: int) -> list:
@@ -246,15 +261,12 @@ def _wrap_text(draw, text: str, font, max_w: int) -> list:
 
 def _add_dramatic_overlay(img: Image.Image, accent_hex: str) -> Image.Image:
     """Görseli koyulaştır + accent renk tint + vignette."""
-    # Kontrast yükselt, parlaklık düşür (dramatik etki)
+    iw, ih = img.size
     img = ImageEnhance.Contrast(img).enhance(1.3)
     img = ImageEnhance.Brightness(img).enhance(0.55)
     img = ImageEnhance.Color(img).enhance(0.85)
-
-    # Hafif blur (metin daha okunaklı)
     img = img.filter(ImageFilter.GaussianBlur(radius=1.5))
 
-    # Accent renkli overlay (tint)
     try:
         ac = _hex_to_rgb(accent_hex)
         tint = Image.new("RGB", img.size, ac)
@@ -262,15 +274,13 @@ def _add_dramatic_overlay(img: Image.Image, accent_hex: str) -> Image.Image:
     except Exception:
         pass
 
-    # Vignette: kenarları karart
     overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
-    # Alt kısım koyu (metin orada)
-    for y in range(THUMB_H):
+    for y in range(ih):
         alpha = 0
-        if y > THUMB_H * 0.55:
-            alpha = int(((y - THUMB_H * 0.55) / (THUMB_H * 0.45)) * 180)
-        draw.line([(0, y), (THUMB_W, y)], fill=(0, 0, 0, alpha))
+        if y > ih * 0.55:
+            alpha = int(((y - ih * 0.55) / (ih * 0.45)) * 180)
+        draw.line([(0, y), (iw, y)], fill=(0, 0, 0, alpha))
     img = img.convert("RGBA")
     img = Image.alpha_composite(img, overlay)
     return img.convert("RGB")
@@ -281,6 +291,7 @@ def _draw_dramatic_text(img: Image.Image, text: str,
                         sign_emoji: str = "",
                         sign_name: str = "") -> Image.Image:
     """Üst-orta'da dev başlık metni. Alt'ta küçük etiket."""
+    iw, ih = img.size
     img = img.convert("RGBA")
     overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
@@ -290,29 +301,29 @@ def _draw_dramatic_text(img: Image.Image, text: str,
     except Exception:
         ac = (255, 200, 80)
 
-    # Otomatik font boyutu — metin uzunluğuna göre
     text = text.strip().upper()
     word_count = len(text.split())
     char_count = len(text)
 
+    # Boyut belirle - dikey için biraz daha büyük
+    is_vertical = ih > iw
     if char_count <= 10 and word_count <= 2:
-        font_size = 180
+        font_size = 220 if is_vertical else 180
     elif char_count <= 15:
-        font_size = 150
+        font_size = 180 if is_vertical else 150
     elif char_count <= 22:
-        font_size = 120
+        font_size = 140 if is_vertical else 120
     else:
-        font_size = 95
+        font_size = 110 if is_vertical else 95
 
     font = _get_font(font_size)
-    max_w = THUMB_W - 120
+    max_w = iw - 120
 
-    # Boyut sığmıyorsa küçült
     while font_size > 60:
         lines = _wrap_text(draw, text, font, max_w)
         line_h = int(font_size * 1.05)
         total_h = line_h * len(lines)
-        if total_h <= THUMB_H * 0.6 and len(lines) <= 3:
+        if total_h <= ih * 0.6 and len(lines) <= 3:
             break
         font_size -= 10
         font = _get_font(font_size)
@@ -321,16 +332,14 @@ def _draw_dramatic_text(img: Image.Image, text: str,
     line_h = int(font_size * 1.05)
     total_h = line_h * len(lines)
 
-    # Vertikal merkezleme — biraz üstte
-    start_y = (THUMB_H - total_h) // 2 - 20
+    start_y = (ih - total_h) // 2 - 20
 
     for i, line in enumerate(lines):
         bb = draw.textbbox((0, 0), line, font=font)
         lw = bb[2] - bb[0]
-        x = (THUMB_W - lw) // 2
+        x = (iw - lw) // 2
         y = start_y + i * line_h
 
-        # Çok belirgin gölge (siyah outline) — okunurluk için
         outline_w = max(4, font_size // 25)
         for ox in range(-outline_w, outline_w + 1, 2):
             for oy in range(-outline_w, outline_w + 1, 2):
@@ -339,21 +348,18 @@ def _draw_dramatic_text(img: Image.Image, text: str,
                 draw.text((x + ox, y + oy), line, font=font,
                           fill=(0, 0, 0, 230))
 
-        # Ana metin — beyaz/krem
         draw.text((x, y), line, font=font,
                   fill=(255, 250, 230, 255))
 
-        # Accent altçizgi (her satırın altına)
         if i == len(lines) - 1:
             ul_y = y + font_size + 5
             ul_w = min(lw * 0.7, max_w * 0.5)
-            ul_x = (THUMB_W - ul_w) // 2
+            ul_x = (iw - ul_w) // 2
             draw.rectangle(
                 [ul_x, ul_y, ul_x + ul_w, ul_y + 8],
                 fill=(*ac, 255),
             )
 
-    # Alt-sağ köşede kanal etiketi (varsa)
     if sign_emoji or sign_name:
         label_text = f"{sign_emoji} {sign_name}".strip() if sign_emoji \
             else sign_name
@@ -363,11 +369,10 @@ def _draw_dramatic_text(img: Image.Image, text: str,
             lw = lb[2]
             lh = lb[3]
             pad = 24
-            box_x = THUMB_W - lw - pad * 2 - 30
-            box_y = THUMB_H - lh - pad * 2 - 30
+            box_x = iw - lw - pad * 2 - 30
+            box_y = ih - lh - pad * 2 - 30
             box_x2 = box_x + lw + pad * 2
             box_y2 = box_y + lh + pad * 2
-            # Yarı saydam siyah arka plan + accent border
             draw.rounded_rectangle(
                 [box_x, box_y, box_x2, box_y2],
                 radius=20, fill=(0, 0, 0, 180),
@@ -381,23 +386,29 @@ def _draw_dramatic_text(img: Image.Image, text: str,
 
 
 def generate_thumbnail(content: dict, output_path: str,
-                       channel_type: str = "zodiac") -> Optional[str]:
-    """Tam akış: thumbnail üret ve kaydet. Dosya yolunu döner."""
-    try:
-        # 1) Vurucu başlık
-        title = generate_thumbnail_title(content, channel_type)
-        log.info(f"🎨 Thumbnail başlığı: {title}")
+                       channel_type: str = "zodiac",
+                       vertical: bool = False) -> Optional[str]:
+    """Tam akış: thumbnail üret ve kaydet. Dosya yolunu döner.
 
-        # 2) Arka plan görseli — channel_type'a göre query stratejisi
+    vertical=True ise 1080x1920 (Shorts/portre) thumbnail üretir.
+    """
+    try:
+        title = generate_thumbnail_title(content, channel_type)
+        log.info(f"🎨 Thumbnail başlığı: {title} "
+                 f"({'dikey' if vertical else 'yatay'})")
+
         accent = content.get("accent_color", "#d4af37")
         bg = content.get("background_color", "#0f0c1f")
 
-        # Motivasyon kanalı: kadın yüzü öne çıksın (kanalın yüzü konsepti)
-        # face_queries content'ten geliyor
+        if vertical:
+            tw, th = SHORTS_THUMB_W, SHORTS_THUMB_H
+        else:
+            tw, th = THUMB_W, THUMB_H
+
+        # Motivasyon kanalı için kadın yüzü öne çıksın
         if channel_type == "motivation":
             face_queries = content.get("face_queries", [])
             if face_queries:
-                # Yüz arama önce, sonra konsept arama (fallback)
                 queries = face_queries + content.get("pexels_queries", [])
             else:
                 queries = ["woman portrait emotional"] + \
@@ -405,13 +416,11 @@ def generate_thumbnail(content: dict, output_path: str,
         else:
             queries = content.get("pexels_queries", [])
 
-        bg_img = _fetch_background_image(queries, accent, bg)
-        bg_img = _crop_to_aspect(bg_img)
+        bg_img = _fetch_background_image(queries, accent, bg, tw, th)
+        bg_img = _crop_to_aspect(bg_img, tw, th)
 
-        # 3) Dramatic overlay
         bg_img = _add_dramatic_overlay(bg_img, accent)
 
-        # 4) Metin + etiket
         sign_emoji = (content.get("sign_symbol")
                       or content.get("main_icon", ""))
         sign_name = (content.get("sign_name")
@@ -419,7 +428,6 @@ def generate_thumbnail(content: dict, output_path: str,
         thumb_img = _draw_dramatic_text(bg_img, title, accent,
                                         sign_emoji, sign_name)
 
-        # 5) Kaydet
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         thumb_img.save(output_path, "JPEG", quality=85, optimize=True)
 
