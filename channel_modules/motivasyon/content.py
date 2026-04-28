@@ -125,15 +125,28 @@ def get_lucky_card(topic_key: str, content: dict) -> Optional[dict]:
 
 
 def format_title(topic_key: str, content: dict) -> str:
-    return content.get("title", "")[:100]
+    """Başlık + #Shorts etiketi (YouTube Shorts olarak algılanması için)."""
+    title = content.get("title", "")[:88]  # Shorts için yer bırak
+    if "#shorts" not in title.lower():
+        title = title + " #Shorts"
+    return title[:100]
 
 
 def format_description(topic_key: str, content: dict) -> str:
+    """Açıklamanın başına #Shorts ekleyerek Shorts olarak algılanır."""
     desc = content.get("description", "")
     hashtags = content.get("hashtags", [])
+    # En başa #Shorts koy (Shorts algılaması için)
+    parts = ["#Shorts", ""]
+    if desc:
+        parts.append(desc)
     if hashtags:
-        desc = desc + "\n\n" + " ".join(hashtags[:15])
-    return desc
+        # Listede #shorts varsa duplicate olmasın
+        clean_tags = [t for t in hashtags[:15]
+                      if t.lower() not in ("#shorts", "#short")]
+        if clean_tags:
+            parts.append("\n" + " ".join(clean_tags))
+    return "\n".join(parts)
 
 
 def get_tags(topic_key: str, content: dict) -> list:
