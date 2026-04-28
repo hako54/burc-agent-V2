@@ -319,35 +319,63 @@ def _add_lucky_bar(frame_arr, t: float, duration: float, accent_hex: str,
 
 def _make_intro_clip(duration: float, sign_name: str, sign_symbol: str,
                      accent_hex: str, bg_hex: str,
-                     subtitle: str = "Günlük Yorum") -> VideoClip:
-    """Dinamik intro klibi. subtitle kanal tipine göre değişir
-    (Burç: 'Günlük Burç Yorumu', Motivasyon: 'Bugünün İlhamı' vs.)."""
+                     subtitle: str = "Günlük Yorum",
+                     face_image_path: str = None) -> VideoClip:
+    """Dinamik intro klibi. face_image_path verilirse arka planda kullanılır
+    (motivasyon kanalı için kadın yüzü konsepti)."""
     ac = _hex_to_rgb(accent_hex)
     try:
         bg = _hex_to_rgb(bg_hex)
     except Exception:
         bg = (10, 5, 20)
 
-    base = Image.new("RGB", (W, H))
-    draw = ImageDraw.Draw(base)
-    c2 = tuple(min(255, c + 40) for c in bg)
-    for y in range(H):
-        t = y / H
-        r = int(bg[0] * (1 - t) + c2[0] * t)
-        g = int(bg[1] * (1 - t) + c2[1] * t)
-        b = int(bg[2] * (1 - t) + c2[2] * t)
-        draw.line([(0, y), (W, y)], fill=(r, g, b))
+    # Eğer face image varsa onu arka plan olarak kullan
+    if face_image_path and os.path.exists(face_image_path):
+        try:
+            face_img = Image.open(face_image_path).convert("RGB")
+            # Resize to (W, H) — center crop
+            iw, ih = face_img.size
+            target_ratio = W / H
+            if iw / ih > target_ratio:
+                new_h = H
+                new_w = int(iw * H / ih)
+                face_img = face_img.resize((new_w, new_h), Image.LANCZOS)
+                left = (new_w - W) // 2
+                face_img = face_img.crop((left, 0, left + W, H))
+            else:
+                new_w = W
+                new_h = int(ih * W / iw)
+                face_img = face_img.resize((new_w, new_h), Image.LANCZOS)
+                top = (new_h - H) // 2
+                face_img = face_img.crop((0, top, W, top + H))
+            face_img = face_img.resize((W, H), Image.LANCZOS)
+            base_arr = np.array(face_img)
+        except Exception as e:
+            log.warning(f"Intro face image yüklenemedi: {e}, fallback gradient")
+            face_image_path = None  # fallback'e düş
 
-    cx, cy = W // 2, H // 2
-    for radius in range(600, 0, -20):
-        ratio = 1 - radius / 600
-        ra = int(ac[0] * ratio * 0.25 + bg[0] * (1 - ratio * 0.3))
-        ga = int(ac[1] * ratio * 0.25 + bg[1] * (1 - ratio * 0.3))
-        ba = int(ac[2] * ratio * 0.25 + bg[2] * (1 - ratio * 0.3))
-        draw.ellipse([cx - radius, cy - radius, cx + radius, cy + radius],
-                     fill=(ra, ga, ba))
+    if not (face_image_path and os.path.exists(face_image_path)):
+        # Klasik gradient + halo
+        base = Image.new("RGB", (W, H))
+        draw = ImageDraw.Draw(base)
+        c2 = tuple(min(255, c + 40) for c in bg)
+        for y in range(H):
+            t = y / H
+            r = int(bg[0] * (1 - t) + c2[0] * t)
+            g = int(bg[1] * (1 - t) + c2[1] * t)
+            b = int(bg[2] * (1 - t) + c2[2] * t)
+            draw.line([(0, y), (W, y)], fill=(r, g, b))
 
-    base_arr = np.array(base)
+        cx, cy = W // 2, H // 2
+        for radius in range(600, 0, -20):
+            ratio = 1 - radius / 600
+            ra = int(ac[0] * ratio * 0.25 + bg[0] * (1 - ratio * 0.3))
+            ga = int(ac[1] * ratio * 0.25 + bg[1] * (1 - ratio * 0.3))
+            ba = int(ac[2] * ratio * 0.25 + bg[2] * (1 - ratio * 0.3))
+            draw.ellipse([cx - radius, cy - radius, cx + radius, cy + radius],
+                         fill=(ra, ga, ba))
+
+        base_arr = np.array(base)
 
     def make_frame(t):
         frame = base_arr.copy()
@@ -667,8 +695,10 @@ def render_video(content: dict, output_path: str,
         clips.append(vc)
 
     # 4) Intro/outro
+    intro_face = content.get("intro_face_image", "")
     intro_clip = _make_intro_clip(intro_dur, sign_name, sign_symbol,
-                                  accent, bg, subtitle=intro_subtitle)
+                                  accent, bg, subtitle=intro_subtitle,
+                                  face_image_path=intro_face)
     # Outro subtitle — kanal modülünden gelir, yoksa default
     outro_sub = content.get("outro_subtitle", "Her gün yeni içerik")
     outro_clip = _make_outro_clip(2.8, sign_name, accent, bg,
