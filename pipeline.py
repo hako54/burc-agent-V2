@@ -245,25 +245,33 @@ def produce_content(
         content["provider"] = provider
         content["generated_at"] = datetime.now().isoformat()
 
-        # 2) Video render
-        cancel_mgr.check_is_cancelled(jkey)
-        cancel_mgr.mark_render_started(jkey)
+        # 2a) Thumbnail üret (önce — render'da intro için kullanılabilsin)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         safe_topic = re.sub(r"[^a-z0-9\-]", "-", topic_key.lower())[:20] or "content"
         video_path = str(OUTPUT_DIR / f"{channel_id}_{safe_topic}_{ts}.mp4")
-        render_video(content, video_path, sign_key=jkey,
-                     voice_config=voice_config)
-
-        # 2b) Thumbnail üret (opsiyonel — başarısız olursa devam)
         thumbnail_path = video_path.replace(".mp4", "_thumb.jpg")
+        intro_face_path = video_path.replace(".mp4", "_intro.jpg")
         try:
             from services.thumbnail import generate_thumbnail
             type_id = channel.get("type", "zodiac")
+            # YouTube için yatay thumbnail
             generate_thumbnail(content, thumbnail_path,
-                               channel_type=type_id)
+                               channel_type=type_id, vertical=False)
+            # Motivasyon için dikey kadın yüzü intro'da kullanılır
+            if type_id == "motivation":
+                generate_thumbnail(content, intro_face_path,
+                                   channel_type=type_id, vertical=True)
+                if os.path.exists(intro_face_path):
+                    content["intro_face_image"] = intro_face_path
         except Exception as e:
             log.warning(f"Thumbnail üretilemedi: {e}")
             thumbnail_path = None
+
+        # 2b) Video render
+        cancel_mgr.check_is_cancelled(jkey)
+        cancel_mgr.mark_render_started(jkey)
+        render_video(content, video_path, sign_key=jkey,
+                     voice_config=voice_config)
 
         result = {
             "channel_id": channel_id,
