@@ -102,8 +102,9 @@ def upload_video(video_path: str, title: str, description: str,
                  tags: list = None, category_id: str = "22",
                  privacy: str = "public",
                  scheduled_time: str = None,
-                 channel_id: str = "burc") -> dict:
-    """Video'yu belirli bir kanala yükler."""
+                 channel_id: str = "burc",
+                 thumbnail_path: str = None) -> dict:
+    """Video'yu belirli bir kanala yükler. Opsiyonel thumbnail."""
     if not os.path.exists(video_path):
         raise FileNotFoundError(f"Video bulunamadı: {video_path}")
 
@@ -151,5 +152,20 @@ def upload_video(video_path: str, title: str, description: str,
     video_id = response["id"]
     url = f"https://youtube.com/shorts/{video_id}"
     log.info(f"✅ Yüklendi: {url}")
+
+    # Thumbnail yükle (opsiyonel — başarısız olsa bile video yüklendiği için
+    # exception fırlatmıyoruz, sadece log)
+    if thumbnail_path and os.path.exists(thumbnail_path):
+        try:
+            log.info(f"🎨 Thumbnail yükleniyor: {os.path.basename(thumbnail_path)}")
+            thumb_media = MediaFileUpload(thumbnail_path,
+                                          mimetype="image/jpeg")
+            youtube.thumbnails().set(
+                videoId=video_id,
+                media_body=thumb_media,
+            ).execute()
+            log.info(f"✅ Thumbnail set: {video_id}")
+        except Exception as e:
+            log.warning(f"⚠ Thumbnail yüklenemedi (video yüklendi): {e}")
 
     return {"id": video_id, "url": url, "title": title}
