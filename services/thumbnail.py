@@ -60,6 +60,7 @@ def generate_thumbnail_title(content: dict, channel_type: str = "zodiac") -> str
     video_title = content.get("title", "")
     full_narration = content.get("full_narration", "")
     topic_label = content.get("topic_label") or content.get("main_label", "")
+    main_quote = content.get("main_quote", "")
 
     if channel_type == "zodiac":
         sign_name = content.get("sign_name", "")
@@ -81,6 +82,30 @@ THUMBNAIL kuralları:
 - "BU GÜN HER ŞEY DEĞİŞİR"
 - "AY GÖZÜNÜ AÇTI"
 - "İÇ SES UYANIYOR"
+
+Sadece başlığı yaz, başka hiçbir şey yazma. Tırnak da koyma."""
+    elif channel_type == "oneline":
+        # OneLineADay için: ana cümlenin özünü çıkar (1-3 kelime)
+        prompt = f"""OneLineADay (tek cümlelik içgörü) YouTube Shorts için
+thumbnail başlığı yaz.
+
+Ana cümle: {main_quote or video_title}
+İçerik: {full_narration[:300]}
+
+Thumbnail KISA ve VURUCU olmalı:
+- 2-3 KELİME, en fazla 18 karakter
+- Şiirsel, kalbe dokunan, kırılgan
+- Tek bir kelime de olabilir
+- Edebi tat var
+
+Örnekler:
+- "BAŞKA BİR SEN"
+- "VEDA"
+- "GEÇ KALDIK"
+- "İÇİNDEKİ SES"
+- "YALNIZLIK"
+- "BUNU BİL"
+- "SUS BAK"
 
 Sadece başlığı yaz, başka hiçbir şey yazma. Tırnak da koyma."""
     else:
@@ -109,21 +134,16 @@ Sadece başlığı yaz, başka hiçbir şey yazma. Tırnak da koyma."""
 
     try:
         raw, provider = call_llm_with_fallback(prompt)
-        # JSON beklemiyoruz, ham metin
         title = raw.strip().strip('"\'').strip()
-        # İlk satırı al (LLM bazen birden fazla satır yazabilir)
         title = title.split("\n")[0].strip()
-        # 30 karakterden uzunsa kes
         if len(title) > 30:
             title = title[:30].rstrip()
-        # En azından bir şey döndür
         if not title:
             title = "BUGÜN İÇİN"
         log.info(f"[{provider}] Thumbnail title: {title}")
         return title.upper()
     except Exception as e:
         log.warning(f"Thumbnail title üretilemedi: {e}, fallback kullanılıyor")
-        # Fallback: video başlığının ilk 2-3 kelimesi
         words = (video_title or topic_label or "İLHAM").split()[:3]
         return " ".join(words).upper()[:25]
 
@@ -368,10 +388,22 @@ def generate_thumbnail(content: dict, output_path: str,
         title = generate_thumbnail_title(content, channel_type)
         log.info(f"🎨 Thumbnail başlığı: {title}")
 
-        # 2) Arka plan görseli
+        # 2) Arka plan görseli — channel_type'a göre query stratejisi
         accent = content.get("accent_color", "#d4af37")
         bg = content.get("background_color", "#0f0c1f")
-        queries = content.get("pexels_queries", [])
+
+        # Motivasyon kanalı: kadın yüzü öne çıksın (kanalın yüzü konsepti)
+        # face_queries content'ten geliyor
+        if channel_type == "motivation":
+            face_queries = content.get("face_queries", [])
+            if face_queries:
+                # Yüz arama önce, sonra konsept arama (fallback)
+                queries = face_queries + content.get("pexels_queries", [])
+            else:
+                queries = ["woman portrait emotional"] + \
+                          content.get("pexels_queries", [])
+        else:
+            queries = content.get("pexels_queries", [])
 
         bg_img = _fetch_background_image(queries, accent, bg)
         bg_img = _crop_to_aspect(bg_img)
@@ -384,11 +416,10 @@ def generate_thumbnail(content: dict, output_path: str,
                       or content.get("main_icon", ""))
         sign_name = (content.get("sign_name")
                      or content.get("main_label", ""))
-        # Burç emoji'si varsa onu kullan, yoksa main_icon
         thumb_img = _draw_dramatic_text(bg_img, title, accent,
                                         sign_emoji, sign_name)
 
-        # 5) Kaydet (JPEG, ~85% kalite — YouTube limit 2MB)
+        # 5) Kaydet
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         thumb_img.save(output_path, "JPEG", quality=85, optimize=True)
 
