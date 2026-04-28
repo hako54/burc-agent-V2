@@ -246,6 +246,17 @@ def produce_content(
         render_video(content, video_path, sign_key=jkey,
                      voice_config=voice_config)
 
+        # 2b) Thumbnail üret (opsiyonel — başarısız olursa devam)
+        thumbnail_path = video_path.replace(".mp4", "_thumb.jpg")
+        try:
+            from services.thumbnail import generate_thumbnail
+            type_id = channel.get("type", "zodiac")
+            generate_thumbnail(content, thumbnail_path,
+                               channel_type=type_id)
+        except Exception as e:
+            log.warning(f"Thumbnail üretilemedi: {e}")
+            thumbnail_path = None
+
         result = {
             "channel_id": channel_id,
             "channel_name": channel["name"],
@@ -253,6 +264,7 @@ def produce_content(
             "topic_label": content.get("topic_label", topic_key),
             "title": content.get("title", ""),
             "video_path": video_path,
+            "thumbnail_path": thumbnail_path,
             "provider": provider,
             "generated_at": datetime.now().isoformat(),
             "source": source,
@@ -261,6 +273,8 @@ def produce_content(
 
         # 3a) Onay gerekliyse kuyruğa al
         if require_approval and upload:
+            # Thumbnail path'i content'e de ekle ki approval saklasın
+            content["_thumbnail_path"] = thumbnail_path
             approval.add_pending(topic_key, video_path, content, source=source,
                                  channel_id=channel_id)
             result["status"] = "pending_approval"
@@ -298,6 +312,7 @@ def produce_content(
                 privacy="public",
                 scheduled_time=scheduled_publish_at,
                 channel_id=channel_id,
+                thumbnail_path=thumbnail_path,
             )
             result["youtube_id"] = upload_result["id"]
             result["youtube_url"] = upload_result["url"]
@@ -394,6 +409,7 @@ def approve_and_upload(topic_key: str, channel_id: str = "burc",
             video_path=video_path, title=title, description=description,
             tags=tags, category_id="22", privacy="public",
             channel_id=channel_id,
+            thumbnail_path=pending.get("thumbnail_path") or None,
         )
 
         result = {
