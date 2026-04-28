@@ -152,46 +152,103 @@ Sadece başlığı yaz, başka hiçbir şey yazma. Tırnak da koyma."""
         return " ".join(words).upper()[:25]
 
 
+def _fetch_from_pexels(query: str, target_w: int, target_h: int):
+    """Pexels'dan görsel çek. PEXELS_API_KEY env'de olmalı."""
+    api_key = os.environ.get("PEXELS_API_KEY")
+    if not api_key:
+        return None
+
+    is_vertical = target_h > target_w
+    orientation = "portrait" if is_vertical else "landscape"
+
+    try:
+        r = requests.get(
+            "https://api.pexels.com/v1/search",
+            headers={"Authorization": api_key},
+            params={
+                "query": query,
+                "per_page": 5,
+                "orientation": orientation,
+                "size": "large",
+            },
+            timeout=15, verify=False,
+        )
+        if r.status_code == 200:
+            photos = r.json().get("photos", [])
+            if photos:
+                # En büyük versiyonu al
+                src = photos[0].get("src", {})
+                url = src.get("large2x") or src.get("large") or src.get("original")
+                if url:
+                    ir = requests.get(url, timeout=20, verify=False,
+                                      headers={"User-Agent": "Mozilla/5.0"})
+                    if ir.status_code == 200:
+                        return Image.open(io.BytesIO(ir.content)).convert("RGB")
+    except Exception as e:
+        log.warning(f"Pexels ({query}): {e}")
+    return None
+
+
+def _fetch_from_pixabay(query: str, target_w: int, target_h: int):
+    """Pixabay'den görsel çek."""
+    api_key = os.environ.get("PIXABAY_API_KEY")
+    if not api_key:
+        return None
+
+    is_vertical = target_h > target_w
+    orientation = "vertical" if is_vertical else "horizontal"
+
+    try:
+        r = requests.get(
+            "https://pixabay.com/api/",
+            params={
+                "key": api_key,
+                "q": query,
+                "per_page": 5,
+                "image_type": "photo",
+                "orientation": orientation,
+                "min_width": 720 if is_vertical else 1280,
+                "safesearch": "true",
+            },
+            timeout=15, verify=False,
+        )
+        if r.status_code == 200:
+            hits = r.json().get("hits", [])
+            if hits:
+                url = hits[0].get("largeImageURL")
+                if url:
+                    ir = requests.get(url, timeout=20, verify=False,
+                                      headers={"User-Agent": "Mozilla/5.0"})
+                    if ir.status_code == 200:
+                        return Image.open(io.BytesIO(ir.content)).convert("RGB")
+    except Exception as e:
+        log.warning(f"Pixabay ({query}): {e}")
+    return None
+
+
 def _fetch_background_image(queries: list,
                             accent_hex: str,
                             bg_hex: str,
                             target_w: int = None,
                             target_h: int = None) -> Image.Image:
-    """Pixabay'den uygun aspect görsel çeker. Olmazsa fallback gradient."""
-    api_key = os.environ.get("PIXABAY_API_KEY")
+    """Pexels (öncelikli) ve Pixabay'den uygun aspect görsel çeker.
+    Olmazsa fallback gradient.
+    Pexels portrait stüdyo görselleri Pixabay'den daha kaliteli."""
     tw = target_w or THUMB_W
     th = target_h or THUMB_H
-    is_vertical = th > tw
-    orientation = "vertical" if is_vertical else "horizontal"
 
-    if api_key:
-        for q in (queries or [])[:3]:
-            try:
-                r = requests.get(
-                    "https://pixabay.com/api/",
-                    params={
-                        "key": api_key,
-                        "q": q,
-                        "per_page": 5,
-                        "image_type": "photo",
-                        "orientation": orientation,
-                        "min_width": 720 if is_vertical else 1280,
-                        "safesearch": "true",
-                    },
-                    timeout=15, verify=False,
-                )
-                if r.status_code == 200:
-                    hits = r.json().get("hits", [])
-                    if hits:
-                        url = hits[0].get("largeImageURL")
-                        if url:
-                            ir = requests.get(url, timeout=20, verify=False,
-                                              headers={"User-Agent": "Mozilla/5.0"})
-                            if ir.status_code == 200:
-                                return Image.open(io.BytesIO(ir.content)).convert("RGB")
-            except Exception as e:
-                log.warning(f"Pixabay thumbnail ({q}): {e}")
+    # Önce her query için Pexels (kaliteli portreler), sonra Pixabay
+    for q in (queries or [])[:3]:
+        img = _fetch_from_pexels(q, tw, th)
+        if img:
+            log.info(f"  ✓ Pexels'tan: {q}")
+            return img
+        img = _fetch_from_pixabay(q, tw, th)
+        if img:
+            log.info(f"  ✓ Pixabay'den: {q}")
+            return img
 
+    log.warning("Hiçbir kaynak görsel sağlamadı, gradient kullanılıyor")
     return _gradient_image(accent_hex, bg_hex, w=tw, h=th)
 
 
