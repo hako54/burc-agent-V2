@@ -38,6 +38,26 @@ def _tg_notify(text: str):
         log.warning(f"Telegram notify hata: {e}")
 
 
+def _tg_send_video(video_path: str, caption: str = ""):
+    """Üretilen videoyu (mp4) doğrudan Telegram'a yükler."""
+    try:
+        from telegram_bot import send_video as tg_send_video
+        tg_send_video(video_path, caption)
+    except Exception as e:
+        log.warning(f"Telegram video gönderme hata: {e}")
+
+
+def _public_url(file_path: str) -> str:
+    """Output dosyası için Railway public URL'i. Yoksa boş."""
+    if not file_path:
+        return ""
+    domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
+    if not domain:
+        return ""
+    filename = os.path.basename(file_path)
+    return f"https://{domain}/output/{filename}"
+
+
 DATA_DIR = Path(os.environ.get("DATA_DIR", "data"))
 OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", "output"))
 
@@ -301,11 +321,21 @@ def produce_content(
             log.info(f"⏸ {channel['name']}/{topic_key} onay bekliyor")
 
             if source == "web":
-                _tg_notify(
+                video_url = _public_url(video_path)
+                msg = (
                     f"🌐 <b>Panelden üretildi — onay bekliyor</b>\n"
                     f"{channel.get('icon', '📺')} <b>{channel['name']}</b>\n"
                     f"📝 {content.get('title', '')[:80]}\n"
-                    f"🤖 {provider}\n\nPanelden yayınla/iptal."
+                    f"🤖 {provider}"
+                )
+                if video_url:
+                    msg += f"\n🔗 <a href=\"{video_url}\">Web'de izle</a>"
+                msg += "\n\nPanelden yayınla/iptal."
+                _tg_notify(msg)
+                # Video'yu Telegram'a da gönder (önizleme)
+                _tg_send_video(
+                    video_path,
+                    f"{channel.get('icon', '📺')} {channel['name']} — önizleme"
                 )
             return result
 
@@ -339,6 +369,17 @@ def produce_content(
                     f"{channel.get('icon', '📺')} <b>{channel['name']}</b>\n"
                     f"📝 {content.get('title', '')[:80]}\n"
                     f"🔗 {upload_result['url']}"
+                )
+                # Video'yu Telegram'a da gönder (önizleme)
+                _tg_send_video(
+                    video_path,
+                    f"✅ {channel.get('icon', '📺')} {channel['name']} — yayında"
+                )
+            elif source == "scheduler":
+                # Scheduler'dan gelen otomatik üretimde de video atalım
+                _tg_send_video(
+                    video_path,
+                    f"⏰ {channel.get('icon', '📺')} {channel['name']} — yayında"
                 )
 
         _save_to_history(result, channel_id=channel_id)
@@ -454,6 +495,11 @@ def approve_and_upload(topic_key: str, channel_id: str = "burc",
                 f"🌐 <b>Panelden yayınlandı</b>\n"
                 f"{channel.get('icon', '📺')} <b>{channel['name']}</b>\n"
                 f"🔗 {upload_result['url']}"
+            )
+            # Video'yu Telegram'a da gönder
+            _tg_send_video(
+                video_path,
+                f"✅ {channel.get('icon', '📺')} {channel['name']} — yayında!"
             )
         return result
 
