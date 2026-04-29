@@ -603,48 +603,69 @@ def _try_channel_command(cmd: str, args: str, chat_id: str):
 
 
 def _start_production(channel: dict, topic_key: str, chat_id: str):
-    """Kanal + topic ile üretim başlat (Telegram'dan)."""
+    """Kanal + topic ile üretim başlat (Telegram'dan).
+    Topic kategori listesinde yoksa CUSTOM TOPIC olarak gönderir
+    (zodiac hariç — burç adı geçersizse hata verir)."""
     import channel_modules
+    import re as _re
     from pipeline import produce_content
 
     channel_id = channel["id"]
     name = channel["name"]
     icon = channel.get("icon", "📺")
+    ch_type = channel.get("type", "zodiac")
 
-    jkey = f"{channel_id}:{topic_key}"
-    if jt.is_running(jkey):
-        send(f"⏳ {name}/{topic_key} zaten üretiliyor.", chat_id)
-        return
-
-    # Topic validate — zodiac ise normalize_sign, yoksa olduğu gibi
-    module = channel_modules.load_module(channel_id,
-                                         channel.get("type", "zodiac"))
+    module = channel_modules.load_module(channel_id, ch_type)
     valid_keys = [t["key"] for t in module.get_topics()]
+
     # Zodiac için aksan tolere etmek için normalize_sign de deneyelim
     norm = None
-    try:
-        from zodiac import normalize_sign
-        norm = normalize_sign(topic_key)
-    except Exception:
-        pass
+    if ch_type == "zodiac":
+        try:
+            from zodiac import normalize_sign
+            norm = normalize_sign(topic_key)
+        except Exception:
+            pass
 
+    custom_topic = None
     if topic_key in valid_keys:
         final_key = topic_key
     elif norm and norm in valid_keys:
         final_key = norm
-    else:
+    elif ch_type == "zodiac":
+        # Burç kanalında geçersiz burç adı = hata
         send(
-            f"❌ <code>{topic_key}</code> bu kanalda geçerli değil.\n"
-            f"/{channel_id} yaz → konu listesi.",
+            f"❌ <code>{topic_key}</code> geçerli bir burç değil.\n"
+            f"/{channel_id} yaz → 12 burç listesi.",
             chat_id,
         )
         return
+    else:
+        # Motivasyon ve diğerleri: kategori dışında bir konu yazıldıysa
+        # custom_topic olarak değerlendir
+        custom_topic = topic_key.strip()
+        # Topic_key'i slug yap
+        slug = _re.sub(r"[^a-z0-9çğıöşü\s-]", "",
+                       topic_key.lower())
+        slug = _re.sub(r"\s+", "-", slug.strip())[:40] or "custom"
+        final_key = slug
+        # Kullanıcıya bildir — custom topic olarak işliyoruz
+        send(
+            f"{icon} <i>'{topic_key}' kategori listesinde yok, "
+            f"özel konu olarak işliyorum.</i>",
+            chat_id,
+        )
 
-    send(f"{icon} <b>{name}</b> / {final_key} üretim başlıyor...\n"
+    jkey = f"{channel_id}:{final_key}"
+    if jt.is_running(jkey):
+        send(f"⏳ {name}/{final_key} zaten üretiliyor.", chat_id)
+        return
+
+    display_name = custom_topic if custom_topic else final_key
+    send(f"{icon} <b>{name}</b> / {display_name} üretim başlıyor...\n"
          f"<i>Onay isteyeceğim.</i>", chat_id)
 
     jt.start_job(jkey, source="telegram")
-    info = {"name": final_key.capitalize(), "emoji": icon}
 
     def run():
         try:
@@ -657,13 +678,14 @@ def _start_production(channel: dict, topic_key: str, chat_id: str):
 
             result = produce_content(
                 channel_id=channel_id, topic_key=final_key,
+                custom_topic=custom_topic,
                 upload=True, source="telegram",
                 require_approval=True,
             )
 
             video_path = result.get("video_path", "")
             caption = (
-                f"✋ <b>{name} / {final_key}</b> onay bekliyor\n\n"
+                f"✋ <b>{name} / {display_name}</b> onay bekliyor\n\n"
                 f"📝 {result.get('title', '')[:90]}\n"
                 f"🤖 {result.get('provider', '?')}\n\n"
                 f"<b>Kararını bekliyorum:</b>\n"
