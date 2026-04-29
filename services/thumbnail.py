@@ -74,20 +74,28 @@ Video başlığı: {video_title}
 Burç: {sign_name}
 İçerik özeti: {full_narration[:500]}
 
-THUMBNAIL kuralları:
+THUMBNAIL kuralları (KRİTİK):
 - 2-4 KELİME, en fazla 25 karakter
 - BÜYÜK harflerle yazılacak şekilde tasarla
 - Tıklatıcı, merak uyandırıcı, duygusal
 - Klasik klişeler değil ("DİKKAT", "KORKUNÇ" gibi) — daha akıllı
 - Burç adı dahil değil (zaten thumbnail'de görsel olacak)
+- ⚠️ MUTLAKA TÜRKÇEDE GERÇEK KELİMELER kullan
+- ⚠️ Asla uydurma kelimeler yapma
+- ⚠️ Her kelime tam ve doğru yazım olmalı
 
-Örnekler:
+GEÇERLİ örnekler:
 - "BUGÜN TUTKUN GERİ DÖNÜYOR"
 - "BU GÜN HER ŞEY DEĞİŞİR"
 - "AY GÖZÜNÜ AÇTI"
 - "İÇ SES UYANIYOR"
+- "YENİ KAPILAR AÇILIYOR"
 
-Sadece başlığı yaz, başka hiçbir şey yazma. Tırnak da koyma."""
+YANLIŞ — bunlar gibi uyduruk asla yapma:
+- "TUTKKUN" ❌ (yanlış yazım)
+- "GERIDND" ❌ (yarım kelime)
+
+Sadece başlığı yaz. Türkçede gerçekten var olan kelimeleri kullan."""
     elif channel_type == "oneline":
         # OneLineADay için: ana cümlenin özünü çıkar (1-3 kelime)
         prompt = f"""OneLineADay (tek cümlelik içgörü) YouTube Shorts için
@@ -120,28 +128,65 @@ Video başlığı: {video_title}
 Tema: {topic_label}
 İçerik özeti: {full_narration[:500]}
 
-THUMBNAIL kuralları:
+THUMBNAIL kuralları (KRİTİK):
 - 2-4 KELİME, en fazla 25 karakter
 - BÜYÜK harflerle yazılacak şekilde tasarla
 - Duygusal, yürek burkan veya çarpıcı
 - Klasik klişeler değil — özgün, içe işleyen
+- ⚠️ MUTLAKA TÜRKÇEDE GERÇEK KELİMELER kullan
+- ⚠️ Asla uydurma, kısaltma veya hibrit kelimeler yapma
+- ⚠️ Her kelime tam olmalı, yazım kuralı doğru olmalı
 
-Örnekler:
+GEÇERLİ örnekler:
 - "BUNU BİL"
 - "GERÇEK ŞU"
 - "SUSMA"
 - "GEÇ KALMA"
 - "AYNAYA BAK"
 - "İÇİNDEKİ SES"
+- "DURMA YÜRÜ"
+- "AKAR YOLUNU BULUR"
 
-Sadece başlığı yaz, başka hiçbir şey yazma. Tırnak da koyma."""
+YANLIŞ — bunlar gibi UYDURUK kelimeler YAPMA:
+- "AKMAZSA KRIL" ❌ (KRIL kelimesi yok)
+- "DURMSA YOLDA" ❌ (DURMSA kelimesi yok)
+- "AKAR DEVAM" ❌ (eksik, anlamsız)
+
+Sadece başlığı yaz, başka hiçbir şey yazma. Tırnak da koyma.
+Türkçede gerçekten var olan kelimeleri kullan."""
 
     try:
         raw, provider = call_llm_with_fallback(prompt)
         title = raw.strip().strip('"\'').strip()
         title = title.split("\n")[0].strip()
+        # Ek güvenlik: özel karakterler ve kötü formatları temizle
+        title = title.replace("**", "").replace("##", "").replace("*", "")
         if len(title) > 30:
             title = title[:30].rstrip()
+
+        # Şüpheli kısaltmalar/uyduruk kelime kontrolü
+        # 5+ harfli ünlü/ünsüz dengesi olmayan kelime varsa fallback
+        def looks_suspicious(text: str) -> bool:
+            words = text.split()
+            for w in words:
+                w_clean = w.strip(".,!?:;").lower()
+                if len(w_clean) < 3:
+                    continue
+                # Türkçe ünlü harfleri
+                vowels = set("aeıioöuü")
+                vowel_count = sum(1 for c in w_clean if c in vowels)
+                # Bir kelimede en az 1 ünlü olmalı (uzun kelimelerde 2+)
+                if len(w_clean) >= 5 and vowel_count == 0:
+                    return True
+                if len(w_clean) >= 4 and vowel_count == 0:
+                    return True
+            return False
+
+        if looks_suspicious(title):
+            log.warning(f"Şüpheli thumbnail başlığı '{title}' - fallback")
+            words = (video_title or topic_label or "İLHAM").split()[:3]
+            title = " ".join(words).upper()[:25]
+
         if not title:
             title = "BUGÜN İÇİN"
         log.info(f"[{provider}] Thumbnail title: {title}")
