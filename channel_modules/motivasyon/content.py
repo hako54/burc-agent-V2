@@ -102,10 +102,10 @@ def get_theme_colors(topic_key: str, content: dict = None) -> dict:
 
 
 def get_intro_text(topic_key: str, content: dict = None) -> str:
-    """Motivasyon kanalı için intro — kategori ismi, burç değil."""
+    """Motivasyon kanalı için intro — sadece kategori ismi."""
     cat = CATEGORIES.get(topic_key, {})
     name = cat.get("name", "Günün Motivasyonu")
-    return f"{name} üzerine"
+    return name
 
 
 def get_outro_text(topic_key: str, content: dict = None) -> str:
