@@ -184,20 +184,44 @@ def _add_text_overlay(frame_arr, t: float, text: str, seg_dur: float,
         draw.text((sx2, sy2), section_label, font=sf,
                   fill=(255, 245, 220, int(250 * alpha)))
 
-    # Ana metin (ortalanmış)
+    # Ana metin (ortalanmış) — mobilde okunaklı, kenarlardan taşmayan
     slide = int(25 * (1 - _ease_out(t / 0.4)))
-    mfont = _get_font(54)
-    lines = _wrap_text(draw, text, mfont, W - 100)
-    lh = int(54 * 1.4)
+
+    # Otomatik boyut ayarı — uzun metinleri sığdırmak için
+    # Kenarlardan 110px boşluk (her iki yan)
+    max_w = W - 220   # 1080 - 220 = 860px güvenli alan
+    font_size = 54
+    mfont = _get_font(font_size)
+    lines = _wrap_text(draw, text, mfont, max_w)
+
+    # Çok uzunsa font'u küçült
+    while len(lines) > 4 and font_size > 38:
+        font_size -= 4
+        mfont = _get_font(font_size)
+        lines = _wrap_text(draw, text, mfont, max_w)
+
+    # Hala 5+ satırsa son çare: 36'ya kadar küçült
+    while len(lines) > 5 and font_size > 32:
+        font_size -= 2
+        mfont = _get_font(font_size)
+        lines = _wrap_text(draw, text, mfont, max_w)
+
+    lh = int(font_size * 1.35)
     th = len(lines) * lh
     ty = (H // 2) - th // 2 + 100 + slide
+
+    # Outline kalınlığını font boyutuna göre ayarla
+    outline_offsets = [(-4, -4), (4, -4), (-4, 4), (4, 4),
+                       (0, -5), (0, 5), (-5, 0), (5, 0)]
+    if font_size <= 42:
+        outline_offsets = [(-3, -3), (3, -3), (-3, 3), (3, 3),
+                           (0, -3), (0, 3), (-3, 0), (3, 0)]
 
     for line in lines:
         bb = draw.textbbox((0, 0), line, font=mfont)
         lw = bb[2]
         x = (W - lw) // 2
-        for ox, oy in [(-4, -4), (4, -4), (-4, 4), (4, 4),
-                       (0, -5), (0, 5), (-5, 0), (5, 0)]:
+        for ox, oy in outline_offsets:
             draw.text((x + ox, ty + oy), line, font=mfont,
                       fill=(0, 0, 0, int(230 * alpha)))
         draw.text((x, ty), line, font=mfont,
