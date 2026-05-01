@@ -230,23 +230,42 @@ def _add_text_overlay(frame_arr, t: float, text: str, seg_dur: float,
 
     # İlk segmentte burç adı + tarih başlığı
     if show_header and sign_name:
-        tf = _get_font(46)
-        ty2 = 80
+        # Otomatik boyut — uzun başlık için küçült
+        max_header_w = W - 200
+        tf_size = 46
+        tf = _get_font(tf_size)
         tb = draw.textbbox((0, 0), sign_name, font=tf)
         tw2 = tb[2]
-        tx = (W - tw2) // 2
-        for ox, oy in [(-3, -3), (3, -3), (-3, 3), (3, 3)]:
-            draw.text((tx + ox, ty2 + oy), sign_name, font=tf,
-                      fill=(0, 0, 0, int(220 * alpha)))
-        draw.text((tx, ty2), sign_name, font=tf,
-                  fill=(*ac, int(245 * alpha)))
+        while tw2 > max_header_w and tf_size > 30:
+            tf_size -= 4
+            tf = _get_font(tf_size)
+            tb = draw.textbbox((0, 0), sign_name, font=tf)
+            tw2 = tb[2]
+        # Hala sığmıyorsa wrap et
+        if tw2 > max_header_w:
+            header_lines = _wrap_text(draw, sign_name, tf, max_header_w)
+        else:
+            header_lines = [sign_name]
+
+        ty2 = 80
+        line_h2 = int(tf_size * 1.15)
+        for line in header_lines:
+            lb = draw.textbbox((0, 0), line, font=tf)
+            lw = lb[2]
+            tx = (W - lw) // 2
+            for ox, oy in [(-3, -3), (3, -3), (-3, 3), (3, 3)]:
+                draw.text((tx + ox, ty2 + oy), line, font=tf,
+                          fill=(0, 0, 0, int(220 * alpha)))
+            draw.text((tx, ty2), line, font=tf,
+                      fill=(*ac, int(245 * alpha)))
+            ty2 += line_h2
 
         datestr = datetime.now().strftime("%d %B %Y")
         df = _get_font(28)
         db = draw.textbbox((0, 0), datestr, font=df)
         dw = db[2]
         dx = (W - dw) // 2
-        dy_d = ty2 + 68
+        dy_d = ty2 + 22
         draw.text((dx, dy_d), datestr, font=df,
                   fill=(220, 220, 220, int(200 * alpha)))
 
@@ -428,17 +447,43 @@ def _make_intro_clip(duration: float, sign_name: str, sign_symbol: str,
         d.text((sx, sy), sign_symbol, font=sf,
                fill=(*ac, int(250 * alpha)))
 
-        # Burç adı
-        nf = _get_font(88)
+        # Burç adı / kategori adı / başlık — otomatik boyut ayarı
+        # Mobilde sığması için max genişliği kontrol et, sığmazsa küçült
+        max_text_w = W - 200  # her iki yanda 100px güvenli boşluk
+        nf_size = 88
+        nf = _get_font(nf_size)
         nb = d.textbbox((0, 0), sign_name, font=nf)
         nw = nb[2]
-        nx = (W - nw) // 2
+        # Sığmıyorsa font'u küçült
+        while nw > max_text_w and nf_size > 40:
+            nf_size -= 6
+            nf = _get_font(nf_size)
+            nb = d.textbbox((0, 0), sign_name, font=nf)
+            nw = nb[2]
+        # Hala sığmıyorsa wrap et (çok uzun başlık için)
+        if nw > max_text_w:
+            lines = _wrap_text(d, sign_name, nf, max_text_w)
+        else:
+            lines = [sign_name]
+
+        # Çizim — birden fazla satır olabilir
         ny = H // 2 + 280
-        for ox, oy in [(-3, -3), (3, -3), (-3, 3), (3, 3)]:
-            d.text((nx + ox, ny + oy), sign_name, font=nf,
-                   fill=(0, 0, 0, int(200 * alpha)))
-        d.text((nx, ny), sign_name, font=nf,
-               fill=(255, 245, 220, int(250 * alpha)))
+        line_h = int(nf_size * 1.1)
+        # Birden fazla satır varsa biraz yukarı al
+        if len(lines) > 1:
+            ny -= (len(lines) - 1) * line_h // 2
+        for line in lines:
+            lb = d.textbbox((0, 0), line, font=nf)
+            lw = lb[2]
+            lx = (W - lw) // 2
+            for ox, oy in [(-3, -3), (3, -3), (-3, 3), (3, 3)]:
+                d.text((lx + ox, ny + oy), line, font=nf,
+                       fill=(0, 0, 0, int(200 * alpha)))
+            d.text((lx, ny), line, font=nf,
+                   fill=(255, 245, 220, int(250 * alpha)))
+            ny += line_h
+        # Tarih için ny'yi en son satırın altına ayarla
+        ny = ny - line_h + nf_size + 40
 
         # Tarih
         datestr = datetime.now().strftime("%d %B %Y")
@@ -446,7 +491,7 @@ def _make_intro_clip(duration: float, sign_name: str, sign_symbol: str,
         db = d.textbbox((0, 0), datestr, font=df)
         dw = db[2]
         dx = (W - dw) // 2
-        dy = ny + 120
+        dy = ny + 80
         d.text((dx, dy), datestr, font=df,
                fill=(220, 220, 220, int(230 * alpha)))
 
