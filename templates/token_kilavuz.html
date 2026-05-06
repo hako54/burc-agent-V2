@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Token Yenileme Kılavuzu — burc-agent-V2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0a0c11;
+  --surface: #12151c;
+  --surface-2: #1a1f2a;
+  --border: #232936;
+  --border-bright: #2f3744;
+  --text: #ecedef;
+  --text-dim: #8a93a6;
+  --text-faint: #5b6478;
+  --amber: #f5a524;
+  --amber-glow: rgba(245, 165, 36, 0.12);
+  --green: #34d399;
+  --red: #f87171;
+  --blue: #60a5fa;
+  --purple: #c084fc;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Geist', -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  background-image:
+    radial-gradient(ellipse 800px 600px at 80% -10%, rgba(245, 165, 36, 0.08), transparent),
+    radial-gradient(ellipse 600px 400px at 10% 110%, rgba(96, 165, 250, 0.05), transparent);
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+.container {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 60px 24px 120px;
+}
+
+/* HERO */
+.hero {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 48px;
+  margin-bottom: 48px;
+}
+
+.hero .meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'Geist Mono', monospace;
+  font-size: 12px;
+  color: var(--amber);
+  background: var(--amber-glow);
+  padding: 6px 12px;
+  border-radius: 100px;
+  border: 1px solid rgba(245, 165, 36, 0.2);
+  margin-bottom: 24px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.hero .meta::before {
+  content: '';
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 8px var(--amber);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.hero h1 {
+  font-family: 'Instrument Serif', serif;
+  font-size: clamp(40px, 6vw, 64px);
+  line-height: 1.05;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  margin-bottom: 20px;
+}
+
+.hero h1 em {
+  font-style: italic;
+  color: var(--amber);
+}
+
+.hero p {
+  font-size: 18px;
+  color: var(--text-dim);
+  max-width: 600px;
+}
+
+/* TLDR CARD */
+.tldr {
+  background: linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 100%);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 28px 32px;
+  margin-bottom: 56px;
+  position: relative;
+  overflow: hidden;
+}
+
+.tldr::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 4px; height: 100%;
+  background: linear-gradient(180deg, var(--amber), transparent);
+}
+
+.tldr h2 {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--text-faint);
+  margin-bottom: 16px;
+}
+
+.tldr p {
+  font-size: 16px;
+  color: var(--text);
+}
+
+.tldr p + p { margin-top: 12px; }
+
+.tldr strong {
+  color: var(--amber);
+  font-weight: 600;
+}
+
+/* SECTION HEADERS */
+.section-header {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  margin: 72px 0 32px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.section-header .num {
+  font-family: 'Geist Mono', monospace;
+  font-size: 13px;
+  color: var(--amber);
+  font-weight: 500;
+  letter-spacing: 0.1em;
+}
+
+.section-header h2 {
+  font-family: 'Instrument Serif', serif;
+  font-size: 32px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+/* STEPS */
+.step {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: 24px;
+  margin-bottom: 36px;
+}
+
+.step .num-circle {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--border-bright);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Geist Mono', monospace;
+  font-size: 14px;
+  color: var(--text-dim);
+  font-weight: 500;
+  margin-top: 4px;
+}
+
+.step .body h3 {
+  font-size: 19px;
+  font-weight: 500;
+  margin-bottom: 8px;
+  color: var(--text);
+  letter-spacing: -0.005em;
+}
+
+.step .body p {
+  color: var(--text-dim);
+  margin-bottom: 12px;
+}
+
+.step .body strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.step .body code {
+  font-family: 'Geist Mono', monospace;
+  font-size: 13px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--amber);
+}
+
+/* CODE BLOCKS WITH COPY */
+.code-block {
+  background: #060810;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 16px 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.code-block .head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+
+.code-block .copy-btn {
+  background: var(--surface);
+  border: 1px solid var(--border-bright);
+  color: var(--text-dim);
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition: all 0.15s ease;
+}
+
+.code-block .copy-btn:hover {
+  background: var(--amber);
+  color: #1a1300;
+  border-color: var(--amber);
+}
+
+.code-block .copy-btn.copied {
+  background: var(--green);
+  color: #001f12;
+  border-color: var(--green);
+}
+
+.code-block pre {
+  padding: 16px;
+  overflow-x: auto;
+  font-family: 'Geist Mono', monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+.code-block .prompt { color: var(--text-faint); user-select: none; }
+.code-block .cmd { color: var(--text); }
+
+/* CALLOUT BOXES */
+.callout {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin: 16px 0;
+  display: flex;
+  gap: 12px;
+}
+
+.callout.warn { border-color: rgba(245, 165, 36, 0.3); background: rgba(245, 165, 36, 0.04); }
+.callout.tip  { border-color: rgba(96, 165, 250, 0.3); background: rgba(96, 165, 250, 0.04); }
+.callout.danger { border-color: rgba(248, 113, 113, 0.3); background: rgba(248, 113, 113, 0.04); }
+
+.callout .icon {
+  font-family: 'Instrument Serif', serif;
+  font-style: italic;
+  font-size: 18px;
+  color: var(--amber);
+  flex-shrink: 0;
+  width: 24px;
+}
+
+.callout.tip .icon { color: var(--blue); }
+.callout.danger .icon { color: var(--red); }
+
+.callout .text {
+  font-size: 14px;
+  color: var(--text-dim);
+  line-height: 1.6;
+}
+
+.callout .text strong { color: var(--text); }
+
+/* TROUBLESHOOTING */
+details {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+details summary {
+  padding: 16px 20px;
+  cursor: pointer;
+  font-weight: 500;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  list-style: none;
+  transition: background 0.15s ease;
+}
+
+details summary::-webkit-details-marker { display: none; }
+
+details summary:hover { background: var(--surface-2); }
+
+details summary::after {
+  content: '+';
+  font-family: 'Geist Mono', monospace;
+  font-size: 20px;
+  color: var(--text-faint);
+  transition: transform 0.2s ease;
+}
+
+details[open] summary::after { content: '−'; color: var(--amber); }
+
+details .answer {
+  padding: 4px 20px 20px;
+  color: var(--text-dim);
+  font-size: 14px;
+  line-height: 1.7;
+  border-top: 1px solid var(--border);
+}
+
+details .answer p + p { margin-top: 10px; }
+
+details .answer code {
+  font-family: 'Geist Mono', monospace;
+  font-size: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--amber);
+}
+
+/* REFERENCE CARD */
+.ref-card {
+  background: linear-gradient(180deg, var(--surface) 0%, var(--bg) 100%);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 32px;
+  margin-top: 56px;
+}
+
+.ref-card h2 {
+  font-family: 'Instrument Serif', serif;
+  font-size: 26px;
+  margin-bottom: 20px;
+  font-weight: 400;
+}
+
+.ref-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px 32px;
+}
+
+.ref-grid .item {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+}
+
+.ref-grid .label {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  margin-bottom: 4px;
+}
+
+.ref-grid .value {
+  font-family: 'Geist Mono', monospace;
+  font-size: 13px;
+  color: var(--text);
+  word-break: break-all;
+}
+
+@media (max-width: 600px) {
+  .container { padding: 40px 16px 80px; }
+  .step { grid-template-columns: 1fr; gap: 8px; }
+  .step .num-circle { display: none; }
+  .ref-grid { grid-template-columns: 1fr; }
+}
+
+/* FOOTER */
+.footer {
+  margin-top: 80px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+  font-family: 'Geist Mono', monospace;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.footer .heart { color: var(--red); }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <!-- HERO -->
+  <header class="hero">
+    <div class="meta">son çare kılavuzu</div>
+    <h1>Token <em>yenileme</em><br>kılavuzu</h1>
+    <p>YouTube otomasyonun "invalid_scope" veya "invalid_client" hatası verdiğinde — adım adım, panik yok.</p>
+  </header>
+
+  <!-- TL;DR -->
+  <div class="tldr">
+    <h2>// kısa özet</h2>
+    <p>Otomasyonda token sorunu varsa <strong>refresh_tokens.py</strong>'i çalıştır → script iki kanal için yeni token üretir, base64'lerini ekrana yazar → onları Railway'e yapıştırırsın.</p>
+    <p>Toplam süre: <strong>~1 dakika</strong> + 2 tarayıcı tıklama + 2 kopyala-yapıştır.</p>
+  </div>
+
+  <!-- BÖLÜM 1: NE ZAMAN -->
+  <div class="section-header">
+    <span class="num">/01</span>
+    <h2>Bu kılavuzu ne zaman kullanırım?</h2>
+  </div>
+
+  <p style="color: var(--text-dim); margin-bottom: 20px;">Railway Deploy Logs'da şu hatalardan birini görüyorsan:</p>
+
+  <div class="code-block">
+    <div class="head"><span>railway logs / hata örnekleri</span></div>
+    <pre><span class="cmd" style="color: var(--red);">[ERROR] Token yenilenemedi (burc): ('invalid_scope: Bad Request', ...)
+[ERROR] Token yenilenemedi (onelineadayy): ('invalid_grant', ...)
+RuntimeError: ❌ 'burc' için YouTube token eksik/geçersiz.</span></pre>
+  </div>
+
+  <p style="color: var(--text-dim);">Bu hatalar ya Google'ın token'ı iptal ettiğini, ya OAuth client'ının değiştiğini, ya da scope'ların uyuşmadığını gösterir. Hepsinin çözümü aynı: token'ı yeniden üret.</p>
+
+  <!-- BÖLÜM 2: HAZIRLIK -->
+  <div class="section-header">
+    <span class="num">/02</span>
+    <h2>Başlamadan önce</h2>
+  </div>
+
+  <div class="step">
+    <div class="num-circle">A</div>
+    <div class="body">
+      <h3>Doğru klasörde olduğundan emin ol</h3>
+      <p>CMD'yi aç ve proje klasörüne git:</p>
+      <div class="code-block">
+        <div class="head">
+          <span>cmd</span>
+          <button class="copy-btn" data-copy='cd "C:\Users\ali.baykal\Desktop\youtube_burç\burc_agent_v2\burc_v2"'>kopyala</button>
+        </div>
+        <pre><span class="prompt">&gt;</span> <span class="cmd">cd "C:\Users\ali.baykal\Desktop\youtube_burç\burc_agent_v2\burc_v2"</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num-circle">B</div>
+    <div class="body">
+      <h3>refresh_tokens.py dosyasının orada olduğunu kontrol et</h3>
+      <p>Klasörde <code>refresh_tokens.py</code>, <code>credentials_burc.json</code> ve <code>credentials_onelineadayy.json</code> olmalı.</p>
+      <div class="callout tip">
+        <span class="icon">i</span>
+        <div class="text"><strong>Yoksa:</strong> önceki sohbette verdiğim <code>refresh_tokens.py</code>'i indir, bu klasöre koy.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num-circle">C</div>
+    <div class="body">
+      <h3>Tarayıcıda Google'dan çıkış yap</h3>
+      <p><a href="https://accounts.google.com" style="color: var(--blue); text-decoration: none; border-bottom: 1px dotted;">accounts.google.com</a> → sağ üstte profil → <strong>Çıkış yap</strong>.</p>
+      <div class="callout warn">
+        <span class="icon">!</span>
+        <div class="text"><strong>Neden önemli?</strong> Tarayıcı zaten bir hesapla girişliyse script o hesapla devam eder ve token yanlış kanala bağlanır.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BÖLÜM 3: TOKEN ÜRETİMİ -->
+  <div class="section-header">
+    <span class="num">/03</span>
+    <h2>Script'i çalıştır</h2>
+  </div>
+
+  <div class="step">
+    <div class="num-circle">1</div>
+    <div class="body">
+      <h3>Komutu çalıştır</h3>
+      <div class="code-block">
+        <div class="head">
+          <span>cmd</span>
+          <button class="copy-btn" data-copy="python refresh_tokens.py">kopyala</button>
+        </div>
+        <pre><span class="prompt">&gt;</span> <span class="cmd">python refresh_tokens.py</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num-circle">2</div>
+    <div class="body">
+      <h3>BURÇ için onayla</h3>
+      <p>Script "BURÇ için token üretiliyor" yazınca → <strong>Enter</strong>.</p>
+      <p>Tarayıcı açılır → <strong>Burç kanalının Google hesabıyla</strong> giriş yap → "Google bu uygulamayı doğrulamadı" çıkarsa <em>Gelişmiş ayarlar</em> → <em>Burç Agent uygulamasına git (güvenli değil)</em> → yetkileri onayla.</p>
+      <p>Tarayıcı "authentication flow has completed" deyince terminal'e dönebilirsin.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num-circle">3</div>
+    <div class="body">
+      <h3>OneLineAdayy için onayla</h3>
+      <p>Script "ONELINEADAYY için token üretiliyor" yazınca:</p>
+      <div class="callout warn">
+        <span class="icon">!</span>
+        <div class="text"><strong>Önce tarayıcıda Burç hesabından çıkış yap.</strong> Sonra Enter'a bas. Tarayıcı tekrar açılınca <strong>OneLineAdayy hesabıyla</strong> giriş yap.</div>
+      </div>
+      <p>Aynı onay süreci tekrarlanır.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num-circle">4</div>
+    <div class="body">
+      <h3>Base64 değerleri ekrana çıkar</h3>
+      <p>Script bittiğinde terminal'de iki büyük metin bloğu göreceksin:</p>
+      <div class="code-block">
+        <div class="head"><span>terminal çıktısı</span></div>
+        <pre><span style="color: var(--text-faint);">────────────────────────────────────</span>
+<span style="color: var(--amber);">  TOKEN_BURC</span>
+<span style="color: var(--text-faint);">────────────────────────────────────</span>
+<span style="color: var(--text-dim);">eyJ0b2tlbiI6IG51bGwsICJyZWZyZX...</span>
+
+<span style="color: var(--text-faint);">────────────────────────────────────</span>
+<span style="color: var(--amber);">  TOKEN_ONELINEADAYY</span>
+<span style="color: var(--text-faint);">────────────────────────────────────</span>
+<span style="color: var(--text-dim);">eyJ0b2tlbiI6IG51bGwsICJyZWZyZX...</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- BÖLÜM 4: RAILWAY -->
+  <div class="section-header">
+    <span class="num">/04</span>
+    <h2>Railway'e yapıştır</h2>
+  </div>
+
+  <div class="step">
+    <div class="num-circle">5</div>
+    <div class="body">
+      <h3>Railway'i aç</h3>
+      <p><a href="https://railway.com/" style="color: var(--blue); text-decoration: none; border-bottom: 1px dotted;">railway.com</a> → giriş yap → <strong>burc-agent-V2</strong> projesi → üstteki <strong>Variables</strong> sekmesi.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num-circle">6</div>
+    <div class="body">
+      <h3>TOKEN_BURC'u güncelle</h3>
+      <p>Listeden <code>TOKEN_BURC</code>'u bul → üstüne tıkla → eski değeri tamamen sil.</p>
+      <p>Terminal'deki ilk base64 metnini <strong>mouse ile sürükleyerek seç</strong> (Ctrl+Shift+C kopyalar) → Railway'e yapıştır → <strong>Update</strong>.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num-circle">7</div>
+    <div class="body">
+      <h3>TOKEN_ONELINEADAYY'i güncelle</h3>
+      <p>Aynı işlemi <code>TOKEN_ONELINEADAYY</code> için ikinci base64 metniyle yap.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num-circle">8</div>
+    <div class="body">
+      <h3>Redeploy bekle</h3>
+      <p>Railway env değişikliğinde otomatik redeploy başlatır. <strong>Deployments</strong> sekmesinde 1-2 dakika içinde yeni deploy görünür.</p>
+      <p>Deploy bittikten sonra <strong>Deploy Logs</strong>'a bak — şu satırları görüyorsan başarılı:</p>
+      <div class="code-block">
+        <div class="head"><span>başarılı log</span></div>
+        <pre><span style="color: var(--green);">[INFO] scheduler: Cron registered: burc @ 06:00 (zodiac)
+[INFO] scheduler: Cron registered: onelineadayy @ 10:30
+[INFO] scheduler: Scheduler başladı: 3 cron job aktif</span></pre>
+      </div>
+      <div class="callout warn">
+        <span class="icon">!</span>
+        <div class="text"><strong>Otomatik redeploy olmadıysa:</strong> Deployments → en üstteki deployment'ın yanındaki ⋮ menüsü → <em>Redeploy</em>.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BÖLÜM 5: SORUN ÇÖZME -->
+  <div class="section-header">
+    <span class="num">/05</span>
+    <h2>Sorun çözme</h2>
+  </div>
+
+  <details>
+    <summary>"token_burc.json bulunamadı" diyor</summary>
+    <div class="answer">
+      <p>Normal — script eski token dosyasını siler ve yenisini oluşturur. Bu mesaj sadece bilgilendirme amaçlı, hata değil.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>"The provided client secret is invalid" diyor</summary>
+    <div class="answer">
+      <p>GCP'de OAuth client'ı silmiş veya secret reset etmişsin. Çözüm:</p>
+      <p>1. <a href="https://console.cloud.google.com/apis/credentials" style="color: var(--blue);">GCP Credentials</a> → yeni OAuth Client ID oluştur (Desktop app).</p>
+      <p>2. JSON'u indir, içeriğini <strong>üç dosyaya birden</strong> yaz: <code>client_secrets.json</code>, <code>credentials_burc.json</code>, <code>credentials_onelineadayy.json</code>.</p>
+      <p>3. <code>refresh_tokens.py</code>'i tekrar çalıştır.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Tarayıcı yanlış hesaba gidiyor</summary>
+    <div class="answer">
+      <p>İki çözüm:</p>
+      <p><strong>1)</strong> Komutu çalıştırmadan önce <a href="https://accounts.google.com" style="color: var(--blue);">accounts.google.com</a>'a gidip çıkış yap.</p>
+      <p><strong>2)</strong> Tarayıcıda gizli pencere aç, orada Google'a doğru hesapla giriş yap, sonra script'i çalıştır.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>"refresh_token revoked" hatası</summary>
+    <div class="answer">
+      <p>Google hesabında uygulamanın yetkisi iptal edilmiş. Çözüm:</p>
+      <p>1. <a href="https://myaccount.google.com/permissions" style="color: var(--blue);">myaccount.google.com/permissions</a> → ilgili Google hesabıyla giriş.</p>
+      <p>2. <em>Burç Agent</em>'i bul → <strong>Erişimi kaldır</strong>.</p>
+      <p>3. Script'i tekrar çalıştır — yeni yetki isteyecek.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>"Google bu uygulamayı doğrulamadı" uyarısı çıkıyor</summary>
+    <div class="answer">
+      <p>Bu normal. Sen kendin oluşturduğun OAuth client'ı kullanıyorsun, Google bunu "doğrulanmamış" sayıyor. Yapacağın:</p>
+      <p>1. <strong>Gelişmiş ayarlar</strong> linkine tıkla.</p>
+      <p>2. <strong>Burç Agent uygulamasına git (güvenli değil)</strong>'e tıkla.</p>
+      <p>3. Devam et.</p>
+      <p>Bu uyarı sadece "kendi yazdığın uygulama" için çıkar, gerçekten güvensiz değil.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Deploy hâlâ "invalid_scope" hatası veriyor</summary>
+    <div class="answer">
+      <p>Büyük ihtimalle <code>credentials_*.json</code> dosyalarındaki client ile Railway'e yapıştırdığın token'ın client'ı uyuşmuyor. Yani token bir client'a aitken, Railway başka client_secret kullanıyor.</p>
+      <p>Çözüm: <code>credentials_burc.json</code> ve <code>credentials_onelineadayy.json</code>'un her ikisinin de aynı, güncel OAuth client bilgisini içerdiğinden emin ol — sonra script'i tekrar çalıştır.</p>
+    </div>
+  </details>
+
+  <!-- REFERANS -->
+  <div class="ref-card">
+    <h2>Referans</h2>
+    <div class="ref-grid">
+      <div class="item">
+        <div class="label">Proje klasörü</div>
+        <div class="value">~\Desktop\youtube_burç\burc_agent_v2\burc_v2</div>
+      </div>
+      <div class="item">
+        <div class="label">Railway projesi</div>
+        <div class="value">burc-agent-V2</div>
+      </div>
+      <div class="item">
+        <div class="label">Burç env</div>
+        <div class="value">TOKEN_BURC</div>
+      </div>
+      <div class="item">
+        <div class="label">OneLineAdayy env</div>
+        <div class="value">TOKEN_ONELINEADAYY</div>
+      </div>
+      <div class="item">
+        <div class="label">Burç token dosyası</div>
+        <div class="value">token_burc.json</div>
+      </div>
+      <div class="item">
+        <div class="label">OneLineAdayy token dosyası</div>
+        <div class="value">token_onelineadayy.json</div>
+      </div>
+      <div class="item">
+        <div class="label">Cron — Burç</div>
+        <div class="value">06:00 (Europe/Istanbul)</div>
+      </div>
+      <div class="item">
+        <div class="label">Cron — OneLineAdayy</div>
+        <div class="value">10:30 / 19:00</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <p>burc-agent-V2 · token refresh handbook</p>
+  </div>
+
+</div>
+
+<script>
+document.querySelectorAll('.copy-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const text = btn.dataset.copy;
+    try {
+      await navigator.clipboard.writeText(text);
+      const original = btn.textContent;
+      btn.textContent = 'kopyalandı ✓';
+      btn.classList.add('copied');
+      setTimeout(() => {
+        btn.textContent = original;
+        btn.classList.remove('copied');
+      }, 1500);
+    } catch (e) {
+      btn.textContent = 'hata';
+      setTimeout(() => { btn.textContent = 'kopyala'; }, 1500);
+    }
+  });
+});
+</script>
+
+</body>
+</html>
