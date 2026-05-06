@@ -833,6 +833,9 @@ def _start_background_services():
 def ensure_bg_started():
     _start_background_services()
 
+@app.route("/yardim/token")
+def token_help():
+    return render_template("token_kilavuz.html")
 
 if __name__ == "__main__":
     _start_background_services()
