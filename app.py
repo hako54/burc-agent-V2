@@ -837,6 +837,77 @@ def ensure_bg_started():
 def token_help():
     return render_template("token_kilavuz.html")
 
+@app.route("/api/admin/heygen/discover")
+def heygen_discover():
+    """Geçici endpoint — HeyGen avatar/look/voice ID'lerini listeler."""
+    import requests as _rq
+
+    if request.args.get("key") != "lina-discover-2026":
+        return jsonify({"error": "unauthorized"}), 401
+
+    api_key = os.environ.get("HEYGEN_API_KEY")
+    if not api_key:
+        return jsonify({"error": "HEYGEN_API_KEY not set"}), 500
+
+    headers = {"X-Api-Key": api_key}
+    result = {}
+
+    # Avatar grupları (Photo Avatar = Lina gibi custom)
+    try:
+        r = _rq.get(
+            "https://api.heygen.com/v2/avatar_group.list",
+            headers=headers, timeout=30,
+        )
+        groups = r.json().get("data", {}).get("avatar_group_list", [])
+        result["groups"] = [
+            {"id": g.get("id"), "name": g.get("name")} for g in groups
+        ]
+    except Exception as e:
+        result["groups_error"] = str(e)
+        groups = []
+
+    # Lina'yı bul ve look'larını getir
+    lina = next(
+        (g for g in groups if "lina" in (g.get("name", "") or "").lower()),
+        None,
+    )
+    if lina:
+        result["lina_group_id"] = lina["id"]
+        try:
+            r = _rq.get(
+                f"https://api.heygen.com/v2/avatar_group/{lina['id']}/avatars",
+                headers=headers, timeout=30,
+            )
+            looks = r.json().get("data", {}).get("avatar_list", [])
+            result["lina_looks"] = [
+                {
+                    "id": l.get("avatar_id") or l.get("id"),
+                    "name": l.get("name"),
+                    "preview": l.get("image_url") or l.get("preview_image_url"),
+                }
+                for l in looks
+            ]
+        except Exception as e:
+            result["looks_error"] = str(e)
+
+    # Türkçe kadın sesler
+    try:
+        r = _rq.get(
+            "https://api.heygen.com/v2/voices",
+            headers=headers, timeout=30,
+        )
+        voices = r.json().get("data", {}).get("voices", [])
+        result["turkish_female_voices"] = [
+            {"id": v.get("voice_id"), "name": v.get("name")}
+            for v in voices
+            if (v.get("language", "") or "").lower() == "turkish"
+            and (v.get("gender", "") or "").lower() == "female"
+        ]
+    except Exception as e:
+        result["voices_error"] = str(e)
+
+    return jsonify(result)
+
 if __name__ == "__main__":
     _start_background_services()
     port = int(os.environ.get("PORT", 5000))
