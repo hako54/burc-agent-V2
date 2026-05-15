@@ -837,6 +837,154 @@ def ensure_bg_started():
 def token_help():
     return render_template("token_kilavuz.html")
 
+# ──────────────────────────────────────────────────────────────────
+# SÖZ KANALI TEST ENDPOINTS (geçici — pipeline entegrasyonu öncesi)
+# ──────────────────────────────────────────────────────────────────
+# Bu blok app.py'ye eklendiğinde, HeyGen entegrasyonu test edilebilir.
+# Pipeline entegrasyonu tamamlanınca bu endpoint'ler kaldırılır.
+
+
+@app.route("/api/admin/soz/test-start")
+def soz_test_start():
+    """HeyGen video üretimini başlatır, video_id döner.
+
+    Parametreler:
+      key       — admin secret
+      text      — söz metni (boşsa varsayılan kullanılır)
+      theme     — tema ID'si (boşsa 'sonbahar_gol')
+      style     — 'stable' (varsayılan) veya 'expressive'
+    """
+    if request.args.get("key") != "lina-test-2026":
+        return jsonify({"error": "unauthorized"}), 401
+
+    try:
+        from services import heygen
+        from channel_modules.soz.config import HEYGEN_CONFIG, THEMES
+        from channel_modules.soz.content import pick_look_id
+
+        text = (request.args.get("text", "").strip()
+                or "Mutluluk, sahip olduklarımızla yetinmektir. "
+                   "Gerçek huzur, içinde sakladığın küçük şükürlerde gizlidir.")
+
+        theme_id = request.args.get("theme", "sonbahar_gol")
+        if theme_id not in THEMES:
+            return jsonify({
+                "error": f"Bilinmeyen tema: {theme_id}",
+                "available": list(THEMES.keys()),
+            }), 400
+
+        look_id = pick_look_id(theme_id)
+        voice_id = HEYGEN_CONFIG["voice_id"]
+        style = request.args.get("style", "stable")
+
+        log.info(f"📹 Söz test video başlatılıyor: tema={theme_id}, "
+                 f"look={look_id[:8]}..., text_len={len(text)}")
+
+        video_id = heygen.generate_video(
+            avatar_id=look_id,
+            voice_id=voice_id,
+            text=text,
+            title=f"söz test — {theme_id}",
+            talking_photo_style=style,
+            width=HEYGEN_CONFIG["width"],
+            height=HEYGEN_CONFIG["height"],
+        )
+
+        return jsonify({
+            "ok": True,
+            "video_id": video_id,
+            "theme": theme_id,
+            "theme_name": THEMES[theme_id]["name"],
+            "look_id": look_id,
+            "voice_id": voice_id,
+            "text_preview": text[:120],
+            "next": (
+                f"/api/admin/soz/test-status?id={video_id}"
+                f"&key=lina-test-2026"
+            ),
+        })
+
+    except Exception as e:
+        log.exception("Söz test start hatası")
+        return jsonify({"error": str(e), "type": type(e).__name__}), 500
+
+
+@app.route("/api/admin/soz/test-status")
+def soz_test_status():
+    """Bir HeyGen video'sunun durumunu döner.
+
+    Parametreler:
+      key — admin secret
+      id  — video_id (test-start'tan dönen)
+    """
+    if request.args.get("key") != "lina-test-2026":
+        return jsonify({"error": "unauthorized"}), 401
+
+    video_id = request.args.get("id", "").strip()
+    if not video_id:
+        return jsonify({"error": "id parametresi gerekli"}), 400
+
+    try:
+        from services import heygen
+        info = heygen.get_video_status(video_id)
+        return jsonify({
+            "ok": True,
+            "video_id": video_id,
+            "status": info.get("status"),
+            "video_url": info.get("video_url"),
+            "thumbnail_url": info.get("thumbnail_url"),
+            "duration": info.get("duration"),
+            "error": info.get("error"),
+            "raw": info,
+        })
+    except Exception as e:
+        log.exception("Söz test status hatası")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/admin/soz/test-llm")
+def soz_test_llm():
+    """LLM ile söz üretimini test eder (HeyGen çağırmadan).
+
+    Parametreler:
+      key — admin secret
+    """
+    if request.args.get("key") != "lina-test-2026":
+        return jsonify({"error": "unauthorized"}), 401
+
+    try:
+        from services.content import call_llm_with_fallback, parse_llm_json
+        from channel_modules.soz.content import (
+            build_prompt, match_theme, pick_look_id, get_theme_info,
+        )
+
+        prompt = build_prompt(topic_key="auto", used_themes=[])
+        raw, provider = call_llm_with_fallback(prompt)
+        content = parse_llm_json(raw)
+
+        # Tema eşle
+        moods = content.get("moods", [])
+        theme_id, score = match_theme(moods)
+        theme_info = get_theme_info(theme_id) if theme_id else None
+        look_id = pick_look_id(theme_id) if theme_id else None
+
+        return jsonify({
+            "ok": True,
+            "provider": provider,
+            "content": content,
+            "matched_theme": {
+                "id": theme_id,
+                "name": theme_info["name"] if theme_info else None,
+                "icon": theme_info["icon"] if theme_info else None,
+                "score": score,
+                "look_id": look_id,
+            },
+        })
+    except Exception as e:
+        log.exception("Söz LLM test hatası")
+        return jsonify({"error": str(e), "type": type(e).__name__}), 500
+
+
 if __name__ == "__main__":
     _start_background_services()
     port = int(os.environ.get("PORT", 5000))
