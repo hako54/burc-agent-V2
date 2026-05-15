@@ -38,7 +38,7 @@ def generate_video(
     voice_id: str,
     text: str,
     title: str = "soz",
-    talking_photo_style: str = "stable",
+    talking_photo_style: str = None,
     speed: float = 1.0,
     width: int = 1080,
     height: int = 1920,
@@ -48,17 +48,23 @@ def generate_video(
     avatar_id: Lina'nın bir look_id'si (talking_photo)
     voice_id: HeyGen voice_id (Charming Ceyda vs.)
     text: Sözün metni (Türkçe)
-    talking_photo_style: 'stable' (varsayılan) veya 'expressive'
+    talking_photo_style: None ise HeyGen default kullanılır.
+        ('stable' artık desteklenmiyor; gerekirse 'expressive' denenir)
     """
+    character = {
+        "type": "talking_photo",
+        "talking_photo_id": avatar_id,
+        "scale": 1.0,
+    }
+    # talking_photo_style sadece geçerli değerse ekle.
+    # HeyGen API "stable" değerini artık desteklemiyor (Nov 2025+).
+    if talking_photo_style and talking_photo_style.lower() != "stable":
+        character["talking_photo_style"] = talking_photo_style
+
     payload = {
         "video_inputs": [
             {
-                "character": {
-                    "type": "talking_photo",
-                    "talking_photo_id": avatar_id,
-                    "talking_photo_style": talking_photo_style,
-                    "scale": 1.0,
-                },
+                "character": character,
                 "voice": {
                     "type": "text",
                     "input_text": text,
