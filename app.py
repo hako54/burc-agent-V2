@@ -924,6 +924,25 @@ def soz_test_status():
     if not video_id:
         return jsonify({"error": "id parametresi gerekli"}), 400
 
+  @app.route("/api/admin/soz/test-watch")
+def soz_test_watch():
+    """video_id'den HeyGen video URL'ine redirect.
+    Long URL kopya-yapıştır sorunu olmasın diye."""
+    if request.args.get("key") != "lina-test-2026":
+        return "unauthorized", 401
+    video_id = request.args.get("id", "").strip()
+    if not video_id:
+        return "id parametresi gerekli", 400
+    try:
+        from services import heygen
+        info = heygen.get_video_status(video_id)
+        url = info.get("video_url")
+        if url:
+            return redirect(url)
+        return f"Video henüz hazır değil. Durum: {info.get('status')}", 200
+    except Exception as e:
+        return f"Hata: {e}", 500
+
     try:
         from services import heygen
         info = heygen.get_video_status(video_id)
