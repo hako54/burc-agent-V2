@@ -924,25 +924,6 @@ def soz_test_status():
     if not video_id:
         return jsonify({"error": "id parametresi gerekli"}), 400
 
-  @app.route("/api/admin/soz/test-watch")
-def soz_test_watch():
-    """video_id'den HeyGen video URL'ine redirect.
-    Long URL kopya-yapıştır sorunu olmasın diye."""
-    if request.args.get("key") != "lina-test-2026":
-        return "unauthorized", 401
-    video_id = request.args.get("id", "").strip()
-    if not video_id:
-        return "id parametresi gerekli", 400
-    try:
-        from services import heygen
-        info = heygen.get_video_status(video_id)
-        url = info.get("video_url")
-        if url:
-            return redirect(url)
-        return f"Video henüz hazır değil. Durum: {info.get('status')}", 200
-    except Exception as e:
-        return f"Hata: {e}", 500
-
     try:
         from services import heygen
         info = heygen.get_video_status(video_id)
@@ -959,6 +940,49 @@ def soz_test_watch():
     except Exception as e:
         log.exception("Söz test status hatası")
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/admin/soz/test-llm")
+def soz_test_llm():
+    """LLM ile söz üretimini test eder (HeyGen çağırmadan).
+
+    Parametreler:
+      key — admin secret
+    """
+    if request.args.get("key") != "lina-test-2026":
+        return jsonify({"error": "unauthorized"}), 401
+
+    try:
+        from services.content import call_llm_with_fallback, parse_llm_json
+        from channel_modules.soz.content import (
+            build_prompt, match_theme, pick_look_id, get_theme_info,
+        )
+
+        prompt = build_prompt(topic_key="auto", used_themes=[])
+        raw, provider = call_llm_with_fallback(prompt)
+        content = parse_llm_json(raw)
+
+        # Tema eşle
+        moods = content.get("moods", [])
+        theme_id, score = match_theme(moods)
+        theme_info = get_theme_info(theme_id) if theme_id else None
+        look_id = pick_look_id(theme_id) if theme_id else None
+
+        return jsonify({
+            "ok": True,
+            "provider": provider,
+            "content": content,
+            "matched_theme": {
+                "id": theme_id,
+                "name": theme_info["name"] if theme_info else None,
+                "icon": theme_info["icon"] if theme_info else None,
+                "score": score,
+                "look_id": look_id,
+            },
+        })
+    except Exception as e:
+        log.exception("Söz LLM test hatası")
+        return jsonify({"error": str(e), "type": type(e).__name__}), 500
 
 
 if __name__ == "__main__":
