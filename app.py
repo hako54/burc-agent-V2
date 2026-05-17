@@ -985,6 +985,109 @@ def soz_test_llm():
         return jsonify({"error": str(e), "type": type(e).__name__}), 500
 
 
+@app.route("/api/admin/soz/watch")
+def soz_watch():
+    """HeyGen video'sunu güzel bir HTML player ile gösterir.
+
+    Parametreler:
+      key — admin secret
+      id  — video_id (test-start'tan dönen)
+    """
+    if request.args.get("key") != "lina-test-2026":
+        return "unauthorized", 401
+
+    video_id = request.args.get("id", "").strip()
+    if not video_id:
+        return "id parametresi gerekli", 400
+
+    try:
+        from services import heygen
+        info = heygen.get_video_status(video_id)
+        status = info.get("status")
+        url = info.get("video_url")
+
+        if status != "completed" or not url:
+            return f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Söz Video</title>
+<style>body{{font-family:sans-serif;text-align:center;padding:60px;
+background:#15081f;color:#c084fc;}}h1{{font-weight:300;}}</style>
+</head><body><h1>⏳ Video henüz hazır değil</h1>
+<p>Durum: <b>{status}</b></p>
+<p>20-30 saniye sonra sayfayı yenile (F5).</p>
+<p style="font-size:12px;opacity:0.5">video_id: {video_id}</p>
+</body></html>""", 200
+
+        duration = info.get("duration", "?")
+        thumb = info.get("thumbnail_url", "")
+
+        return f"""<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Söz Video Önizleme</title>
+<style>
+  * {{ box-sizing: border-box; }}
+  body {{
+    margin: 0; padding: 20px;
+    background: linear-gradient(135deg, #15081f 0%, #1f0a2b 100%);
+    color: #e0d4f0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    min-height: 100vh;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }}
+  h1 {{ font-weight: 300; margin: 0 0 8px; color: #c084fc; }}
+  .subtitle {{ opacity: 0.6; font-size: 14px; margin-bottom: 30px; }}
+  video {{
+    max-width: 100%; max-height: 70vh;
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(192,132,252,0.25);
+  }}
+  .meta {{
+    margin-top: 24px; font-size: 13px; opacity: 0.7;
+    text-align: center; line-height: 1.6;
+  }}
+  .meta code {{
+    background: rgba(192,132,252,0.15); padding: 2px 6px;
+    border-radius: 4px; font-size: 11px;
+  }}
+  .links {{ margin-top: 16px; }}
+  .links a {{
+    color: #c084fc; text-decoration: none;
+    margin: 0 8px; padding: 8px 16px;
+    border: 1px solid rgba(192,132,252,0.3);
+    border-radius: 6px; display: inline-block;
+    transition: all 0.2s;
+  }}
+  .links a:hover {{
+    background: rgba(192,132,252,0.1);
+    border-color: rgba(192,132,252,0.6);
+  }}
+</style>
+</head>
+<body>
+  <h1>💭 Söz · Video Önizleme</h1>
+  <div class="subtitle">Lina · Charming Ceyda</div>
+  <video controls autoplay playsinline>
+    <source src="{url}" type="video/mp4">
+    Tarayıcınız video oynatmıyı desteklemiyor.
+  </video>
+  <div class="meta">
+    <div>Süre: <b>{duration}sn</b></div>
+    <div>video_id: <code>{video_id}</code></div>
+  </div>
+  <div class="links">
+    <a href="{url}" download>İndir</a>
+    <a href="/api/admin/soz/test-status?id={video_id}&key=lina-test-2026">JSON</a>
+  </div>
+</body>
+</html>"""
+    except Exception as e:
+        log.exception("Söz watch hatası")
+        return f"Hata: {e}", 500
+
+
 if __name__ == "__main__":
     _start_background_services()
     port = int(os.environ.get("PORT", 5000))
