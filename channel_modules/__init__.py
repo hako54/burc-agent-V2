@@ -21,6 +21,7 @@ log = logging.getLogger(__name__)
 _TYPE_DEFAULTS = {
     "zodiac": "channel_modules.burc",
     "motivation": "channel_modules.motivasyon",
+    "soz": "channel_modules.soz",
     "custom": "channel_modules.motivasyon",  # şimdilik motivasyon gibi
 }
 
