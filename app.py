@@ -1088,6 +1088,96 @@ background:#15081f;color:#c084fc;}}h1{{font-weight:300;}}</style>
         return f"Hata: {e}", 500
 
 
+@app.route("/api/admin/migrate/onelineadayy-to-soz")
+def migrate_onelineadayy_to_soz():
+    """Geçici migration: onelineadayy kanalını motivation -> soz tipine çevirir.
+
+    Bir kez çalıştırılır:
+      type "motivation" -> "soz"
+      icon "💪" -> "💭"
+      schedule_times -> ["10:00", "20:00"]
+    Diğer alanlar (voice, name, token_env, vs.) dokunulmaz.
+
+    Bu endpoint kullanıldıktan sonra silinmeli.
+    """
+    if request.args.get("key") != "soz-migration-2026":
+        return jsonify({"error": "unauthorized"}), 401
+
+    try:
+        from pathlib import Path
+        import json as _json
+
+        data_dir = Path(os.environ.get("DATA_DIR", "data"))
+        ch_file = data_dir / "channels.json"
+
+        if not ch_file.exists():
+            return jsonify({
+                "error": "channels.json yok",
+                "data_dir": str(data_dir),
+            }), 404
+
+        channels = _json.loads(ch_file.read_text(encoding="utf-8"))
+
+        found = None
+        for ch in channels:
+            if ch.get("id") == "onelineadayy":
+                found = ch
+                break
+
+        if not found:
+            return jsonify({
+                "error": "onelineadayy kanalı bulunamadı",
+                "available_channels": [c.get("id") for c in channels],
+            }), 404
+
+        old_type = found.get("type")
+        old_icon = found.get("icon")
+        old_sched = found.get("schedule_times")
+
+        if old_type == "soz":
+            return jsonify({
+                "ok": True,
+                "message": "Zaten soz tipinde, değişiklik yok",
+                "channel": found,
+            })
+
+        # Migration
+        found["type"] = "soz"
+        found["icon"] = "💭"
+        found["schedule_times"] = ["10:00", "20:00"]
+
+        ch_file.write_text(
+            _json.dumps(channels, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+        # Modül cache'ini sıfırla ki yeni tip yüklensin
+        try:
+            import channel_modules
+            channel_modules.reset_cache()
+        except Exception as e:
+            log.warning(f"Module cache reset hata: {e}")
+
+        return jsonify({
+            "ok": True,
+            "migration": {
+                "channel_id": "onelineadayy",
+                "old_type": old_type,
+                "new_type": "soz",
+                "old_icon": old_icon,
+                "new_icon": "💭",
+                "old_schedule": old_sched,
+                "new_schedule": ["10:00", "20:00"],
+            },
+            "channel": found,
+            "warning": "Migration tamam. Bu endpoint'i app.py'den silebilirsin.",
+            "next_step": "Railway redeploy gerekebilir (scheduler yeni tipi okusun)",
+        })
+    except Exception as e:
+        log.exception("Söz migration hatası")
+        return jsonify({"error": str(e), "type": type(e).__name__}), 500
+
+
 if __name__ == "__main__":
     _start_background_services()
     port = int(os.environ.get("PORT", 5000))
