@@ -41,6 +41,7 @@ def generate_video(
     talking_photo_style: str = None,
     use_avatar_iv: bool = True,
     motion_prompt: str = None,
+    enhance_motion: bool = True,
     speed: float = 1.0,
     width: int = 1080,
     height: int = 1920,
@@ -52,19 +53,21 @@ def generate_video(
     text: Sözün metni (Türkçe)
     use_avatar_iv: True ise Avatar IV motion engine kullanılır (daha doğal
         vücut hareketi, daha iyi dudak senkronizasyonu, el jestleri).
-        Premium credit harcar (~20 credit/dakika ≈ $0.30/15-20sn).
+        Premium credit harcar (~$4/dakika 1080p ≈ $1 per 15sn).
     motion_prompt: Avatar IV için özel hareket talimatı (opsiyonel).
-        Örnek: "Speaks calmly with subtle hand gestures, slight head tilts".
+        Verilmezse default doğal motion prompt kullanılır.
+        Örnek: "Speaks calmly with subtle hand gestures and gentle head
+        tilts, warm friendly expression"
+    enhance_motion: True ise HeyGen motion prompt'u AI ile zenginleştirir.
     talking_photo_style: Avatar IV kullanılmıyorsa Unlimited engine için
-        'expressive' (daha hareketli) veya None (default). 'stable' artık
-        desteklenmiyor.
+        'expressive' (daha hareketli) veya None. 'stable' artık desteklenmiyor.
     """
     character = {
         "type": "talking_photo",
         "talking_photo_id": avatar_id,
         "scale": 1.0,
     }
-    # Avatar IV kullanılmıyorsa, talking_photo_style ekle (Unlimited engine)
+    # Avatar IV kullanılmıyorsa Unlimited engine — talking_photo_style ekle
     if not use_avatar_iv:
         if talking_photo_style and talking_photo_style.lower() != "stable":
             character["talking_photo_style"] = talking_photo_style
@@ -88,8 +91,27 @@ def generate_video(
     # Avatar IV motion engine — daha doğal vücut hareketi + lip-sync
     if use_avatar_iv:
         payload["use_avatar_iv_model"] = True
-        if motion_prompt:
-            payload["motion_prompt"] = motion_prompt
+
+        # Default motion prompt — doğal söz okuma sahnesi
+        if not motion_prompt:
+            motion_prompt = (
+                "The woman speaks naturally and warmly to the camera. "
+                "She uses subtle hand gestures, gentle head tilts, and "
+                "expressive facial movements that match the emotion of "
+                "her words. Her body has small natural movements — "
+                "slight shoulder shifts and breathing. Calm, friendly, "
+                "engaging delivery."
+            )
+
+        payload["custom_motion_prompt"] = motion_prompt
+        if enhance_motion:
+            payload["enhance_custom_motion_prompt"] = True
+
+    log.info(
+        f"HeyGen payload: use_avatar_iv={use_avatar_iv}, "
+        f"motion_prompt={'yes' if use_avatar_iv else 'n/a'}, "
+        f"dim={width}x{height}"
+    )
 
     log.info(f"HeyGen video başlatılıyor (avatar={avatar_id[:8]}..., "
              f"voice={voice_id[:8]}..., text_len={len(text)})")
