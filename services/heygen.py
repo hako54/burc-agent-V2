@@ -39,6 +39,8 @@ def generate_video(
     text: str,
     title: str = "soz",
     talking_photo_style: str = None,
+    use_avatar_iv: bool = True,
+    motion_prompt: str = None,
     speed: float = 1.0,
     width: int = 1080,
     height: int = 1920,
@@ -48,18 +50,24 @@ def generate_video(
     avatar_id: Lina'nın bir look_id'si (talking_photo)
     voice_id: HeyGen voice_id (Charming Ceyda vs.)
     text: Sözün metni (Türkçe)
-    talking_photo_style: None ise HeyGen default kullanılır.
-        ('stable' artık desteklenmiyor; gerekirse 'expressive' denenir)
+    use_avatar_iv: True ise Avatar IV motion engine kullanılır (daha doğal
+        vücut hareketi, daha iyi dudak senkronizasyonu, el jestleri).
+        Premium credit harcar (~20 credit/dakika ≈ $0.30/15-20sn).
+    motion_prompt: Avatar IV için özel hareket talimatı (opsiyonel).
+        Örnek: "Speaks calmly with subtle hand gestures, slight head tilts".
+    talking_photo_style: Avatar IV kullanılmıyorsa Unlimited engine için
+        'expressive' (daha hareketli) veya None (default). 'stable' artık
+        desteklenmiyor.
     """
     character = {
         "type": "talking_photo",
         "talking_photo_id": avatar_id,
         "scale": 1.0,
     }
-    # talking_photo_style sadece geçerli değerse ekle.
-    # HeyGen API "stable" değerini artık desteklemiyor (Nov 2025+).
-    if talking_photo_style and talking_photo_style.lower() != "stable":
-        character["talking_photo_style"] = talking_photo_style
+    # Avatar IV kullanılmıyorsa, talking_photo_style ekle (Unlimited engine)
+    if not use_avatar_iv:
+        if talking_photo_style and talking_photo_style.lower() != "stable":
+            character["talking_photo_style"] = talking_photo_style
 
     payload = {
         "video_inputs": [
@@ -76,6 +84,12 @@ def generate_video(
         "dimension": {"width": width, "height": height},
         "title": title[:100],
     }
+
+    # Avatar IV motion engine — daha doğal vücut hareketi + lip-sync
+    if use_avatar_iv:
+        payload["use_avatar_iv_model"] = True
+        if motion_prompt:
+            payload["motion_prompt"] = motion_prompt
 
     log.info(f"HeyGen video başlatılıyor (avatar={avatar_id[:8]}..., "
              f"voice={voice_id[:8]}..., text_len={len(text)})")
