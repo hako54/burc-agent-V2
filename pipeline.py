@@ -258,6 +258,18 @@ def produce_content(
             content["lucky_number"] = ""
             content["lucky_color"] = ""
             content["compatible_sign"] = ""
+        elif type_id == "soz":
+            # Söz: HeyGen avatarı söz okur, ek meta minimal
+            content["intro_subtitle"] = "Günün Sözü"
+            content["outro_subtitle"] = "Her gün yeni söz"
+            content["main_label"] = (content.get("theme") or "Söz")[:30]
+            content["main_icon"] = "💭"
+            content["face_queries"] = []
+            content["sign_name"] = ""
+            content["sign_symbol"] = ""
+            content["lucky_number"] = ""
+            content["lucky_color"] = ""
+            content["compatible_sign"] = ""
         else:
             content["intro_subtitle"] = meta.get("type_name", "Günlük İçerik")
             content["outro_subtitle"] = "Her gün yeni içerik"
@@ -271,27 +283,79 @@ def produce_content(
         video_path = str(OUTPUT_DIR / f"{channel_id}_{safe_topic}_{ts}.mp4")
         thumbnail_path = video_path.replace(".mp4", "_thumb.jpg")
         intro_face_path = video_path.replace(".mp4", "_intro.jpg")
-        try:
-            from services.thumbnail import generate_thumbnail
-            type_id = channel.get("type", "zodiac")
-            # YouTube için yatay thumbnail
-            generate_thumbnail(content, thumbnail_path,
-                               channel_type=type_id, vertical=False)
-            # Motivasyon için dikey kadın yüzü intro'da kullanılır
-            if type_id == "motivation":
-                generate_thumbnail(content, intro_face_path,
-                                   channel_type=type_id, vertical=True)
-                if os.path.exists(intro_face_path):
-                    content["intro_face_image"] = intro_face_path
-        except Exception as e:
-            log.warning(f"Thumbnail üretilemedi: {e}")
+
+        if type_id == "soz":
+            # Söz tipinde thumbnail HeyGen'in jpeg'i veya basit text olur.
+            # Şimdilik thumbnail YouTube tarafında otomatik (video frame).
             thumbnail_path = None
+        else:
+            try:
+                from services.thumbnail import generate_thumbnail
+                # YouTube için yatay thumbnail
+                generate_thumbnail(content, thumbnail_path,
+                                   channel_type=type_id, vertical=False)
+                # Motivasyon için dikey kadın yüzü intro'da kullanılır
+                if type_id == "motivation":
+                    generate_thumbnail(content, intro_face_path,
+                                       channel_type=type_id, vertical=True)
+                    if os.path.exists(intro_face_path):
+                        content["intro_face_image"] = intro_face_path
+            except Exception as e:
+                log.warning(f"Thumbnail üretilemedi: {e}")
+                thumbnail_path = None
 
         # 2b) Video render
         cancel_mgr.check_is_cancelled(jkey)
         cancel_mgr.mark_render_started(jkey)
-        render_video(content, video_path, sign_key=jkey,
-                     voice_config=voice_config)
+
+        if type_id == "soz":
+            # ── HeyGen pipeline (FFmpeg render bypass) ──
+            from services import heygen
+            from channel_modules.soz.config import HEYGEN_CONFIG
+
+            moods = content.get("moods", [])
+            theme_id, theme_score = module.match_theme(moods)
+            if not theme_id:
+                log.warning(
+                    f"Söz tema eşleşmedi (moods={moods}), 'studyo' fallback"
+                )
+                theme_id = "studyo"
+                theme_score = 0
+
+            look_id = module.pick_look_id(theme_id)
+            theme_info = module.get_theme_info(theme_id)
+            log.info(
+                f"🎭 Tema: {theme_info['icon']} {theme_info['name']} "
+                f"(skor={theme_score}, look={look_id[:8]}...)"
+            )
+
+            soz_text = content.get("soz", "").strip()
+            if not soz_text:
+                raise ValueError("LLM 'soz' alanı boş döndü")
+
+            log.info(f"🎬 HeyGen video üretiliyor (~60-180sn)")
+            hg_video_id = heygen.generate_video(
+                avatar_id=look_id,
+                voice_id=HEYGEN_CONFIG["voice_id"],
+                text=soz_text,
+                title=(content.get("title") or "söz")[:100],
+                speed=HEYGEN_CONFIG.get("speed", 1.0),
+                width=HEYGEN_CONFIG.get("width", 1080),
+                height=HEYGEN_CONFIG.get("height", 1920),
+            )
+            video_url = heygen.wait_for_video(
+                hg_video_id, max_wait_sec=600, poll_interval_sec=10
+            )
+            heygen.download_video(video_url, video_path)
+
+            # Sonuç meta'ya tema bilgisi ekle
+            content["heygen_video_id"] = hg_video_id
+            content["heygen_theme"] = theme_id
+            content["heygen_theme_name"] = theme_info["name"]
+            content["heygen_look_id"] = look_id
+        else:
+            render_video(content, video_path, sign_key=jkey,
+                         voice_config=voice_config)
 
         result = {
             "channel_id": channel_id,
