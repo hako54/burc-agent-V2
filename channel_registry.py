@@ -36,6 +36,12 @@ CHANNEL_TYPES = {
         "description": "Günlük motivasyon sözleri ve düşünceler",
         "auto_schedule": True,
     },
+    "soz": {
+        "name": "Söz / Özlü Söz",
+        "icon": "💭",
+        "description": "AI avatarlı günlük özlü sözler (HeyGen)",
+        "auto_schedule": True,
+    },
 }
 
 
@@ -77,6 +83,15 @@ _TYPE_VOICE_DEFAULTS = {
         "voice_style": 0.50,    # daha duygusal
         "voice_speed": 0.96,
     },
+    "soz": {
+        # Söz tipinde TTS HeyGen tarafından üretilir (Charming Ceyda).
+        # Buradaki voice alanları kullanılmaz ama interface uyumu için
+        # yer tutucu değerler bırakıyoruz.
+        "voice_id": "",
+        "voice_stability": 0.50,
+        "voice_style": 0.40,
+        "voice_speed": 1.00,
+    },
     "custom": {
         "voice_id": "21m00Tcm4TlvDq8ikWAM",
         "voice_stability": 0.50,
@@ -89,6 +104,7 @@ _TYPE_VOICE_DEFAULTS = {
 _TYPE_DEFAULT_SCHEDULE = {
     "zodiac": ["06:00"],
     "motivation": ["10:30", "19:00"],
+    "soz": ["10:00", "20:00"],
     "custom": ["10:00"],
 }
 
@@ -296,3 +312,4 @@ def channel_data_dir(channel_id: str) -> Path:
     path = DATA_DIR / channel.get("data_subdir", channel_id)
     path.mkdir(parents=True, exist_ok=True)
     return path
+
