@@ -260,6 +260,17 @@ def start_scheduler():
                     misfire_grace_time=1800,
                     replace_existing=True,
                 )
+            elif ch_type == "soz":
+                # Söz: HeyGen avatarlı söz videosu
+                scheduler.add_job(
+                    _channel_soz_job,
+                    CronTrigger(hour=h, minute=m, timezone=tz),
+                    args=[ch_id],
+                    id=job_id,
+                    name=f"Söz {ch_id} {time_str}",
+                    misfire_grace_time=1800,
+                    replace_existing=True,
+                )
             else:
                 log.info(f"Bilinmeyen tip atlandı: {ch_id} ({ch_type})")
                 continue
@@ -320,6 +331,61 @@ def _channel_zodiac_job(channel_id: str):
 def _channel_motivation_job(channel_id: str, time_of_day: str):
     """Motivasyon kanalı için yaratıcı konu önerip üretir."""
     _produce_smart_motivation(channel_id, time_of_day, "scheduler")
+
+
+def _produce_soz(channel_id: str, source: str = "scheduler"):
+    """Söz kanalı için HeyGen tabanlı söz üretir.
+
+    LLM söz + mood etiketleri üretir, modül en uygun temayı eşleştirir,
+    HeyGen avatar video çeker. Pipeline'a 'auto' topic ile gider.
+    """
+    import channel_registry
+    from pipeline import produce_content
+
+    channel = channel_registry.get_channel(channel_id)
+    if not channel:
+        log.warning(f"Kanal bulunamadı: {channel_id}")
+        return
+
+    if channel.get("type") != "soz":
+        log.warning(f"Kanal '{channel_id}' soz tipi değil, atlandı")
+        return
+
+    log.info(f"💭 {channel['name']} söz üretimi başlıyor")
+
+    try:
+        tg_send(
+            f"💭 <b>{channel['name']} — söz üretimi</b>\n"
+            f"⏳ HeyGen ile video çekiliyor (~1-3 dk)..."
+        )
+
+        result = produce_content(
+            channel_id=channel_id,
+            topic_key="auto",
+            upload=True,
+            source=source,
+            require_approval=False,
+        )
+
+        theme_name = (result.get("theme_name") or
+                      result.get("heygen_theme_name") or "?")
+        tg_send(
+            f"✅ <b>{channel['name']}</b> yayında!\n"
+            f"📝 {result.get('title', '')[:80]}\n"
+            f"🎭 Tema: {theme_name}\n"
+            f"🔗 {result.get('youtube_url', '?')}"
+        )
+    except Exception as e:
+        log.exception(f"Söz üretim {channel_id} hata")
+        tg_send(
+            f"❌ <b>{channel.get('name', channel_id)}</b> "
+            f"söz hatası: {str(e)[:200]}"
+        )
+
+
+def _channel_soz_job(channel_id: str):
+    """Söz kanalı için cron job."""
+    _produce_soz(channel_id, "scheduler")
 
 
 if __name__ == "__main__":
