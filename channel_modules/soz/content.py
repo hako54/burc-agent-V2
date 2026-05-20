@@ -116,11 +116,20 @@ SADECE JSON döndür (başka hiçbir metin yok, markdown yok):
   }},
   "description": "YouTube açıklaması (100-200 karakter)",
   "tags": ["söz", "özlü söz", "shorts", "günlük", "düşünce"],
-  "hashtags": ["#söz", "#özlüsözler", "#shorts", "#günlüksöz"]
+  "hashtags": [
+    "// 12-18 hashtag üret — YouTube Shorts algoritmasını besleyecek bolca",
+    "// İlk 3-5: söz konusuna özel (sözün ana fikriyle ilgili)",
+    "// Sonraki 5-7: trend/popüler (günlük arananlar)",
+    "// Son 3-5: kategori (#shorts, #özlüsözler, #motivasyon vs.)",
+    "// Türkçe ve İngilizce karışık olabilir, Türkçe ağırlıklı",
+    "// ÖRNEK: #söz #hayat #anlam #içgüdü #yaşamfelsefesi #huzur #motivasyon",
+    "//         #özlüsözler #ilham #shorts #shortsfeed #hayatdersleri #bilgelik #aforizma"
+  ]
 }}
 
 ÖNEMLI: full_narration alanı yok — pipeline.py için 'soz' alanı,
-'full_narration'a kopyalanacak. JSON formatına UYUM ŞART."""
+'full_narration'a kopyalanacak. JSON formatına UYUM ŞART.
+hashtags MUTLAKA 12-18 adet olsun (algoritma için kritik)."""
 
 
 # ── Theme matcher ──────────────────────────────────────────────────
@@ -173,44 +182,166 @@ def get_theme_info(theme_id: str) -> dict:
     return THEMES.get(theme_id, THEMES["studyo"])
 
 
+# ── Hashtag pool'ları (YouTube algoritması için bolca) ───────────────
+
+# Her temaya özel hashtag'ler (tema seçildiğinde otomatik eklenir)
+_THEME_HASHTAGS = {
+    "akdeniz_kafe": [
+        "#sohbet", "#paylaşım", "#dostluk", "#samimiyet", "#muhabbet",
+        "#yakınlık", "#bağ", "#anlam",
+    ],
+    "mykonos_sahili": [
+        "#özgürlük", "#deniz", "#yaz", "#hayal", "#tatil",
+        "#summer", "#sea", "#beach", "#ufuk",
+    ],
+    "sonbahar_gol": [
+        "#huzur", "#sukunet", "#tefekkür", "#içdünya", "#sonbahar",
+        "#sessizlik", "#derinlik", "#kabul", "#meditasyon",
+    ],
+    "sonbahar_sokak": [
+        "#cesaret", "#kararlılık", "#güç", "#azim", "#sebat",
+        "#irade", "#başarı", "#mücadele", "#dik",
+    ],
+    "lavanta_tarlasi": [
+        "#şükür", "#doğa", "#güzellik", "#yaşam", "#minnet",
+        "#mutluluk", "#küçükşeyler", "#sevgi", "#ferah",
+    ],
+    "yaz_sokak": [
+        "#umut", "#yenilenme", "#enerji", "#başlangıç", "#yaz",
+        "#neşe", "#canlılık", "#sevinç", "#tazelik",
+    ],
+    "studyo": [
+        "#günlük", "#samimi", "#modern", "#sade", "#kişisel",
+    ],
+}
+
+# Her video'ya eklenecek genel/trend hashtag'ler
+_GENERAL_HASHTAGS = [
+    "#shorts", "#shortsfeed", "#shortsvideo", "#youtubeshorts",
+    "#söz", "#özlüsözler", "#sözler", "#aforizma",
+    "#motivasyon", "#ilham", "#hayat", "#yaşam",
+    "#düşünce", "#felsefe", "#bilgelik", "#hikmet",
+    "#hayatdersleri", "#hayatfelsefesi", "#günlüksöz",
+]
+
+
+def _build_hashtag_set(topic_key: str, content: dict, max_count: int = 30) -> list:
+    """LLM hashtag'leri + tema hashtag'leri + genel trend hashtag'leri birleştir.
+
+    YouTube açıklamaları için bolca hashtag (algoritma beslemesi).
+    """
+    seen = set()
+    result = []
+
+    def _add(tag):
+        if not tag:
+            return
+        t = tag.strip()
+        if not t.startswith("#"):
+            t = "#" + t
+        # Boşluk veya geçersiz karakterleri at
+        t = t.replace(" ", "").replace("\n", "").replace(",", "")
+        if len(t) < 2 or len(t) > 50:
+            return
+        key = t.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        result.append(t)
+
+    # 1. LLM'in ürettiği hashtag'ler (en yüksek öncelik)
+    for tag in (content.get("hashtags") or [])[:20]:
+        _add(tag)
+
+    # 2. Tema-spesifik hashtag'ler
+    theme_id = (content.get("heygen_theme") or topic_key or "").lower()
+    if theme_id in _THEME_HASHTAGS:
+        for tag in _THEME_HASHTAGS[theme_id]:
+            _add(tag)
+
+    # 3. Mood etiketlerinden hashtag türet (örn. "huzur" → "#huzur")
+    for mood in content.get("moods", [])[:6]:
+        if mood and "_" not in mood:  # snake_case olanları atla
+            _add("#" + mood)
+
+    # 4. Genel trend hashtag'ler (en son, doldurmak için)
+    for tag in _GENERAL_HASHTAGS:
+        if len(result) >= max_count:
+            break
+        _add(tag)
+
+    return result[:max_count]
+
+
 # ── Pipeline interface — format/title/tags ─────────────────────────
 
 def format_title(topic_key: str, content: dict) -> str:
     """YouTube başlığı — #Shorts etiketiyle."""
     title = (content.get("title") or "Günün Sözü")[:88]
+    # Başlıkta 1-2 trend hashtag (alt sınır 70 char title, sonra hashtag)
     if "#shorts" not in title.lower():
-        title = title + " #Shorts"
+        title = title + " #Shorts #söz"
     return title[:100]
 
 
 def format_description(topic_key: str, content: dict) -> str:
-    """YouTube açıklaması — Shorts olarak algılansın diye #Shorts ekli."""
-    soz = content.get("soz", "")
-    desc = content.get("description", "")
-    hashtags = content.get("hashtags", [])
+    """YouTube açıklaması — söz metni + zengin hashtag seti.
 
-    parts = ["#Shorts", ""]
+    Yapı:
+      - Söz metni (büyük tırnak içinde)
+      - Kısa açıklama
+      - Boş satır
+      - 20-30 hashtag (algoritma için)
+      - Alt satırlar: kanal CTA
+    """
+    soz = (content.get("soz") or "").strip()
+    desc = (content.get("description") or "").strip()
+    hashtags = _build_hashtag_set(topic_key, content, max_count=30)
+
+    parts = []
     if soz:
         parts.append(f"\"{soz}\"")
         parts.append("")
     if desc:
         parts.append(desc)
+        parts.append("")
+    # Hashtag bloğu — YouTube açıklamalarda 60 satıra kadar görünür,
+    # algoritma için ilk 3-5 hashtag önemli, kalanı arama için
     if hashtags:
-        clean = [t for t in hashtags[:15]
-                 if t.lower() not in ("#shorts", "#short")]
-        if clean:
-            parts.append("\n" + " ".join(clean))
+        parts.append(" ".join(hashtags))
+        parts.append("")
+    parts.append("─── 💭 Her gün yeni söz ───")
+    parts.append("Abone ol ve bildirimleri aç!")
+
     return "\n".join(parts)
 
 
 def get_tags(topic_key: str, content: dict) -> list:
-    """YouTube tag'leri."""
-    base = content.get("tags", [])
+    """YouTube video tag'leri (hashtag'den farklı — video meta tag'leri).
+
+    YouTube tag'leri 500 karakteri geçmemeli toplamda.
+    """
+    base = content.get("tags") or []
+    # Tema etiketleri
+    theme_id = (content.get("heygen_theme") or topic_key or "").lower()
+    theme_extras = []
+    if theme_id in _THEME_HASHTAGS:
+        # Hashtag'lerden # çıkar → plain tag
+        theme_extras = [
+            t.lstrip("#") for t in _THEME_HASHTAGS[theme_id][:5]
+        ]
+
     extra = [
-        "söz", "özlü söz", "günlük", "shorts",
-        "motivasyon", "ilham", "düşünce", "aforizma",
+        "söz", "özlü söz", "özlü sözler", "günlük söz",
+        "shorts", "youtube shorts", "shorts feed",
+        "motivasyon", "ilham", "hayat", "yaşam",
+        "düşünce", "felsefe", "bilgelik", "aforizma",
+        "hayat dersleri", "günlük motivasyon",
     ]
-    return list(dict.fromkeys(base + extra))[:15]
+    all_tags = list(dict.fromkeys(base + theme_extras + extra))
+
+    # YouTube limit: 500 char total. ~20-25 tag güvenli sayı.
+    return all_tags[:20]
 
 
 # ── Pipeline uyum şim'leri (kullanılmıyor ama interface gerek) ─────
