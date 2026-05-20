@@ -284,78 +284,27 @@ def produce_content(
         thumbnail_path = video_path.replace(".mp4", "_thumb.jpg")
         intro_face_path = video_path.replace(".mp4", "_intro.jpg")
 
-        if type_id == "soz":
-            # Söz tipinde thumbnail HeyGen'in jpeg'i veya basit text olur.
-            # Şimdilik thumbnail YouTube tarafında otomatik (video frame).
+        try:
+            from services.thumbnail import generate_thumbnail
+            # YouTube için yatay thumbnail
+            generate_thumbnail(content, thumbnail_path,
+                               channel_type=type_id, vertical=False)
+            # Motivasyon ve söz için dikey kadın yüzü intro'da kullanılır
+            if type_id in ("motivation", "soz"):
+                generate_thumbnail(content, intro_face_path,
+                                   channel_type=type_id, vertical=True)
+                if os.path.exists(intro_face_path):
+                    content["intro_face_image"] = intro_face_path
+        except Exception as e:
+            log.warning(f"Thumbnail üretilemedi: {e}")
             thumbnail_path = None
-        else:
-            try:
-                from services.thumbnail import generate_thumbnail
-                # YouTube için yatay thumbnail
-                generate_thumbnail(content, thumbnail_path,
-                                   channel_type=type_id, vertical=False)
-                # Motivasyon için dikey kadın yüzü intro'da kullanılır
-                if type_id == "motivation":
-                    generate_thumbnail(content, intro_face_path,
-                                       channel_type=type_id, vertical=True)
-                    if os.path.exists(intro_face_path):
-                        content["intro_face_image"] = intro_face_path
-            except Exception as e:
-                log.warning(f"Thumbnail üretilemedi: {e}")
-                thumbnail_path = None
 
-        # 2b) Video render
+        # 2b) Video render — söz tipi de motivation gibi
+        # (HeyGen branch eskiden burada idi, C seçeneği için kaldırıldı)
         cancel_mgr.check_is_cancelled(jkey)
         cancel_mgr.mark_render_started(jkey)
-
-        if type_id == "soz":
-            # ── HeyGen pipeline (FFmpeg render bypass) ──
-            from services import heygen
-            from channel_modules.soz.config import HEYGEN_CONFIG
-
-            moods = content.get("moods", [])
-            theme_id, theme_score = module.match_theme(moods)
-            if not theme_id:
-                log.warning(
-                    f"Söz tema eşleşmedi (moods={moods}), 'studyo' fallback"
-                )
-                theme_id = "studyo"
-                theme_score = 0
-
-            look_id = module.pick_look_id(theme_id)
-            theme_info = module.get_theme_info(theme_id)
-            log.info(
-                f"🎭 Tema: {theme_info['icon']} {theme_info['name']} "
-                f"(skor={theme_score}, look={look_id[:8]}...)"
-            )
-
-            soz_text = content.get("soz", "").strip()
-            if not soz_text:
-                raise ValueError("LLM 'soz' alanı boş döndü")
-
-            log.info(f"🎬 HeyGen video üretiliyor (~60-180sn)")
-            hg_video_id = heygen.generate_video(
-                avatar_id=look_id,
-                voice_id=HEYGEN_CONFIG["voice_id"],
-                text=soz_text,
-                title=(content.get("title") or "söz")[:100],
-                speed=HEYGEN_CONFIG.get("speed", 1.0),
-                width=HEYGEN_CONFIG.get("width", 1080),
-                height=HEYGEN_CONFIG.get("height", 1920),
-            )
-            video_url = heygen.wait_for_video(
-                hg_video_id, max_wait_sec=600, poll_interval_sec=10
-            )
-            heygen.download_video(video_url, video_path)
-
-            # Sonuç meta'ya tema bilgisi ekle
-            content["heygen_video_id"] = hg_video_id
-            content["heygen_theme"] = theme_id
-            content["heygen_theme_name"] = theme_info["name"]
-            content["heygen_look_id"] = look_id
-        else:
-            render_video(content, video_path, sign_key=jkey,
-                         voice_config=voice_config)
+        render_video(content, video_path, sign_key=jkey,
+                     voice_config=voice_config)
 
         result = {
             "channel_id": channel_id,
