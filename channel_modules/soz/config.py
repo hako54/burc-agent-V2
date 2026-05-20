@@ -1,151 +1,230 @@
 """
 Söz Kanalı Konfigürasyonu
 ─────────────────────────
-Söz mood'una göre Lina'nın hangi temada görüneceğini belirler.
-Her tema 3 farklı varyant (look_id) içerir — rastgele seçim için.
+Stok video (Pexels) + ElevenLabs TTS + FFmpeg pipeline.
 
-HeyGen avatar grubu: Lina (sarışın manken karakter)
-HeyGen ses: Charming Ceyda (Türkçe, kadın, samimi)
+Söz LLM'in mood'una göre tema seçilir (match_theme), tema'nın
+visual_queries'inden Pexels arar, sonuç olarak tam cinematic
+video üretir.
+
+(HeyGen Avatar IV tabanlı eski sistem ileride yeniden açılabilir
+— heygen.py duruyor ama bu pipeline'da kullanılmıyor.)
 """
 
 CHANNEL_META = {
     "type_id": "soz",
     "type_name": "Söz / Özlü Söz",
     "icon": "💭",
-    "description": "AI avatarlı günlük özlü sözler (HeyGen)",
+    "description": "Cinematic stok görsellerle günlük özlü sözler",
     "supports_auto": True,
     "supports_manual": True,
     "default_color": "#c084fc",
 }
 
-# HeyGen API bilgileri
-HEYGEN_CONFIG = {
-    "avatar_group_id": "0cfb78ab1ade4a178af487e851a8dd2a",  # Lina
-    "voice_id": "8bb2c6f55b64448588b5dfc403ab2374",  # Charming Ceyda
-    "voice_name": "Charming Ceyda",
-    "speed": 1.0,
-    "talking_photo_style": "stable",  # 'stable' veya 'expressive'
-    "width": 1080,
-    "height": 1920,  # Shorts (dikey)
+# TTS — kullanıcı channels.json'da kendi voice_id'sini geçiyor.
+# Bu sadece fallback default.
+VOICE_CONFIG = {
+    "voice_id": "cgSgspJ2msm6clMCkdW9",  # warm female (kullanıcının default'u)
+    "stability": 0.45,
+    "style": 0.50,
+    "speed": 0.95,
+    "similarity_boost": 0.75,
+}
+
+VIDEO_STYLE = {
+    "intro_style": "theme_icon",
+    "outro_style": "subscribe_cta",
+    "subtitle_position": "center",
+    "lucky_card": True,
+    "has_section_badges": False,
 }
 
 # ────────────────────────────────────────────────────────────────────
-# Tema kütüphanesi
+# Tema kütüphanesi — her tema bir görsel atmosfer + mood etiketleri
 # ────────────────────────────────────────────────────────────────────
-# Her tema:
-#   moods: bu temayla EŞLEŞEN mood etiketleri
-#   look_ids: HeyGen'deki Photo Avatar look ID'leri (varyantlar)
-#
-# Söz LLM'e yazdırılırken mood etiketleri seçtirilir, sonra burada
-# en çok mood eşleşmesi olan tema seçilir.
+# moods: LLM hangi tema'ya uyduğunu belirlemek için (match_theme)
+# visual_queries: Pexels/Pixabay'da aranacak terimler
+# face_queries: Intro için kadın yüzü (motivasyon pattern'i)
 # ────────────────────────────────────────────────────────────────────
 
 THEMES = {
     "akdeniz_kafe": {
         "name": "Akdeniz Kafesi",
-        "icon": "☕",
-        "description": "Beyaz keten gömlek, kafe terası, sıcak öğle ışığı",
+        "icon": "☕", "emoji": "☕",
+        "color": "#d4a574", "bg": "#1f1505",
+        "subtitle": "Kafe terası, sıcak öğle ışığı",
         "moods": [
             "sohbet", "paylasim", "samimiyet", "dostluk", "iliski",
             "yakin_baglar", "bag", "anlam", "muhabbet",
         ],
-        "look_ids": [
-            "d8d85fc2b41f4b7abbbf56cb834bc92d",
-            "c699fcc4da734d99905340d4c1242406",
-            "835a7a349bb74ddca72e14483357e14f",
+        "visual_queries": [
+            "mediterranean cafe terrace warm light",
+            "cozy coffee shop morning sun",
+            "old town cafe table flowers",
+            "rustic mediterranean cafe atmosphere",
+            "warm afternoon coffee aesthetic",
+        ],
+        "face_queries": [
+            "beautiful young blonde woman warm smile portrait",
+            "stunning blonde woman natural casual portrait",
+            "gorgeous blonde woman gentle close up",
+            "attractive blonde woman warm friendly portrait",
         ],
     },
     "mykonos_sahili": {
         "name": "Mykonos Sahili",
-        "icon": "🏖️",
-        "description": "Krem yazlık elbise, deniz kıyısı, esinti",
+        "icon": "🏖️", "emoji": "🏖️",
+        "color": "#06b6d4", "bg": "#051820",
+        "subtitle": "Deniz kıyısı, yaz esintisi",
         "moods": [
             "ozgurluk", "ferahlik", "baslangic", "hayal", "ufuk",
-            "deniz", "engin", "kucagini_acmak", "savrulma", "rüya",
+            "deniz", "engin", "kucagini_acmak", "savrulma", "ruya",
         ],
-        "look_ids": [
-            "d715b3eda88044f9b5c5a3c05a00b04a",
-            "2594e2097432414888092f8e84269cec",
-            "db0264ac8fb34735825a77b0b52decd2",
+        "visual_queries": [
+            "mediterranean beach sea blue summer",
+            "greek island white house sea view",
+            "ocean horizon sunset peaceful",
+            "white sand beach blue water aerial",
+            "summer mediterranean coast cinematic",
+        ],
+        "face_queries": [
+            "beautiful young blonde woman beach summer portrait",
+            "stunning blonde woman sea breeze natural",
+            "gorgeous blonde woman summer dress aesthetic",
+            "attractive blonde woman beach freedom portrait",
         ],
     },
     "sonbahar_gol": {
         "name": "Sonbahar Göl İskelesi",
-        "icon": "🏞️",
-        "description": "Krem örgü kazak, sisli göl, sakin sabah",
+        "icon": "🏞️", "emoji": "🏞️",
+        "color": "#a78bfa", "bg": "#15081f",
+        "subtitle": "Sisli göl, sakin sabah",
         "moods": [
             "huzur", "sukunet", "kabul", "ice_donus", "icsel_baris",
             "sessizlik", "derinlik", "tefekkur", "yalnizlik_iyi",
             "donus", "icsellik",
         ],
-        "look_ids": [
-            "f7d50c88f7d8479cb33bc7a339073ee5",
-            "64a60f310e2c4f88946544917c4b2462",
-            "464e696f21e9436995b72814d92d7293",
+        "visual_queries": [
+            "misty lake autumn morning peaceful",
+            "foggy mountain lake sunrise calm",
+            "autumn forest lake reflection serene",
+            "quiet lake morning mist trees",
+            "peaceful lake pier autumn cinematic",
+        ],
+        "face_queries": [
+            "beautiful young blonde woman thoughtful portrait autumn",
+            "stunning blonde woman pensive deep close up",
+            "gorgeous blonde woman serene peaceful portrait",
+            "attractive blonde woman quiet contemplative",
         ],
     },
     "sonbahar_sokak": {
         "name": "Sonbahar Avrupa Sokağı",
-        "icon": "🏙️",
-        "description": "Deri ceket, taş döşeli sokak, sonbahar yaprakları",
+        "icon": "🏙️", "emoji": "🏙️",
+        "color": "#dc2626", "bg": "#1f0505",
+        "subtitle": "Taş sokak, sonbahar yaprakları",
         "moods": [
             "irade", "kararlilik", "ilerleme", "guc", "cesaret",
             "icsel_guc", "azim", "sebat", "dik_durus", "olgunluk",
             "bilgelik", "tecrube",
         ],
-        "look_ids": [
-            "9c7370559b4c465fbc330685fb100cc2",
-            "2156b6dda96b4589a4d4dcd6bbcb3228",
-            "18d1e0eaa3af4efd85cad4918d5e35c1",
+        "visual_queries": [
+            "european old town autumn street cobblestone",
+            "paris autumn fall leaves street cinematic",
+            "european city autumn morning fog",
+            "vintage european alley fall colors",
+            "cobblestone street autumn warm light",
+        ],
+        "face_queries": [
+            "beautiful young blonde woman leather jacket portrait",
+            "stunning blonde woman confident street portrait",
+            "gorgeous blonde woman determined fashion",
+            "attractive blonde woman strong elegant urban",
         ],
     },
     "lavanta_tarlasi": {
         "name": "Lavanta Tarlası",
-        "icon": "💜",
-        "description": "Vintage çiçekli elbise, mor lavanta, gün batımı",
+        "icon": "💜", "emoji": "💜",
+        "color": "#c084fc", "bg": "#15081f",
+        "subtitle": "Mor lavanta, gün batımı",
         "moods": [
             "sukur", "guzellik", "mutluluk", "doga", "kucuk_seyler",
             "minnet", "ferah", "huzur_dolu", "anlik", "sade_guzellik",
             "an_yasama",
         ],
-        "look_ids": [
-            "ddb8878183a647c9ae74be47f3626900",
-            "cceb53f1b9ae41708d8cdfadf6cc7f11",
-            "0eba9470ea184066933494be4e9122a8",
+        "visual_queries": [
+            "lavender field purple sunset cinematic",
+            "provence lavender flowers golden hour",
+            "purple flower meadow sky sunset",
+            "lavender field aerial cinematic warm",
+            "blooming lavender countryside peaceful",
+        ],
+        "face_queries": [
+            "beautiful young blonde woman summer dress portrait",
+            "stunning blonde woman wildflowers natural",
+            "gorgeous blonde woman radiant smile golden",
+            "attractive blonde woman happy warm sunset",
         ],
     },
     "yaz_sokak": {
         "name": "Yaz Avrupa Sokağı",
-        "icon": "☀️",
-        "description": "Pastel sarı elbise, güneşli yaz, çiçekli balkonlar",
+        "icon": "☀️", "emoji": "☀️",
+        "color": "#fbbf24", "bg": "#1f1505",
+        "subtitle": "Güneşli yaz, çiçekli balkonlar",
         "moods": [
             "umut", "nese", "yenilenme", "baslangic_yaz", "sevinc",
             "canlilik", "isik", "icimde_bahar", "tazelik", "iyimserlik",
             "merak", "kesif",
         ],
-        "look_ids": [
-            "b3be62a64b6e4d8a89ab3ff88040f4b6",
-            "8f58b34b9d5b4554aca25d2b3f519bb6",
-            "1d1e80e2663f48e58e233f5e6a2638e9",
+        "visual_queries": [
+            "european summer street flowers balcony",
+            "italian alley summer warm light",
+            "mediterranean village summer sunlight",
+            "sunny european street blue sky flowers",
+            "vibrant summer european cafe street",
+        ],
+        "face_queries": [
+            "beautiful young blonde woman summer dress sunny",
+            "stunning blonde woman happy bright smile portrait",
+            "gorgeous blonde woman summer joyful natural",
+            "attractive blonde woman radiant fresh portrait",
         ],
     },
     "studyo": {
         "name": "Modern Stüdyo",
-        "icon": "🏠",
-        "description": "Beyaz gömlek + jean, iç mekan, modern",
+        "icon": "🏠", "emoji": "🏠",
+        "color": "#94a3b8", "bg": "#0f1419",
+        "subtitle": "Modern, sade iç mekan",
         "moods": [
             "gunluk", "samimi", "modern", "sade", "bireysel", "kisisel",
         ],
-        "look_ids": [
-            "0cfb78ab1ade4a178af487e851a8dd2a",
+        "visual_queries": [
+            "modern minimalist interior home aesthetic",
+            "cozy reading corner natural light",
+            "minimal scandinavian living room peaceful",
+            "soft morning light home interior",
+        ],
+        "face_queries": [
+            "beautiful young blonde woman casual home portrait",
+            "stunning blonde woman natural relaxed close up",
+            "gorgeous blonde woman simple elegant portrait",
+            "attractive blonde woman warm casual indoor",
         ],
     },
 }
 
 
 def all_mood_tags() -> list:
-    """Tüm benzersiz mood etiketleri (LLM'e seçim için verilecek liste)."""
+    """Tüm benzersiz mood etiketleri (LLM'e seçim listesi olarak verilir)."""
     tags = set()
     for theme in THEMES.values():
         tags.update(theme["moods"])
     return sorted(tags)
+
+
+# ── HeyGen config (B seçeneğine dönülürse açılır) ──
+# HEYGEN_CONFIG = {
+#     "avatar_group_id": "0cfb78ab1ade4a178af487e851a8dd2a",  # Lina
+#     "voice_id": "8bb2c6f55b64448588b5dfc403ab2374",  # Charming Ceyda
+#     ...
+# }
