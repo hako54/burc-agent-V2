@@ -1,170 +1,286 @@
 """
-LLM Servisi (Generic)
-İçerik tipinden bağımsız. Verilen prompt'u Claude → Gemini → Groq
-zinciriyle dener. JSON parse etmek ayrı fonksiyon.
-
-Eski kodların import'ları için generate_content fonksiyonu da korunuyor.
+services/content.py — LLM içerik üretimi + fallback
+Claude → Gemini → Groq sırasıyla dener.
+parse_llm_json bozuk JSON'ları da onarabilecek şekilde dayanıklı.
 """
 
 import os
 import json
 import re
 import logging
-from datetime import datetime
 
 log = logging.getLogger(__name__)
 
 
 def parse_llm_json(text: str) -> dict:
-    """LLM çıktısından JSON'u ayıklar. Kontrol karakterlerini temizler."""
-    if "```json" in text:
-        text = text.split("```json", 1)[1].split("```", 1)[0]
-    elif "```" in text:
-        text = text.split("```", 1)[1].split("```", 1)[0]
+    """LLM'in ürettiği JSON metnini parse eder.
+    Bozuk JSON'ları da onarmaya çalışır — Gemini ve diğer modellerden
+    gelen yaygın format sorunlarını handle eder.
+    """
+    if not text:
+        raise ValueError("Boş metin")
+
     text = text.strip()
 
-    def fix_controls(match):
-        inner = match.group(0)
-        inner = inner.replace("\r\n", "\\n").replace("\n", "\\n")
-        inner = inner.replace("\r", "\\n").replace("\t", " ")
-        return inner
+    # 1) Markdown code block'ları temizle: ```json ... ``` veya ``` ... ```
+    text = re.sub(r'^```(?:json)?\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\s*```\s*$', '', text)
+    text = text.strip()
 
-    text = re.sub(r'"(?:[^"\\]|\\.)*"', fix_controls, text, flags=re.DOTALL)
-    return json.loads(text)
+    # 2) JSON objesi başlangıcını bul ({ veya [)
+    obj_start = text.find('{')
+    arr_start = text.find('[')
+    if obj_start == -1 and arr_start == -1:
+        raise ValueError(f"JSON bulunamadı: {text[:200]}")
+    if obj_start == -1:
+        start_idx = arr_start
+    elif arr_start == -1:
+        start_idx = obj_start
+    else:
+        start_idx = min(obj_start, arr_start)
+    text = text[start_idx:]
+
+    # 3) İlk deneme — düz JSON parse
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        log.warning(f"Direkt parse başarısız: {e}. Onarım denenecek.")
+
+    # 4) Onarım — yaygın sorunları düzelt
+    fixed = _try_repair_json(text)
+    if fixed:
+        try:
+            return json.loads(fixed)
+        except json.JSONDecodeError as e:
+            log.warning(f"Onarımdan sonra da parse başarısız: {e}")
+
+    # 5) Son çare — JSON5-lite parse (kontrollü)
+    try:
+        # Tek tırnakları çift yap (JSON standart değil ama LLM'ler bazen kullanır)
+        alt = re.sub(r"'([^']*)':", r'"\1":', text)
+        return json.loads(alt)
+    except Exception:
+        pass
+
+    # 6) Regex ile anahtar-değer çıkarma (en son çare)
+    result = _extract_by_regex(text)
+    if result:
+        log.warning("Regex ile kısmi çıkarım yapıldı — bazı alanlar eksik olabilir")
+        return result
+
+    raise ValueError(f"JSON parse edilemedi: {text[:300]}...")
 
 
-def _call_claude(prompt: str) -> str:
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+def _try_repair_json(text: str) -> str:
+    """Yaygın LLM JSON hatalarını onarır."""
+    # 1) Kaçırılmamış newline'ları string içinde escape et
+    # Örnek: "narration": "Bu bir metin
+    # yeni satır" → "narration": "Bu bir metin\nyeni satır"
+    fixed = _escape_string_newlines(text)
+
+    # 2) Sondaki fazla virgülleri kaldır
+    # { "a": 1, } → { "a": 1 }
+    fixed = re.sub(r',(\s*[}\]])', r'\1', fixed)
+
+    # 3) Trailing text'i kes — son } veya ]'den sonrasını at
+    last_brace = max(fixed.rfind('}'), fixed.rfind(']'))
+    if last_brace > 0:
+        fixed = fixed[:last_brace + 1]
+
+    # 4) Eğer JSON eksik kapatılmış (parantez sayısı hatası)
+    open_braces = fixed.count('{')
+    close_braces = fixed.count('}')
+    open_brackets = fixed.count('[')
+    close_brackets = fixed.count(']')
+
+    if open_brackets > close_brackets:
+        fixed += ']' * (open_brackets - close_brackets)
+    if open_braces > close_braces:
+        fixed += '}' * (open_braces - close_braces)
+
+    return fixed
+
+
+def _escape_string_newlines(text: str) -> str:
+    """String değerlerin içindeki kaçırılmamış newline'ları escape eder.
+    Örneğin: "value": "abc
+    def" → "value": "abc\\ndef"
+    """
+    result = []
+    in_string = False
+    escape_next = False
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if escape_next:
+            result.append(ch)
+            escape_next = False
+            i += 1
+            continue
+        if ch == '\\':
+            result.append(ch)
+            escape_next = True
+            i += 1
+            continue
+        if ch == '"':
+            in_string = not in_string
+            result.append(ch)
+            i += 1
+            continue
+        if in_string:
+            # String içindeyken newline/tab/CR → escape
+            if ch == '\n':
+                result.append('\\n')
+            elif ch == '\r':
+                result.append('\\r')
+            elif ch == '\t':
+                result.append('\\t')
+            else:
+                result.append(ch)
+        else:
+            result.append(ch)
+        i += 1
+    return ''.join(result)
+
+
+def _extract_by_regex(text: str) -> dict:
+    """Son çare: temel alanları regex ile çıkar."""
+    result = {}
+    # "key": "value" formatını yakala (string değerler)
+    pattern = r'"([^"]+)"\s*:\s*"((?:[^"\\]|\\.)*)"'
+    for match in re.finditer(pattern, text):
+        key = match.group(1)
+        value = match.group(2)
+        # Escape'leri geri çevir
+        value = value.replace('\\n', '\n').replace('\\"', '"').replace('\\\\', '\\')
+        result[key] = value
+    # "key": [array] formatı (basit)
+    array_pattern = r'"([^"]+)"\s*:\s*\[([^\]]*)\]'
+    for match in re.finditer(array_pattern, text):
+        key = match.group(1)
+        arr_text = match.group(2)
+        items = re.findall(r'"([^"]+)"', arr_text)
+        if items and key not in result:
+            result[key] = items
+    return result if result else None
+
+
+def call_llm_with_fallback(prompt: str, max_tokens: int = 2500):
+    """Sıralı olarak Claude → Gemini → Groq dener.
+    (raw_text, provider_name) döner.
+    """
+    errors = []
+
+    # 1) Claude
+    try:
+        raw = _call_claude(prompt, max_tokens)
+        if raw:
+            log.info("  ✅ Claude başarılı")
+            return raw, "claude"
+    except Exception as e:
+        log.warning(f"  ⚠ Claude başarısız: {str(e)[:200]}")
+        errors.append(f"Claude: {e}")
+
+    # 2) Gemini
+    try:
+        raw = _call_gemini(prompt, max_tokens)
+        if raw:
+            log.info("  ✅ Gemini başarılı")
+            return raw, "gemini"
+    except Exception as e:
+        log.warning(f"  ⚠ Gemini başarısız: {str(e)[:200]}")
+        errors.append(f"Gemini: {e}")
+
+    # 3) Groq
+    try:
+        raw = _call_groq(prompt, max_tokens)
+        if raw:
+            log.info("  ✅ Groq başarılı")
+            return raw, "groq"
+    except Exception as e:
+        log.warning(f"  ⚠ Groq başarısız: {str(e)[:200]}")
+        errors.append(f"Groq: {e}")
+
+    raise RuntimeError(f"Tüm LLM'ler başarısız: {'; '.join(errors)}")
+
+
+def _call_claude(prompt: str, max_tokens: int) -> str:
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     if not api_key:
-        raise RuntimeError("ANTHROPIC_API_KEY eksik")
-
-    import anthropic
-    import httpx
-
-    client = anthropic.Anthropic(
-        api_key=api_key,
-        http_client=httpx.Client(verify=False, timeout=60),
-    )
+        raise RuntimeError("ANTHROPIC_API_KEY yok")
+    log.info("  → Claude deneniyor...")
+    from anthropic import Anthropic
+    client = Anthropic(api_key=api_key)
     msg = client.messages.create(
-        model=os.environ.get("CLAUDE_MODEL", "claude-haiku-4-5"),
-        max_tokens=3000,
+        model="claude-haiku-4-5",
+        max_tokens=max_tokens,
         messages=[{"role": "user", "content": prompt}],
     )
-    return msg.content[0].text.strip()
+    return msg.content[0].text if msg.content else ""
 
 
-def _call_gemini(prompt: str) -> str:
-    api_key = os.environ.get("GEMINI_API_KEY")
+def _call_gemini(prompt: str, max_tokens: int) -> str:
+    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_key:
-        raise RuntimeError("GEMINI_API_KEY eksik")
-
+        raise RuntimeError("GEMINI_API_KEY yok")
+    log.info("  → Gemini deneniyor...")
     import requests
-    models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest"]
+
+    # Modelleri sırayla dene
+    models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
     last_error = None
     for model in models:
         try:
-            url = (f"https://generativelanguage.googleapis.com/v1beta/"
-                   f"models/{model}:generateContent?key={api_key}")
-            r = requests.post(
-                url,
-                json={
-                    "contents": [{"parts": [{"text": prompt}]}],
-                    "generationConfig": {
-                        "maxOutputTokens": 3000,
-                        "temperature": 0.9,
-                    },
+            url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
+                   f"{model}:generateContent?key={api_key}")
+            payload = {
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "temperature": 0.85,
+                    "maxOutputTokens": max_tokens,
+                    "responseMimeType": "application/json",
                 },
-                timeout=60, verify=False,
-            )
+            }
+            r = requests.post(url, json=payload, timeout=45)
             if r.status_code == 200:
                 data = r.json()
-                text = data["candidates"][0]["content"]["parts"][0]["text"]
-                log.info(f"Gemini {model} başarılı")
-                return text.strip()
-            last_error = f"HTTP {r.status_code}"
+                candidates = data.get("candidates", [])
+                if candidates:
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    if parts:
+                        log.info(f"Gemini {model} başarılı")
+                        return parts[0].get("text", "")
+            last_error = f"{model}: HTTP {r.status_code}"
         except Exception as e:
-            last_error = str(e)
-    raise RuntimeError(f"Tüm Gemini modelleri başarısız: {last_error}")
+            last_error = f"{model}: {e}"
+            continue
+    raise RuntimeError(f"Gemini tüm modeller başarısız: {last_error}")
 
 
-def _call_groq(prompt: str) -> str:
-    api_key = os.environ.get("GROQ_API_KEY")
+def _call_groq(prompt: str, max_tokens: int) -> str:
+    api_key = os.environ.get("GROQ_API_KEY", "").strip()
     if not api_key:
-        raise RuntimeError("GROQ_API_KEY eksik")
-
+        raise RuntimeError("GROQ_API_KEY yok")
+    log.info("  → Groq deneniyor...")
     import requests
+    payload = {
+        "model": "llama-3.3-70b-versatile",
+        "messages": [
+            {"role": "system",
+             "content": "Sadece geçerli JSON döndür, başka hiçbir şey yazma."},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.85,
+        "max_tokens": max_tokens,
+        "response_format": {"type": "json_object"},
+    }
     r = requests.post(
         "https://api.groq.com/openai/v1/chat/completions",
         headers={"Authorization": f"Bearer {api_key}",
                  "Content-Type": "application/json"},
-        json={
-            "model": "llama-3.3-70b-versatile",
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 3000,
-            "temperature": 0.9,
-        },
-        timeout=60, verify=False,
+        json=payload, timeout=45,
     )
     if r.status_code != 200:
-        raise RuntimeError(f"Groq HTTP {r.status_code}: {r.text[:200]}")
-    return r.json()["choices"][0]["message"]["content"].strip()
-
-
-def call_llm_with_fallback(prompt: str) -> tuple:
-    """Prompt'u Claude → Gemini → Groq ile dener.
-    Dönüş: (raw_text, provider_name)"""
-    providers = [
-        ("Claude", _call_claude),
-        ("Gemini", _call_gemini),
-        ("Groq", _call_groq),
-    ]
-    errors = []
-    for name, fn in providers:
-        try:
-            log.info(f"  → {name} deneniyor...")
-            raw = fn(prompt)
-            log.info(f"  ✅ {name} başarılı")
-            return raw, name
-        except Exception as e:
-            log.warning(f"  ⚠ {name} başarısız: {str(e)[:150]}")
-            errors.append(f"{name}: {str(e)[:100]}")
-    raise RuntimeError(
-        f"Tüm LLM servisleri başarısız. Detaylar: {' | '.join(errors)}"
-    )
-
-
-# ── Geriye uyumluluk: eski generate_content API'si ───────────────
-
-def generate_content(sign_key: str, used_themes: list = None) -> dict:
-    """Eski kodlar için — zodiac content type ile çalışır."""
-    from zodiac import get_sign
-    from content_types.zodiac import ZodiacType
-    from services.text_cleaner import clean_content as _clean
-
-    # Fake channel için burç kanalını kullan
-    fake_channel = {"id": "burc", "name": "Burç Kanalı", "type": "zodiac"}
-    zt = ZodiacType(fake_channel)
-    prompt = zt.build_prompt(sign_key, used_themes=used_themes)
-    raw, provider = call_llm_with_fallback(prompt)
-    content = parse_llm_json(raw)
-    content = _clean(content)
-
-    info = get_sign(sign_key)
-    content.update({
-        "sign_key": sign_key,
-        "sign_name": info["name"],
-        "sign_symbol": info["symbol"],
-        "sign_emoji": info["emoji"],
-        "sign_dates": info["dates"],
-        "element": info["element"],
-        "accent_color": info["color"],
-        "background_color": info["bg"],
-        "date": datetime.now().strftime("%d %B %Y"),
-        "generated_at": datetime.now().isoformat(),
-        "provider": provider,
-    })
-    content["pexels_queries"] = info["visual_queries"] + [
-        f"zodiac {info['en_name']} mystical",
-        "astrology stars cosmic",
-    ]
-    return content
+        raise RuntimeError(f"HTTP {r.status_code}: {r.text[:200]}")
+    data = r.json()
+    return data["choices"][0]["message"]["content"]
