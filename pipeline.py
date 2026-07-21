@@ -190,6 +190,9 @@ def produce_content(
         cancel_mgr.record_llm_call(jkey, chars_in=len(prompt),
                                    chars_out=len(raw))
         content = parse_llm_json(raw)
+        from services.content_validator import ensure_valid_content
+content = ensure_valid_content(content, topic_key=topic_key)
+
         content = clean_content(content)
 
         jt.set_provider(jkey, provider)
