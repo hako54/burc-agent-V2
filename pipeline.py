@@ -191,7 +191,7 @@ def produce_content(
                                    chars_out=len(raw))
         content = parse_llm_json(raw)
         from services.content_validator import ensure_valid_content
-content = ensure_valid_content(content, topic_key=topic_key)
+        content = ensure_valid_content(content, topic_key=topic_key)
 
         content = clean_content(content)
 
