@@ -21,6 +21,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from pipeline import produce_signs
+from services.tr_locale import tr_date
 from zodiac import get_todays_group, get_sign
 from telegram_bot import send as tg_send
 
@@ -60,7 +61,7 @@ def _daily_batch_job():
     group = get_todays_group()
     day_type = "ÇİFT" if today.day % 2 == 0 else "TEK"
 
-    log.info(f"🔮 Günlük batch — {today.strftime('%d %B %Y')} ({day_type} gün)")
+    log.info(f"🔮 Günlük batch — {tr_date(today)} ({day_type} gün)")
     log.info(f"   Grup: {', '.join(group)}")
 
     group_names = ", ".join(get_sign(k)["name"] for k in group)
@@ -78,7 +79,7 @@ def _daily_batch_job():
 
     tg_send(
         f"🌅 <b>Günlük otomatik üretim</b>\n"
-        f"📅 {today.strftime('%d %B %Y')} ({day_type} gün)\n"
+        f"📅 {tr_date(today)} ({day_type} gün)\n"
         f"🔮 Bugünün burçları: {group_names}\n"
         f"📺 Kanallar: {len(all_channels)}\n"
         f"⏰ Yayın saati: {PUBLISH_TIME}"
@@ -295,7 +296,7 @@ def _channel_zodiac_job(channel_id: str):
     day_type = "ÇİFT" if today.day % 2 == 0 else "TEK"
 
     log.info(f"🔮 Bur\u00e7 batch: {channel_id} — "
-             f"{today.strftime('%d %B %Y')} ({day_type})")
+             f"{tr_date(today)} ({day_type})")
 
     channel = channel_registry.get_channel(channel_id)
     if not channel:
@@ -306,7 +307,7 @@ def _channel_zodiac_job(channel_id: str):
     group_names = ", ".join(get_sign(k)["name"] for k in group)
     tg_send(
         f"🌅 <b>{channel['name']}</b> otomatik üretim\n"
-        f"📅 {today.strftime('%d %B %Y')} ({day_type} g\u00fcn)\n"
+        f"📅 {tr_date(today)} ({day_type} g\u00fcn)\n"
         f"🔮 {group_names}\n"
         f"⏰ Yay\u0131n: {PUBLISH_TIME}"
     )

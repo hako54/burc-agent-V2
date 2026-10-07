@@ -3,7 +3,7 @@ Burç İçerik Modülü
 12 burç için prompt, visual, theme color vb. sağlar.
 """
 
-from datetime import datetime
+from services.tr_locale import tr_date, tr_lower
 from typing import Optional
 
 from zodiac import ZODIAC_SIGNS, get_sign, all_sign_keys
@@ -30,7 +30,7 @@ def build_prompt(topic_key: str, custom_topic: str = None,
                  used_themes: list = None) -> str:
     """12 burç için günlük yorum prompt'u."""
     info = get_sign(topic_key)
-    today = datetime.now().strftime("%d %B %Y")
+    today = tr_date()
     used = ", ".join(used_themes[-10:]) if used_themes else "yok"
 
     return f"""Sen profesyonel bir Türk astroloğusun. YouTube Shorts için 60 saniyelik
@@ -75,8 +75,8 @@ Sadece JSON döndür:
   "compatible_sign": "Uyumlu burç (12'den biri)",
   "theme": "Kısa tema (3-5 kelime)",
   "description": "YouTube açıklaması (200-300 karakter)",
-  "tags": ["burç", "{info['name'].lower()}", "günlük", "astroloji", "shorts"],
-  "hashtags": ["#{info['name'].lower()}burcu", "#günlükburç", "#astroloji", "#shorts"]
+  "tags": ["burç", "{tr_lower(info['name'])}", "günlük", "astroloji", "shorts"],
+  "hashtags": ["#{tr_lower(info['name'])}burcu", "#günlükburç", "#astroloji", "#shorts"]
 }}"""
 
 
@@ -134,6 +134,6 @@ def get_tags(topic_key: str, content: dict) -> list:
     base_tags = content.get("tags", [])
     extra_tags = [
         "burç", "günlükburç", "astroloji", "shorts", "keşfet",
-        info["name"].lower(), f"{info['name'].lower()}burcu",
+        tr_lower(info["name"]), f"{tr_lower(info['name'])}burcu",
     ]
     return list(dict.fromkeys(base_tags + extra_tags))[:15]

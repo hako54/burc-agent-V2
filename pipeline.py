@@ -221,7 +221,12 @@ def produce_content(
         type_id = meta.get("type_id", "zodiac")
 
         if type_id == "zodiac":
-            # Burç için mevcut sistem — LLM zaten sign_name/sign_symbol dolduruyor
+            # Burç adı/sembolü LLM şemasında yok — sabit burç verisinden doldur
+            from zodiac import ZODIAC_SIGNS
+            sign = ZODIAC_SIGNS.get(topic_key)
+            if sign:
+                content["sign_name"] = sign["name"]
+                content["sign_symbol"] = sign["symbol"]
             content["intro_subtitle"] = "Günlük Burç Yorumu"
             content["outro_subtitle"] = "Her gün yeni burç yorumu"
         elif type_id == "motivation":

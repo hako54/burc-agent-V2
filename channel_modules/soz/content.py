@@ -8,6 +8,8 @@ Söz İçerik Modülü (Stok video + ElevenLabs TTS pipeline)
 """
 
 from datetime import datetime
+
+from services.tr_locale import tr_date
 from typing import Optional, Tuple, List
 
 from .config import THEMES, all_mood_tags
@@ -49,7 +51,7 @@ def build_prompt(topic_key: str, custom_topic: Optional[str] = None,
 
     Motivasyon pipeline'a uyumlu format döndürür (5 segment + full_narration).
     """
-    today = datetime.now().strftime("%d %B %Y")
+    today = tr_date()
     used = ", ".join(used_themes[-15:]) if used_themes else "yok"
 
     # Topic'e göre yönlendirme
