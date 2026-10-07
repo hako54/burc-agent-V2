@@ -226,6 +226,20 @@ def _call_claude(prompt: str, max_tokens: int) -> str:
     return "".join(b.text for b in msg.content if b.type == "text")
 
 
+# Varsayılan model listeleri — sağlayıcılar modelleri sık kaldırıyor, bu
+# yüzden Railway'den env ile değiştirilebilir:
+#   GEMINI_MODELS=gemini-2.5-flash,gemini-2.5-flash-lite
+#   GROQ_MODEL=openai/gpt-oss-120b
+DEFAULT_GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
+DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b"
+
+
+def _gemini_models() -> list:
+    raw = os.environ.get("GEMINI_MODELS", "")
+    models = [m.strip() for m in raw.split(",") if m.strip()]
+    return models or DEFAULT_GEMINI_MODELS
+
+
 def _call_gemini(prompt: str, max_tokens: int) -> str:
     api_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_key:
@@ -233,13 +247,12 @@ def _call_gemini(prompt: str, max_tokens: int) -> str:
     log.info("  → Gemini deneniyor...")
     import requests
 
-    # Modelleri sırayla dene
-    models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
-    last_error = None
-    for model in models:
+    errors = []
+    for model in _gemini_models():
         try:
+            # Anahtar URL yerine header'da — hata mesajlarına/loglara sızmasın
             url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
-                   f"{model}:generateContent?key={api_key}")
+                   f"{model}:generateContent")
             generation_config = {
                 "temperature": 0.85,
                 "maxOutputTokens": max_tokens,
@@ -253,24 +266,29 @@ def _call_gemini(prompt: str, max_tokens: int) -> str:
                 "contents": [{"parts": [{"text": prompt}]}],
                 "generationConfig": generation_config,
             }
-            r = requests.post(url, json=payload, timeout=45)
-            if r.status_code == 200:
-                data = r.json()
-                candidates = data.get("candidates", [])
-                if candidates:
-                    finish = candidates[0].get("finishReason", "")
-                    if finish and finish != "STOP":
-                        last_error = f"{model}: finishReason={finish}"
-                        continue
-                    parts = candidates[0].get("content", {}).get("parts", [])
-                    if parts:
-                        log.info(f"Gemini {model} başarılı")
-                        return parts[0].get("text", "")
-            last_error = f"{model}: HTTP {r.status_code}"
+            r = requests.post(url, json=payload, timeout=45,
+                              headers={"x-goog-api-key": api_key})
+            if r.status_code != 200:
+                errors.append(f"{model}: HTTP {r.status_code} {r.text[:150]}")
+                continue
+            candidates = r.json().get("candidates", [])
+            if not candidates:
+                errors.append(f"{model}: boş yanıt")
+                continue
+            finish = candidates[0].get("finishReason", "")
+            if finish and finish != "STOP":
+                errors.append(f"{model}: finishReason={finish}")
+                continue
+            parts = candidates[0].get("content", {}).get("parts", [])
+            text = parts[0].get("text", "") if parts else ""
+            if not text:
+                errors.append(f"{model}: boş metin")
+                continue
+            log.info(f"Gemini {model} başarılı")
+            return text
         except Exception as e:
-            last_error = f"{model}: {e}"
-            continue
-    raise RuntimeError(f"Gemini tüm modeller başarısız: {last_error}")
+            errors.append(f"{model}: {type(e).__name__}: {str(e)[:150]}")
+    raise RuntimeError("Gemini tüm modeller başarısız: " + " | ".join(errors))
 
 
 def _call_groq(prompt: str, max_tokens: int) -> str:
@@ -279,8 +297,9 @@ def _call_groq(prompt: str, max_tokens: int) -> str:
         raise RuntimeError("GROQ_API_KEY yok")
     log.info("  → Groq deneniyor...")
     import requests
+    model = os.environ.get("GROQ_MODEL", "").strip() or DEFAULT_GROQ_MODEL
     payload = {
-        "model": "llama-3.3-70b-versatile",
+        "model": model,
         "messages": [
             {"role": "system",
              "content": "Sadece geçerli JSON döndür, başka hiçbir şey yazma."},
@@ -290,6 +309,9 @@ def _call_groq(prompt: str, max_tokens: int) -> str:
         "max_tokens": max_tokens,
         "response_format": {"type": "json_object"},
     }
+    if model.startswith("openai/gpt-oss"):
+        # gpt-oss akıl yürütme token'ları da max_tokens'tan yer
+        payload["reasoning_effort"] = "low"
     r = requests.post(
         "https://api.groq.com/openai/v1/chat/completions",
         headers={"Authorization": f"Bearer {api_key}",
@@ -297,9 +319,9 @@ def _call_groq(prompt: str, max_tokens: int) -> str:
         json=payload, timeout=45,
     )
     if r.status_code != 200:
-        raise RuntimeError(f"HTTP {r.status_code}: {r.text[:200]}")
+        raise RuntimeError(f"{model}: HTTP {r.status_code}: {r.text[:200]}")
     data = r.json()
     choice = data["choices"][0]
     if choice.get("finish_reason") == "length":
-        raise RuntimeError("Groq yanıtı max_tokens'ta kesildi")
+        raise RuntimeError(f"Groq yanıtı max_tokens'ta kesildi ({model})")
     return choice["message"]["content"]
