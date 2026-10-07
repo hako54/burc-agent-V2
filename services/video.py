@@ -819,8 +819,11 @@ def render_video(content: dict, output_path: str,
         audio_codec="aac",
         logger=None,
         threads=4,
-        preset="ultrafast",
-        ffmpeg_params=["-crf", "26", "-movflags", "+faststart"],
+        # ultrafast ~1 dk'lık videoda 55 MB üretiyordu (Telegram limiti
+        # 50 MB). veryfast + bitrate tavanı dosyayı ~40 MB altında tutar.
+        preset="veryfast",
+        ffmpeg_params=["-crf", "26", "-maxrate", "6M", "-bufsize", "12M",
+                       "-movflags", "+faststart"],
     )
 
     # 8) Temp ses dosyalarını temizle

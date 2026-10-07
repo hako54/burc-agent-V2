@@ -12,6 +12,7 @@ Format: 1280x720 (YouTube önerilen) veya 1080x1920 (Shorts için).
 """
 
 import io
+import json
 import os
 import logging
 from pathlib import Path
@@ -55,6 +56,27 @@ def _get_font(size: int):
 def _hex_to_rgb(h: str):
     h = h.lstrip("#")
     return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def _plain_title(raw: str) -> str:
+    """LLM cevabından düz başlık metnini çıkarır. Gemini/Groq JSON modunda
+    çalıştığı için cevap {"title": "..."} veya "..." şeklinde gelebilir."""
+    text = (raw or "").strip()
+    if text.startswith(("{", "[", '"')):
+        try:
+            data = json.loads(text)
+            while isinstance(data, list) and data:
+                data = data[0]
+            if isinstance(data, dict):
+                data = next((v for v in data.values()
+                             if isinstance(v, str) and v.strip()), "")
+            if isinstance(data, str):
+                text = data
+        except ValueError:
+            pass
+    text = text.strip().strip('"\'').strip()
+    # Hâlâ JSON kalıntısıysa boş dön — çağıran varsayılan başlığa düşer
+    return "" if text.startswith(("{", "[")) else text
 
 
 def generate_thumbnail_title(content: dict, channel_type: str = "zodiac") -> str:
@@ -159,7 +181,7 @@ Türkçede gerçekten var olan kelimeleri kullan."""
 
     try:
         raw, provider = call_llm_with_fallback(prompt)
-        title = raw.strip().strip('"\'').strip()
+        title = _plain_title(raw)
         title = title.split("\n")[0].strip()
         # Ek güvenlik: özel karakterler ve kötü formatları temizle
         title = title.replace("**", "").replace("##", "").replace("*", "")
