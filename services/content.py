@@ -226,61 +226,171 @@ def _call_claude(prompt: str, max_tokens: int) -> str:
     return "".join(b.text for b in msg.content if b.type == "text")
 
 
+# ── Yedek sağlayıcılar: Gemini + Groq ─────────────────────────────
+# Sağlayıcılar modelleri sık kaldırıyor. Önce env'deki (veya varsayılan)
+# listeyi sırayla deneriz; hepsi "model yok" (404) derse sağlayıcının
+# güncel model listesini çekip uygun bir model seçeriz. Böylece bir model
+# kaldırıldığında üretim durmaz. Elle sabitlemek için Railway'de:
+#   GEMINI_MODELS=gemini-2.5-flash,gemini-2.5-flash-lite
+#   GROQ_MODELS=openai/gpt-oss-120b,openai/gpt-oss-20b
+DEFAULT_GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
+DEFAULT_GROQ_MODELS = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]
+
+GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
+GROQ_BASE = "https://api.groq.com/openai/v1"
+
+# Metin üretimi dışındaki model ailelerini otomatik seçimde ele
+_SKIP_WORDS = ("embed", "image", "tts", "audio", "live", "vision", "guard",
+               "whisper", "speech", "aqa", "learnlm", "robotics", "computer",
+               "exp", "preview", "compound", "safeguard", "orpheus")
+
+
+def _env_list(name: str, default: list) -> list:
+    raw = os.environ.get(name, "")
+    items = [m.strip() for m in raw.split(",") if m.strip()]
+    return items or list(default)
+
+
+def _version_key(name: str) -> tuple:
+    """'gemini-3.1-flash' → (3, 1); sürüm yoksa (0,)."""
+    m = re.search(r"(\d+(?:\.\d+)*)", name)
+    if not m:
+        return (0,)
+    return tuple(int(x) for x in m.group(1).split("."))
+
+
+def _discover_gemini_models(api_key: str, exclude: set) -> list:
+    """Gemini'nin güncel model listesinden en yeni 'flash' modellerini seçer."""
+    import requests
+    try:
+        r = requests.get(f"{GEMINI_BASE}/models", params={"pageSize": 200},
+                         headers={"x-goog-api-key": api_key}, timeout=20)
+        if r.status_code != 200:
+            log.warning(f"Gemini model listesi alınamadı: HTTP {r.status_code}")
+            return []
+        found = []
+        for m in r.json().get("models", []):
+            name = m.get("name", "").removeprefix("models/")
+            if ("generateContent" not in m.get("supportedGenerationMethods", [])
+                    or not name.startswith("gemini-") or "flash" not in name
+                    or any(w in name for w in _SKIP_WORDS) or name in exclude):
+                continue
+            found.append(name)
+        # En yeni sürüm önce; aynı sürümde tam flash, lite'tan önce
+        found.sort(key=lambda n: (_version_key(n), "lite" not in n),
+                   reverse=True)
+        log.info(f"Gemini otomatik model adayları: {found[:3]}")
+        return found[:2]
+    except Exception as e:
+        log.warning(f"Gemini model listesi hatası: {type(e).__name__}")
+        return []
+
+
+def _gemini_generate(model: str, prompt: str, max_tokens: int,
+                     api_key: str):
+    """Tek bir Gemini modelini dener. (metin, hata, model_yok) döner."""
+    import requests
+    generation_config = {
+        "temperature": 0.85,
+        "maxOutputTokens": max_tokens,
+        "responseMimeType": "application/json",
+    }
+    if model.startswith("gemini-2.5"):
+        # 2.5'te düşünme token'ları maxOutputTokens'tan yer; kapatıyoruz
+        generation_config["thinkingConfig"] = {"thinkingBudget": 0}
+    else:
+        # Daha yeni modellerde düşünme kapatılamayabilir — pay bırak
+        generation_config["maxOutputTokens"] = max_tokens * 4
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": generation_config,
+    }
+    try:
+        # Anahtar URL yerine header'da — hata mesajlarına/loglara sızmasın
+        r = requests.post(f"{GEMINI_BASE}/models/{model}:generateContent",
+                          json=payload, timeout=60,
+                          headers={"x-goog-api-key": api_key})
+    except Exception as e:
+        return None, f"{model}: {type(e).__name__}: {str(e)[:150]}", False
+    if r.status_code != 200:
+        return (None, f"{model}: HTTP {r.status_code} {r.text[:150]}",
+                r.status_code == 404)
+    candidates = r.json().get("candidates", [])
+    if not candidates:
+        return None, f"{model}: boş yanıt", False
+    finish = candidates[0].get("finishReason", "")
+    if finish and finish != "STOP":
+        return None, f"{model}: finishReason={finish}", False
+    parts = candidates[0].get("content", {}).get("parts", [])
+    # Düşünme özeti parçalarını atla, sadece cevap metni
+    text = "".join(p.get("text", "") for p in parts if not p.get("thought"))
+    if not text:
+        return None, f"{model}: boş metin", False
+    return text, None, False
+
+
 def _call_gemini(prompt: str, max_tokens: int) -> str:
     api_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY yok")
     log.info("  → Gemini deneniyor...")
+
+    errors = []
+    tried = []
+    all_missing = True
+    for model in _env_list("GEMINI_MODELS", DEFAULT_GEMINI_MODELS):
+        tried.append(model)
+        text, err, missing = _gemini_generate(model, prompt, max_tokens,
+                                              api_key)
+        if text:
+            log.info(f"Gemini {model} başarılı")
+            return text
+        errors.append(err)
+        all_missing = all_missing and missing
+
+    if all_missing:
+        log.warning("Gemini: listedeki modeller kaldırılmış, "
+                    "güncel liste deneniyor")
+        for model in _discover_gemini_models(api_key, set(tried)):
+            text, err, _ = _gemini_generate(model, prompt, max_tokens,
+                                            api_key)
+            if text:
+                log.info(f"Gemini {model} başarılı (otomatik seçildi — "
+                         f"GEMINI_MODELS'e eklemeyi düşün)")
+                return text
+            errors.append(err)
+    raise RuntimeError("Gemini tüm modeller başarısız: " + " | ".join(errors))
+
+
+def _discover_groq_models(api_key: str, exclude: set) -> list:
+    """Groq'un güncel model listesinden genel amaçlı metin modelleri seçer."""
     import requests
-
-    # Modelleri sırayla dene
-    models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
-    last_error = None
-    for model in models:
-        try:
-            url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
-                   f"{model}:generateContent?key={api_key}")
-            generation_config = {
-                "temperature": 0.85,
-                "maxOutputTokens": max_tokens,
-                "responseMimeType": "application/json",
-            }
-            if model.startswith("gemini-2.5"):
-                # 2.5 modellerinde düşünme token'ları maxOutputTokens'tan
-                # yer; kapatmazsak JSON yarıda kesiliyor
-                generation_config["thinkingConfig"] = {"thinkingBudget": 0}
-            payload = {
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": generation_config,
-            }
-            r = requests.post(url, json=payload, timeout=45)
-            if r.status_code == 200:
-                data = r.json()
-                candidates = data.get("candidates", [])
-                if candidates:
-                    finish = candidates[0].get("finishReason", "")
-                    if finish and finish != "STOP":
-                        last_error = f"{model}: finishReason={finish}"
-                        continue
-                    parts = candidates[0].get("content", {}).get("parts", [])
-                    if parts:
-                        log.info(f"Gemini {model} başarılı")
-                        return parts[0].get("text", "")
-            last_error = f"{model}: HTTP {r.status_code}"
-        except Exception as e:
-            last_error = f"{model}: {e}"
-            continue
-    raise RuntimeError(f"Gemini tüm modeller başarısız: {last_error}")
+    try:
+        r = requests.get(f"{GROQ_BASE}/models", timeout=20,
+                         headers={"Authorization": f"Bearer {api_key}"})
+        if r.status_code != 200:
+            log.warning(f"Groq model listesi alınamadı: HTTP {r.status_code}")
+            return []
+        ids = [m.get("id", "") for m in r.json().get("data", [])
+               if m.get("active", True)]
+        ids = [i for i in ids if i and i not in exclude
+               and not any(w in i.lower() for w in _SKIP_WORDS)]
+        # Tercih sırası: gpt-oss, llama, qwen, kimi, sonra diğerleri
+        prefs = ("gpt-oss", "llama", "qwen", "kimi")
+        ids.sort(key=lambda i: next((n for n, p in enumerate(prefs)
+                                     if p in i.lower()), len(prefs)))
+        log.info(f"Groq otomatik model adayları: {ids[:3]}")
+        return ids[:2]
+    except Exception as e:
+        log.warning(f"Groq model listesi hatası: {type(e).__name__}")
+        return []
 
 
-def _call_groq(prompt: str, max_tokens: int) -> str:
-    api_key = os.environ.get("GROQ_API_KEY", "").strip()
-    if not api_key:
-        raise RuntimeError("GROQ_API_KEY yok")
-    log.info("  → Groq deneniyor...")
+def _groq_generate(model: str, prompt: str, max_tokens: int, api_key: str):
+    """Tek bir Groq modelini dener. (metin, hata, model_yok) döner."""
     import requests
     payload = {
-        "model": "llama-3.3-70b-versatile",
+        "model": model,
         "messages": [
             {"role": "system",
              "content": "Sadece geçerli JSON döndür, başka hiçbir şey yazma."},
@@ -290,16 +400,58 @@ def _call_groq(prompt: str, max_tokens: int) -> str:
         "max_tokens": max_tokens,
         "response_format": {"type": "json_object"},
     }
-    r = requests.post(
-        "https://api.groq.com/openai/v1/chat/completions",
-        headers={"Authorization": f"Bearer {api_key}",
-                 "Content-Type": "application/json"},
-        json=payload, timeout=45,
-    )
+    if "gpt-oss" in model:
+        # gpt-oss akıl yürütme token'ları da max_tokens'tan yer
+        payload["reasoning_effort"] = "low"
+        payload["max_tokens"] = max_tokens * 2
+    try:
+        r = requests.post(f"{GROQ_BASE}/chat/completions", json=payload,
+                          timeout=60,
+                          headers={"Authorization": f"Bearer {api_key}",
+                                   "Content-Type": "application/json"})
+    except Exception as e:
+        return None, f"{model}: {type(e).__name__}: {str(e)[:150]}", False
     if r.status_code != 200:
-        raise RuntimeError(f"HTTP {r.status_code}: {r.text[:200]}")
-    data = r.json()
-    choice = data["choices"][0]
+        missing = r.status_code == 404 or "model_not_found" in r.text
+        return None, f"{model}: HTTP {r.status_code}: {r.text[:150]}", missing
+    choice = r.json()["choices"][0]
     if choice.get("finish_reason") == "length":
-        raise RuntimeError("Groq yanıtı max_tokens'ta kesildi")
-    return choice["message"]["content"]
+        return None, f"{model}: max_tokens'ta kesildi", False
+    text = choice["message"].get("content") or ""
+    if not text:
+        return None, f"{model}: boş metin", False
+    return text, None, False
+
+
+def _call_groq(prompt: str, max_tokens: int) -> str:
+    api_key = os.environ.get("GROQ_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("GROQ_API_KEY yok")
+    log.info("  → Groq deneniyor...")
+
+    # Eski tek-model değişkeni de desteklenir
+    default = _env_list("GROQ_MODEL", DEFAULT_GROQ_MODELS)
+    errors = []
+    tried = []
+    all_missing = True
+    for model in _env_list("GROQ_MODELS", default):
+        tried.append(model)
+        text, err, missing = _groq_generate(model, prompt, max_tokens,
+                                            api_key)
+        if text:
+            log.info(f"Groq {model} başarılı")
+            return text
+        errors.append(err)
+        all_missing = all_missing and missing
+
+    if all_missing:
+        log.warning("Groq: listedeki modeller kaldırılmış, "
+                    "güncel liste deneniyor")
+        for model in _discover_groq_models(api_key, set(tried)):
+            text, err, _ = _groq_generate(model, prompt, max_tokens, api_key)
+            if text:
+                log.info(f"Groq {model} başarılı (otomatik seçildi — "
+                         f"GROQ_MODELS'e eklemeyi düşün)")
+                return text
+            errors.append(err)
+    raise RuntimeError("Groq tüm modeller başarısız: " + " | ".join(errors))
