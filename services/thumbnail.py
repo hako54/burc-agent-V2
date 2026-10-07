@@ -20,6 +20,8 @@ from typing import Optional
 import requests
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageFilter
 
+from services.tr_locale import tr_upper
+
 log = logging.getLogger(__name__)
 
 # YouTube'un önerdiği boyutlar
@@ -185,16 +187,16 @@ Türkçede gerçekten var olan kelimeleri kullan."""
         if looks_suspicious(title):
             log.warning(f"Şüpheli thumbnail başlığı '{title}' - fallback")
             words = (video_title or topic_label or "İLHAM").split()[:3]
-            title = " ".join(words).upper()[:25]
+            title = tr_upper(" ".join(words))[:25]
 
         if not title:
             title = "BUGÜN İÇİN"
         log.info(f"[{provider}] Thumbnail title: {title}")
-        return title.upper()
+        return tr_upper(title)
     except Exception as e:
         log.warning(f"Thumbnail title üretilemedi: {e}, fallback kullanılıyor")
         words = (video_title or topic_label or "İLHAM").split()[:3]
-        return " ".join(words).upper()[:25]
+        return tr_upper(" ".join(words))[:25]
 
 
 def _fetch_from_pexels(query: str, target_w: int, target_h: int):
@@ -403,7 +405,7 @@ def _draw_dramatic_text(img: Image.Image, text: str,
     except Exception:
         ac = (255, 200, 80)
 
-    text = text.strip().upper()
+    text = tr_upper(text.strip())
     word_count = len(text.split())
     char_count = len(text)
 

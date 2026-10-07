@@ -15,14 +15,16 @@ API endpoint'leri kanal bazında çalışır:
 """
 
 import os
+import hmac
 import json
 import logging
 import threading
+from urllib.parse import quote
 from pathlib import Path
 from datetime import datetime
 from flask import (
     Flask, render_template, jsonify, request,
-    send_from_directory, abort, redirect, url_for
+    send_from_directory, abort, redirect, url_for, Response
 )
 
 import bootstrap
@@ -36,10 +38,52 @@ import job_tracker as jt
 import channel_registry as ch_registry
 import channel_modules
 import approval
+from services.tr_locale import tr_date, now_local
 
 log = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+
+# ── Erişim kontrolü ───────────────────────────────────────────────
+# PANEL_PASSWORD set edilirse tüm sayfalar ve API'ler HTTP Basic Auth
+# ister (kullanıcı adı: PANEL_USER, varsayılan "admin"). /health açık
+# kalır ki Railway healthcheck çalışsın.
+_PUBLIC_PATHS = {"/health"}
+
+
+def _panel_auth_ok() -> bool:
+    password = os.environ.get("PANEL_PASSWORD", "")
+    if not password:
+        return True
+    auth = request.authorization
+    if not auth:
+        return False
+    user = os.environ.get("PANEL_USER", "admin")
+    return (hmac.compare_digest(auth.username or "", user)
+            and hmac.compare_digest(auth.password or "", password))
+
+
+def _admin_key_ok() -> bool:
+    """Geçici admin endpoint'leri için ?key= kontrolü.
+    ADMIN_KEY set edilmemişse bu endpoint'ler tamamen kapalıdır."""
+    expected = os.environ.get("ADMIN_KEY", "")
+    given = request.args.get("key", "")
+    return bool(expected) and hmac.compare_digest(given, expected)
+
+
+@app.before_request
+def require_panel_auth():
+    if request.path in _PUBLIC_PATHS or _panel_auth_ok():
+        return None
+    return Response(
+        "Giriş gerekli", 401,
+        {"WWW-Authenticate": 'Basic realm="Burc Agent", charset="UTF-8"'},
+    )
+
+
+if not os.environ.get("PANEL_PASSWORD"):
+    log.warning("⚠ PANEL_PASSWORD tanımlı değil — web paneli herkese açık!")
 
 # Batch iş durumu — kanal bazlı
 _batch_state = {}
@@ -377,7 +421,7 @@ def api_channel_batch(channel_id):
         label = "Bugünün 6 burcu"
     elif group_type == "tomorrow":
         # Yarın çift mi tek mi?
-        tomorrow_day = (_dt.now() + timedelta(days=1)).day
+        tomorrow_day = (now_local() + timedelta(days=1)).day
         topic_keys = (GROUP_EVEN_DAYS if tomorrow_day % 2 == 0
                       else GROUP_ODD_DAYS)
         label = "Yarının 6 burcu"
@@ -430,7 +474,7 @@ def api_channel_group_info(channel_id):
                         GROUP_ODD_DAYS, get_sign)
     from datetime import datetime as _dt, timedelta
 
-    today = _dt.now()
+    today = now_local()
     tomorrow = today + timedelta(days=1)
 
     today_group = get_todays_group()
@@ -446,13 +490,13 @@ def api_channel_group_info(channel_id):
 
     return jsonify({
         "today": {
-            "date": today.strftime("%d %B %Y"),
+            "date": tr_date(today),
             "day_type": "ÇİFT" if today.day % 2 == 0 else "TEK",
             "keys": today_group,
             "topics": keys_to_meta(today_group),
         },
         "tomorrow": {
-            "date": tomorrow.strftime("%d %B %Y"),
+            "date": tr_date(tomorrow),
             "day_type": "ÇİFT" if tomorrow.day % 2 == 0 else "TEK",
             "keys": tomorrow_keys,
             "topics": keys_to_meta(tomorrow_keys),
@@ -854,7 +898,7 @@ def soz_test_start():
       theme     — tema ID'si (boşsa 'sonbahar_gol')
       style     — 'stable' (varsayılan) veya 'expressive'
     """
-    if request.args.get("key") != "lina-test-2026":
+    if not _admin_key_ok():
         return jsonify({"error": "unauthorized"}), 401
 
     try:
@@ -900,7 +944,7 @@ def soz_test_start():
             "text_preview": text[:120],
             "next": (
                 f"/api/admin/soz/test-status?id={video_id}"
-                f"&key=lina-test-2026"
+                f"&key={quote(request.args.get('key', ''))}"
             ),
         })
 
@@ -917,7 +961,7 @@ def soz_test_status():
       key — admin secret
       id  — video_id (test-start'tan dönen)
     """
-    if request.args.get("key") != "lina-test-2026":
+    if not _admin_key_ok():
         return jsonify({"error": "unauthorized"}), 401
 
     video_id = request.args.get("id", "").strip()
@@ -949,7 +993,7 @@ def soz_test_llm():
     Parametreler:
       key — admin secret
     """
-    if request.args.get("key") != "lina-test-2026":
+    if not _admin_key_ok():
         return jsonify({"error": "unauthorized"}), 401
 
     try:
@@ -993,7 +1037,7 @@ def soz_watch():
       key — admin secret
       id  — video_id (test-start'tan dönen)
     """
-    if request.args.get("key") != "lina-test-2026":
+    if not _admin_key_ok():
         return "unauthorized", 401
 
     video_id = request.args.get("id", "").strip()
@@ -1079,7 +1123,7 @@ background:#15081f;color:#c084fc;}}h1{{font-weight:300;}}</style>
   </div>
   <div class="links">
     <a href="{url}" download>İndir</a>
-    <a href="/api/admin/soz/test-status?id={video_id}&key=lina-test-2026">JSON</a>
+    <a href="/api/admin/soz/test-status?id={video_id}&key={quote(request.args.get('key', ''))}">JSON</a>
   </div>
 </body>
 </html>"""
@@ -1100,7 +1144,7 @@ def migrate_onelineadayy_to_soz():
 
     Bu endpoint kullanıldıktan sonra silinmeli.
     """
-    if request.args.get("key") != "soz-migration-2026":
+    if not _admin_key_ok():
         return jsonify({"error": "unauthorized"}), 401
 
     try:

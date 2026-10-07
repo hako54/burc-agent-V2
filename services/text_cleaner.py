@@ -7,6 +7,8 @@ Aggressive değil — sadece net yanlışları düzeltir, anlama dokunmaz.
 import re
 import logging
 
+from services.tr_locale import tr_upper
+
 log = logging.getLogger(__name__)
 
 # ── Yaygın Kelime Hataları ──────────────────────────────────────────
@@ -49,10 +51,11 @@ WORD_FIXES = [
 # ── Noktalama ve Boşluk Düzeltmeleri ────────────────────────────────
 # (desen, replacement)
 PUNCTUATION_FIXES = [
-    # Virgülden sonra boşluk
-    (r",([^\s,])", r", \1"),
-    # Noktadan sonra boşluk (eğer sonra harf/rakam varsa)
-    (r"\.([a-zA-ZğüşıöçĞÜŞİÖÇ0-9])", r". \1"),
+    # Virgülden sonra boşluk (ondalık sayılara dokunma: 3,5)
+    (r"(?<!\d),(?!\d)([^\s,])", r", \1"),
+    # Noktadan sonra boşluk — sadece büyük harfle yeni cümle başlıyorsa
+    # (2.5 veya youtube.com gibi ifadelere dokunma)
+    (r"\.([A-ZĞÜŞİÖÇ])", r". \1"),
     # Soru ve ünlemden sonra boşluk
     (r"\?([a-zA-ZğüşıöçĞÜŞİÖÇ])", r"? \1"),
     (r"!([a-zA-ZğüşıöçĞÜŞİÖÇ])", r"! \1"),
@@ -85,7 +88,7 @@ def _ensure_sentence_end(text: str) -> str:
 def _capitalize_sentence_starts(text: str) -> str:
     """Cümle başlarını büyük harf yap (nokta/ünlem/soru sonrası)."""
     def cap_match(m):
-        return m.group(1) + m.group(2).upper()
+        return m.group(1) + tr_upper(m.group(2))
 
     # İlk harfi büyük yap
     text = re.sub(r"^(\s*)([a-zğüşıöç])", cap_match, text)

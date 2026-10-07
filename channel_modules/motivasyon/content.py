@@ -4,6 +4,8 @@ Kategorili + custom topic desteği.
 """
 
 from datetime import datetime
+
+from services.tr_locale import tr_date
 from typing import Optional
 
 from .config import CATEGORIES
@@ -27,7 +29,7 @@ def get_topics() -> list:
 
 def build_prompt(topic_key: str, custom_topic: str = None,
                  used_themes: list = None) -> str:
-    today = datetime.now().strftime("%d %B %Y")
+    today = tr_date()
     used = ", ".join(used_themes[-10:]) if used_themes else "yok"
 
     if custom_topic:

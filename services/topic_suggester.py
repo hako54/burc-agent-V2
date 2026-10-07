@@ -13,6 +13,8 @@ import os
 import re
 from pathlib import Path
 from datetime import datetime
+
+from services.tr_locale import tr_date
 from typing import Optional
 
 log = logging.getLogger(__name__)
@@ -83,7 +85,7 @@ def suggest_topic_for_motivation(channel_id: str = "sozbahcesi",
 60 saniyelik bir YouTube Shorts videosu için **özgün, derin, vurucu**
 bir konu öner.
 
-Tarih: {datetime.now().strftime("%d %B %Y")}
+Tarih: {tr_date()}
 Zaman: {time_hint}
 
 Klasik motivasyon klişelerinden kaçın ("hayallerinin peşinden git",

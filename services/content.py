@@ -211,12 +211,19 @@ def _call_claude(prompt: str, max_tokens: int) -> str:
     log.info("  → Claude deneniyor...")
     from anthropic import Anthropic
     client = Anthropic(api_key=api_key)
+    model = os.environ.get("CLAUDE_MODEL", "").strip() or "claude-haiku-4-5"
     msg = client.messages.create(
-        model="claude-haiku-4-5",
+        model=model,
         max_tokens=max_tokens,
         messages=[{"role": "user", "content": prompt}],
     )
-    return msg.content[0].text if msg.content else ""
+    if msg.stop_reason == "max_tokens":
+        # Yarım JSON'u "onarıp" eksik içerikle devam etmek yerine
+        # sonraki sağlayıcıya düş
+        raise RuntimeError(f"Claude yanıtı max_tokens'ta kesildi ({model})")
+    if msg.stop_reason == "refusal":
+        raise RuntimeError(f"Claude isteği reddetti ({model})")
+    return "".join(b.text for b in msg.content if b.type == "text")
 
 
 def _call_gemini(prompt: str, max_tokens: int) -> str:
@@ -233,19 +240,28 @@ def _call_gemini(prompt: str, max_tokens: int) -> str:
         try:
             url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
                    f"{model}:generateContent?key={api_key}")
+            generation_config = {
+                "temperature": 0.85,
+                "maxOutputTokens": max_tokens,
+                "responseMimeType": "application/json",
+            }
+            if model.startswith("gemini-2.5"):
+                # 2.5 modellerinde düşünme token'ları maxOutputTokens'tan
+                # yer; kapatmazsak JSON yarıda kesiliyor
+                generation_config["thinkingConfig"] = {"thinkingBudget": 0}
             payload = {
                 "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {
-                    "temperature": 0.85,
-                    "maxOutputTokens": max_tokens,
-                    "responseMimeType": "application/json",
-                },
+                "generationConfig": generation_config,
             }
             r = requests.post(url, json=payload, timeout=45)
             if r.status_code == 200:
                 data = r.json()
                 candidates = data.get("candidates", [])
                 if candidates:
+                    finish = candidates[0].get("finishReason", "")
+                    if finish and finish != "STOP":
+                        last_error = f"{model}: finishReason={finish}"
+                        continue
                     parts = candidates[0].get("content", {}).get("parts", [])
                     if parts:
                         log.info(f"Gemini {model} başarılı")
@@ -283,4 +299,7 @@ def _call_groq(prompt: str, max_tokens: int) -> str:
     if r.status_code != 200:
         raise RuntimeError(f"HTTP {r.status_code}: {r.text[:200]}")
     data = r.json()
-    return data["choices"][0]["message"]["content"]
+    choice = data["choices"][0]
+    if choice.get("finish_reason") == "length":
+        raise RuntimeError("Groq yanıtı max_tokens'ta kesildi")
+    return choice["message"]["content"]

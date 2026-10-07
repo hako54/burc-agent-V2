@@ -13,6 +13,8 @@ import random
 import logging
 from pathlib import Path
 from datetime import datetime
+
+from services.tr_locale import tr_date, tr_upper
 from typing import List, Optional
 
 import numpy as np
@@ -260,7 +262,7 @@ def _add_text_overlay(frame_arr, t: float, text: str, seg_dur: float,
                       fill=(*ac, int(245 * alpha)))
             ty2 += line_h2
 
-        datestr = datetime.now().strftime("%d %B %Y")
+        datestr = tr_date()
         df = _get_font(28)
         db = draw.textbbox((0, 0), datestr, font=df)
         dw = db[2]
@@ -486,7 +488,7 @@ def _make_intro_clip(duration: float, sign_name: str, sign_symbol: str,
         ny = ny - line_h + nf_size + 40
 
         # Tarih
-        datestr = datetime.now().strftime("%d %B %Y")
+        datestr = tr_date()
         df = _get_font(36)
         db = d.textbbox((0, 0), datestr, font=df)
         dw = db[2]
@@ -498,11 +500,11 @@ def _make_intro_clip(duration: float, sign_name: str, sign_symbol: str,
         # Alt başlık — kanal tipine göre dinamik
         sub = subtitle
         sbf = _get_font(30)
-        sbb = d.textbbox((0, 0), sub.upper(), font=sbf)
+        sbb = d.textbbox((0, 0), tr_upper(sub), font=sbf)
         sbw = sbb[2]
         sbx = (W - sbw) // 2
         sby = dy + 70
-        d.text((sbx, sby), sub.upper(), font=sbf,
+        d.text((sbx, sby), tr_upper(sub), font=sbf,
                fill=(*ac, int(200 * alpha)))
 
         result = Image.alpha_composite(img, ov)
@@ -566,11 +568,12 @@ def _make_outro_clip(duration: float, sign_name: str,
                fill=(255, 245, 220, int(240 * alpha)))
 
         nf = _get_font(36)
-        nb = d.textbbox((0, 0), sign_name, font=nf)
+        name_up = tr_upper(sign_name)
+        nb = d.textbbox((0, 0), name_up, font=nf)
         nw = nb[2]
         nx = (W - nw) // 2
         ny = sy + 110
-        d.text((nx, ny), sign_name.upper(), font=nf,
+        d.text((nx, ny), name_up, font=nf,
                fill=(200, 200, 200, int(220 * alpha)))
 
         result = Image.alpha_composite(img, ov)

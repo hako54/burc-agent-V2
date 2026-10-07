@@ -180,7 +180,8 @@ def normalize_sign(name: str) -> str | None:
     """Kullanıcı girdisini burç anahtarına çevirir. Tanımsızsa None döner."""
     if not name:
         return None
-    return SIGN_ALIASES.get(name.lower().strip())
+    from services.tr_locale import tr_lower
+    return SIGN_ALIASES.get(tr_lower(name).strip())
 
 
 def get_sign(key: str) -> dict:
@@ -204,7 +205,7 @@ def get_todays_group() -> list:
     """Bugünün günü tek mi çift mi → ona göre 6 burç döner.
     Çift günler (2, 4, 6...): Koç → Başak
     Tek günler (1, 3, 5...): Terazi → Balık"""
-    from datetime import datetime
-    day = datetime.now().day
+    from services.tr_locale import now_local
+    day = now_local().day
     return GROUP_EVEN_DAYS if day % 2 == 0 else GROUP_ODD_DAYS
 

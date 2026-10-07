@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.env
+token_*.json
+credentials_*.json
+output/
+static/preview/
