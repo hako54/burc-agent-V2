@@ -16,6 +16,7 @@ from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 
 log = logging.getLogger(__name__)
@@ -39,8 +40,16 @@ def _is_server_environment() -> bool:
     return False
 
 
-def get_youtube_service(channel_id: str = "burc"):
-    """Belirli kanal için YouTube API istemcisi oluşturur."""
+def _is_auth_error(e: Exception) -> bool:
+    """YouTube 401 (geçersiz/eskimiş access token) hatası mı?"""
+    resp = getattr(e, "resp", None)
+    return isinstance(e, HttpError) and getattr(resp, "status", None) == 401
+
+
+def get_youtube_service(channel_id: str = "burc",
+                        force_refresh: bool = False):
+    """Belirli kanal için YouTube API istemcisi oluşturur.
+    force_refresh=True: token geçerli görünse bile yenilenir (401 sonrası)."""
     token_file = f"token_{channel_id}.json"
     credentials = None
 
@@ -53,8 +62,8 @@ def get_youtube_service(channel_id: str = "burc"):
     else:
         log.warning(f"{token_file} bulunamadı")
 
-    if credentials and not credentials.valid:
-        if credentials.expired and credentials.refresh_token:
+    if credentials and (force_refresh or not credentials.valid):
+        if (credentials.expired or force_refresh) and credentials.refresh_token:
             log.info(f"Token yenileniyor ({channel_id})...")
             try:
                 credentials.refresh(Request())
@@ -129,16 +138,62 @@ def upload_video(video_path: str, title: str, description: str,
 
     body = {"snippet": snippet, "status": status}
 
+    log.info(f"📤 YouTube'a yükleniyor ({channel_id}): {title}")
+    try:
+        response = _insert_video(youtube, video_path, body)
+    except HttpError as e:
+        if not _is_auth_error(e):
+            raise
+        # Aralıklı 401: token'ı zorla yenileyip bir kez daha dene. Yarım
+        # kalan resumable yükleme video oluşturmaz, tekrar deneme güvenli.
+        log.warning(f"⚠ YouTube 401 ({channel_id}) — token yenilenip "
+                    f"yükleme tekrar deneniyor")
+        youtube = get_youtube_service(channel_id=channel_id,
+                                      force_refresh=True)
+        response = _insert_video(youtube, video_path, body)
+
+    video_id = response["id"]
+    url = f"https://youtube.com/shorts/{video_id}"
+    log.info(f"✅ Yüklendi: {url}")
+
+    # Thumbnail yükle (opsiyonel — başarısız olsa bile video yüklendiği için
+    # exception fırlatmıyoruz, sadece log)
+    if thumbnail_path and os.path.exists(thumbnail_path):
+        log.info(f"🎨 Thumbnail yükleniyor: {os.path.basename(thumbnail_path)}")
+        for attempt in (1, 2):
+            try:
+                youtube.thumbnails().set(
+                    videoId=video_id,
+                    media_body=MediaFileUpload(thumbnail_path,
+                                               mimetype="image/jpeg"),
+                ).execute()
+                log.info(f"✅ Thumbnail set: {video_id}")
+                break
+            except Exception as e:
+                if attempt == 1 and _is_auth_error(e):
+                    log.warning("⚠ Thumbnail 401 — token yenilenip "
+                                "tekrar deneniyor")
+                    try:
+                        youtube = get_youtube_service(channel_id=channel_id,
+                                                      force_refresh=True)
+                        continue
+                    except Exception as e2:
+                        e = e2
+                log.warning(f"⚠ Thumbnail yüklenemedi (video yüklendi): {e}")
+                break
+
+    return {"id": video_id, "url": url, "title": title}
+
+
+def _insert_video(youtube, video_path: str, body: dict) -> dict:
+    """Resumable yükleme; tamamlanınca YouTube yanıtını döner."""
     media = MediaFileUpload(video_path, mimetype="video/mp4",
                             resumable=True, chunksize=1024 * 1024 * 8)
-
-    log.info(f"📤 YouTube'a yükleniyor ({channel_id}): {title}")
     request = youtube.videos().insert(
         part="snippet,status",
         body=body,
         media_body=media,
     )
-
     response = None
     last_progress = 0
     while response is None:
@@ -148,24 +203,4 @@ def upload_video(video_path: str, title: str, description: str,
             if progress >= last_progress + 10:
                 log.info(f"  ... %{progress}")
                 last_progress = progress
-
-    video_id = response["id"]
-    url = f"https://youtube.com/shorts/{video_id}"
-    log.info(f"✅ Yüklendi: {url}")
-
-    # Thumbnail yükle (opsiyonel — başarısız olsa bile video yüklendiği için
-    # exception fırlatmıyoruz, sadece log)
-    if thumbnail_path and os.path.exists(thumbnail_path):
-        try:
-            log.info(f"🎨 Thumbnail yükleniyor: {os.path.basename(thumbnail_path)}")
-            thumb_media = MediaFileUpload(thumbnail_path,
-                                          mimetype="image/jpeg")
-            youtube.thumbnails().set(
-                videoId=video_id,
-                media_body=thumb_media,
-            ).execute()
-            log.info(f"✅ Thumbnail set: {video_id}")
-        except Exception as e:
-            log.warning(f"⚠ Thumbnail yüklenemedi (video yüklendi): {e}")
-
-    return {"id": video_id, "url": url, "title": title}
+    return response
