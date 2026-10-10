@@ -724,6 +724,28 @@ def _fit_cover(frame: np.ndarray) -> np.ndarray:
     return fr[y:y + H, x:x + W]
 
 
+def _content_box(frame: np.ndarray, tol: float = 6.0):
+    """HeyGen dikey olmayan fotoğrafı düz renkli boşlukla (letterbox)
+    doldurur. Tek renkli kenar satır/sütunlarını atıp asıl görüntünün
+    kutusunu döner; bulunamazsa None."""
+    f = frame.astype(np.float32)
+    rows = np.where(f.std(axis=(1, 2)) > tol)[0]
+    cols = np.where(f.std(axis=(0, 2)) > tol)[0]
+    if len(rows) == 0 or len(cols) == 0:
+        return None
+    y0, y1 = int(rows[0]), int(rows[-1]) + 1
+    x0, x1 = int(cols[0]), int(cols[-1]) + 1
+    h, w = frame.shape[:2]
+    if (y1 - y0) < h * 0.3 or (x1 - x0) < w * 0.3:
+        return None
+    if (y0, y1, x0, x1) == (0, h, 0, w):
+        return None
+    # Kenardaki sıkıştırma geçişini de at
+    m = 4
+    return (min(x0 + m, x1), min(y0 + m, y1),
+            max(x1 - m, x0), max(y1 - m, y0))
+
+
 def _presenter_label_layer(title: str, subtitle: str, accent_hex: str,
                            top: bool) -> np.ndarray:
     """Sunucu videosunun üstüne konan etiket (burç adı / abone çağrısı).
@@ -758,9 +780,16 @@ def _make_presenter_clip(video_path: str, title: str, subtitle: str,
     layer = _presenter_label_layer(title, subtitle, accent_hex, top)
     rgb, alpha = layer[..., :3], layer[..., 3:4]
     last_t = max(0.0, src.duration - 0.05)
+    box = _content_box(src.get_frame(min(src.duration / 2, last_t)))
+    if box:
+        log.info(f"🎭 Sunucu videosundaki boşluk kırpılıyor: {box}")
 
     def make_frame(t):
-        fr = _fit_cover(src.get_frame(min(t, last_t))).astype(np.float32)
+        fr = src.get_frame(min(t, last_t))
+        if box:
+            x0, y0, x1, y1 = box
+            fr = fr[y0:y1, x0:x1]
+        fr = _fit_cover(np.ascontiguousarray(fr)).astype(np.float32)
         k = alpha * _ease_out(t / 0.5)
         return (fr * (1 - k) + rgb * k).astype(np.uint8)
 
