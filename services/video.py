@@ -11,6 +11,7 @@ import os
 import re
 import random
 import logging
+from functools import lru_cache
 from pathlib import Path
 from datetime import datetime
 
@@ -19,6 +20,11 @@ from typing import List, Optional
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
+
+try:  # OpenCV varsa Ken Burns ~6 kat hızlı; yoksa Pillow'a düşer
+    import cv2
+except ImportError:  # pragma: no cover
+    cv2 = None
 from moviepy.editor import (
     VideoClip, AudioFileClip, CompositeAudioClip,
     concatenate_audioclips, concatenate_videoclips
@@ -50,8 +56,10 @@ _FONT_CANDIDATES = [
 ]
 
 
+@lru_cache(maxsize=64)
 def _get_font(size: int):
-    """İlk bulunan uygun fontu döner."""
+    """İlk bulunan uygun fontu döner. Önbellekli: her karede diskten
+    yeniden okumak render'ı ciddi yavaşlatıyordu."""
     for path in _FONT_CANDIDATES:
         if os.path.exists(path):
             try:
@@ -84,10 +92,24 @@ def _ken_burns(img: Image.Image, t: float, duration: float,
     }
     cx, cy = dirs.get(direction, (0.5, 0.45))
     nw, nh = int(W * zoom), int(H * zoom)
-    zoomed = img.resize((nw, nh), Image.LANCZOS)
     left = max(0, min(int(cx * nw - W / 2), nw - W))
     top = max(0, min(int(cy * nh - H / 2), nh - H))
-    return np.array(zoomed.crop((left, top, left + W, top + H)))
+    # Tüm görseli büyütüp kırpmak yerine kaynaktaki ilgili bölgeyi tek
+    # adımda W×H'ye büyüt (aynı kadraj, çok daha hızlı)
+    if isinstance(img, np.ndarray):
+        ih, iw = img.shape[:2]
+    else:
+        iw, ih = img.size
+    kx, ky = nw / iw, nh / ih
+    if cv2 is not None:
+        arr = img if isinstance(img, np.ndarray) else np.asarray(img)
+        m = np.float32([[kx, 0, -left], [0, ky, -top]])
+        return cv2.warpAffine(arr, m, (W, H), flags=cv2.INTER_LINEAR,
+                              borderMode=cv2.BORDER_REPLICATE)
+    if isinstance(img, np.ndarray):
+        img = Image.fromarray(img)
+    box = (left / kx, top / ky, (left + W) / kx, (top + H) / ky)
+    return np.array(img.resize((W, H), Image.BILINEAR, box=box))
 
 
 def _wrap_text(draw, text: str, font, max_w: int) -> list:
@@ -129,33 +151,35 @@ def _first_sentence(text: str, max_chars: int = 70) -> str:
     return cut.rstrip(" ,;:") + "..."
 
 
-def _add_text_overlay(frame_arr, t: float, text: str, seg_dur: float,
-                      accent_hex: str, sign_name: str = "",
-                      section_label: str = "", seg_idx: int = 0,
-                      total: int = 1, show_header: bool = False) -> np.ndarray:
-    """Video karesine metin overlay'i ekler."""
-    img = Image.fromarray(frame_arr).convert("RGBA")
+def _scaled_alpha(layer: Image.Image, alpha: float) -> Image.Image:
+    """RGBA katmanın saydamlığını alpha (0-1) ile çarpar."""
+    if alpha >= 0.999:
+        return layer
+    out = layer.copy()
+    out.putalpha(layer.getchannel("A").point(lambda a: int(a * alpha)))
+    return out
+
+
+@lru_cache(maxsize=8)
+def _text_layers(text: str, accent_hex: str, sign_name: str,
+                 section_label: str, seg_idx: int, total: int,
+                 show_header: bool):
+    """Bir segmentin yazı katmanlarını tam görünürlükte (alpha=1) bir kez
+    çizer. Dönüş: (sabit katman, (ana metin katmanı, x, y)).
+    Her karede yeniden çizmek yerine bunlar saydamlığı ayarlanarak
+    kullanılır."""
     overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
     ac = _hex_to_rgb(accent_hex)
 
-    fi = _ease_out(t / 0.5)
-    fo = _ease_out((seg_dur - t) / 0.4) if t > seg_dur - 0.4 else 1.0
-    alpha = min(fi, fo)
-
     # Alt gradient (metin okunurluğu için)
     for y in range(400):
-        a = int(190 * _ease_out(1 - y / 400) * alpha)
+        a = int(190 * _ease_out(1 - y / 400))
         draw.line([(0, H - 400 + y), (W, H - 400 + y)], fill=(0, 0, 0, a))
     # Üst gradient
     for y in range(220):
-        a = int(170 * _ease_out(1 - y / 220) * alpha)
+        a = int(170 * _ease_out(1 - y / 220))
         draw.line([(0, y), (W, y)], fill=(0, 0, 0, a))
-
-    # Alt accent çizgi
-    bw = int(W * alpha)
-    draw.rectangle([(W - bw) // 2, H - 6, (W + bw) // 2, H],
-                   fill=(*ac, int(255 * alpha)))
 
     # İlerleme noktaları
     sp = 30
@@ -165,11 +189,10 @@ def _add_text_overlay(frame_arr, t: float, text: str, seg_dur: float,
     for i in range(total):
         cx = sx + i * sp + sp // 2
         if i == seg_idx:
-            draw.ellipse([cx - 8, dy - 8, cx + 8, dy + 8],
-                         fill=(*ac, int(255 * alpha)))
+            draw.ellipse([cx - 8, dy - 8, cx + 8, dy + 8], fill=(*ac, 255))
         else:
             draw.ellipse([cx - 4, dy - 4, cx + 4, dy + 4],
-                         fill=(180, 180, 180, int(80 * alpha)))
+                         fill=(180, 180, 180, 80))
 
     # Bölüm etiketi (💕 Aşk, 💼 Kariyer vb)
     if section_label and section_label.strip():
@@ -180,55 +203,11 @@ def _add_text_overlay(frame_arr, t: float, text: str, seg_dur: float,
         sy2 = 260
         draw.rounded_rectangle(
             [sx2 - 28, sy2 - 12, sx2 + sw + 28, sy2 + 56],
-            radius=30, fill=(0, 0, 0, int(180 * alpha)),
-            outline=(*ac, int(220 * alpha)), width=3
+            radius=30, fill=(0, 0, 0, 180),
+            outline=(*ac, 220), width=3
         )
         draw.text((sx2, sy2), section_label, font=sf,
-                  fill=(255, 245, 220, int(250 * alpha)))
-
-    # Ana metin (ortalanmış) — mobilde okunaklı, kenarlardan taşmayan
-    slide = int(25 * (1 - _ease_out(t / 0.4)))
-
-    # Otomatik boyut ayarı — uzun metinleri sığdırmak için
-    # Kenarlardan 110px boşluk (her iki yan)
-    max_w = W - 220   # 1080 - 220 = 860px güvenli alan
-    font_size = 54
-    mfont = _get_font(font_size)
-    lines = _wrap_text(draw, text, mfont, max_w)
-
-    # Çok uzunsa font'u küçült
-    while len(lines) > 4 and font_size > 38:
-        font_size -= 4
-        mfont = _get_font(font_size)
-        lines = _wrap_text(draw, text, mfont, max_w)
-
-    # Hala 5+ satırsa son çare: 36'ya kadar küçült
-    while len(lines) > 5 and font_size > 32:
-        font_size -= 2
-        mfont = _get_font(font_size)
-        lines = _wrap_text(draw, text, mfont, max_w)
-
-    lh = int(font_size * 1.35)
-    th = len(lines) * lh
-    ty = (H // 2) - th // 2 + 100 + slide
-
-    # Outline kalınlığını font boyutuna göre ayarla
-    outline_offsets = [(-4, -4), (4, -4), (-4, 4), (4, 4),
-                       (0, -5), (0, 5), (-5, 0), (5, 0)]
-    if font_size <= 42:
-        outline_offsets = [(-3, -3), (3, -3), (-3, 3), (3, 3),
-                           (0, -3), (0, 3), (-3, 0), (3, 0)]
-
-    for line in lines:
-        bb = draw.textbbox((0, 0), line, font=mfont)
-        lw = bb[2]
-        x = (W - lw) // 2
-        for ox, oy in outline_offsets:
-            draw.text((x + ox, ty + oy), line, font=mfont,
-                      fill=(0, 0, 0, int(230 * alpha)))
-        draw.text((x, ty), line, font=mfont,
-                  fill=(255, 252, 240, int(255 * alpha)))
-        ty += lh
+                  fill=(255, 245, 220, 250))
 
     # İlk segmentte burç adı + tarih başlığı
     if show_header and sign_name:
@@ -257,9 +236,8 @@ def _add_text_overlay(frame_arr, t: float, text: str, seg_dur: float,
             tx = (W - lw) // 2
             for ox, oy in [(-3, -3), (3, -3), (-3, 3), (3, 3)]:
                 draw.text((tx + ox, ty2 + oy), line, font=tf,
-                          fill=(0, 0, 0, int(220 * alpha)))
-            draw.text((tx, ty2), line, font=tf,
-                      fill=(*ac, int(245 * alpha)))
+                          fill=(0, 0, 0, 220))
+            draw.text((tx, ty2), line, font=tf, fill=(*ac, 245))
             ty2 += line_h2
 
         datestr = tr_date()
@@ -268,11 +246,107 @@ def _add_text_overlay(frame_arr, t: float, text: str, seg_dur: float,
         dw = db[2]
         dx = (W - dw) // 2
         dy_d = ty2 + 22
-        draw.text((dx, dy_d), datestr, font=df,
-                  fill=(220, 220, 220, int(200 * alpha)))
+        draw.text((dx, dy_d), datestr, font=df, fill=(220, 220, 220, 200))
 
-    result = Image.alpha_composite(img, overlay)
-    return np.array(result.convert("RGB"))
+    # Ana metin (ortalanmış) — ayrı katman, çünkü girişte kayarak geliyor
+    text_layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    tdraw = ImageDraw.Draw(text_layer)
+
+    # Otomatik boyut ayarı — uzun metinleri sığdırmak için
+    # Kenarlardan 110px boşluk (her iki yan)
+    max_w = W - 220   # 1080 - 220 = 860px güvenli alan
+    font_size = 54
+    mfont = _get_font(font_size)
+    lines = _wrap_text(tdraw, text, mfont, max_w)
+
+    # Çok uzunsa font'u küçült
+    while len(lines) > 4 and font_size > 38:
+        font_size -= 4
+        mfont = _get_font(font_size)
+        lines = _wrap_text(tdraw, text, mfont, max_w)
+
+    # Hala 5+ satırsa son çare: 36'ya kadar küçült
+    while len(lines) > 5 and font_size > 32:
+        font_size -= 2
+        mfont = _get_font(font_size)
+        lines = _wrap_text(tdraw, text, mfont, max_w)
+
+    lh = int(font_size * 1.35)
+    th = len(lines) * lh
+    ty = (H // 2) - th // 2 + 100
+
+    # Outline kalınlığını font boyutuna göre ayarla
+    outline_offsets = [(-4, -4), (4, -4), (-4, 4), (4, 4),
+                       (0, -5), (0, 5), (-5, 0), (5, 0)]
+    if font_size <= 42:
+        outline_offsets = [(-3, -3), (3, -3), (-3, 3), (3, 3),
+                           (0, -3), (0, 3), (-3, 0), (3, 0)]
+
+    for line in lines:
+        bb = tdraw.textbbox((0, 0), line, font=mfont)
+        lw = bb[2]
+        x = (W - lw) // 2
+        for ox, oy in outline_offsets:
+            tdraw.text((x + ox, ty + oy), line, font=mfont,
+                       fill=(0, 0, 0, 230))
+        tdraw.text((x, ty), line, font=mfont, fill=(255, 252, 240, 255))
+        ty += lh
+
+    # Sadece metnin kapladığı bölgeyi sakla (kaydırma ucuz olsun)
+    bbox = text_layer.getbbox()
+    if bbox:
+        text_part = (text_layer.crop(bbox), bbox[0], bbox[1])
+    else:
+        text_part = None
+    return overlay, text_part
+
+
+def _add_text_overlay(frame_arr, t: float, text: str, seg_dur: float,
+                      accent_hex: str, sign_name: str = "",
+                      section_label: str = "", seg_idx: int = 0,
+                      total: int = 1, show_header: bool = False) -> np.ndarray:
+    """Video karesine metin overlay'i ekler (numpy giriş/çıkış)."""
+    img = Image.fromarray(frame_arr).convert("RGBA")
+    _apply_text_overlay(img, t, text, seg_dur, accent_hex, sign_name,
+                        section_label, seg_idx, total, show_header)
+    return np.array(img.convert("RGB"))
+
+
+def _apply_text_overlay(img: Image.Image, t: float, text: str,
+                        seg_dur: float, accent_hex: str, sign_name: str = "",
+                        section_label: str = "", seg_idx: int = 0,
+                        total: int = 1, show_header: bool = False):
+    """RGBA kareye yazı katmanlarını yerinde uygular. Katmanlar segment
+    başına bir kez çizilir (_text_layers); burada sadece saydamlık ve
+    kayma uygulanır."""
+    ac = _hex_to_rgb(accent_hex)
+
+    fi = _ease_out(t / 0.5)
+    fo = _ease_out((seg_dur - t) / 0.4) if t > seg_dur - 0.4 else 1.0
+    alpha = min(fi, fo)
+    if alpha <= 0:
+        return
+
+    static_layer, text_part = _text_layers(
+        text, accent_hex, sign_name, section_label, seg_idx, total,
+        show_header)
+    img.alpha_composite(_scaled_alpha(static_layer, alpha))
+
+    # Alt accent çizgi — genişliği alpha ile büyür
+    bw = int(W * alpha)
+    if bw > 0:
+        bar = Image.new("RGBA", (min(bw + 1, W), 6),
+                        (*ac, int(255 * alpha)))
+        img.alpha_composite(bar, dest=((W - bw) // 2, H - 6))
+
+    # Ana metin — girişte 25px aşağıdan kayarak gelir
+    if text_part:
+        layer, x, y = text_part
+        slide = int(25 * (1 - _ease_out(t / 0.4)))
+        dest_y = y + slide
+        if dest_y + layer.height > H:
+            layer = layer.crop((0, 0, layer.width, H - dest_y))
+        img.alpha_composite(_scaled_alpha(layer, alpha), dest=(x, dest_y))
 
 
 def _add_lucky_bar(frame_arr, t: float, duration: float, accent_hex: str,
@@ -286,15 +360,44 @@ def _add_lucky_bar(frame_arr, t: float, duration: float, accent_hex: str,
     """
     if not card:
         return frame_arr
-
     img = Image.fromarray(frame_arr).convert("RGBA")
-    overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(overlay)
-    ac = _hex_to_rgb(accent_hex)
+    _apply_lucky_bar(img, t, duration, accent_hex, card)
+    return np.array(img.convert("RGB"))
 
+
+def _apply_lucky_bar(img: Image.Image, t: float, duration: float,
+                     accent_hex: str, card: dict):
+    """RGBA kareye şanslı kart katmanını yerinde uygular."""
+    if not card:
+        return
     fi = _ease_out(t / 0.6)
     fo = _ease_out((duration - t) / 0.4) if t > duration - 0.4 else 1.0
     alpha = min(fi, fo)
+    if alpha <= 0:
+        return
+
+    key = (repr(sorted(card.items())), accent_hex)
+    part = _LUCKY_CACHE.get(key)
+    if part is None:
+        if len(_LUCKY_CACHE) > 8:
+            _LUCKY_CACHE.clear()
+        part = _LUCKY_CACHE[key] = _draw_lucky_layer(card, accent_hex)
+    if part is None:
+        return
+
+    layer, x, y = part
+    img.alpha_composite(_scaled_alpha(layer, alpha), dest=(x, y))
+
+
+# Şanslı kart katmanı önbelleği: (kart, renk) → (katman, x, y)
+_LUCKY_CACHE: dict = {}
+
+
+def _draw_lucky_layer(card: dict, accent_hex: str):
+    """Kartı tam görünürlükte bir kez çizer; kırpılmış katman döner."""
+    overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    ac = _hex_to_rgb(accent_hex)
 
     card_type = card.get("type", "triple")
 
@@ -309,8 +412,8 @@ def _add_lucky_bar(frame_arr, t: float, duration: float, accent_hex: str,
         card_h = 260
         draw.rounded_rectangle(
             [60, card_y, W - 60, card_y + card_h],
-            radius=24, fill=(0, 0, 0, int(200 * alpha)),
-            outline=(*ac, int(200 * alpha)), width=3
+            radius=24, fill=(0, 0, 0, 200),
+            outline=(*ac, 200), width=3
         )
         col_w = (W - 120) // 3
         lf = _get_font(24)
@@ -320,14 +423,14 @@ def _add_lucky_bar(frame_arr, t: float, duration: float, accent_hex: str,
             cx = 60 + col_w * i + col_w // 2
             lb = draw.textbbox((0, 0), str(label), font=lf)
             draw.text((cx - lb[2] // 2, card_y + 40), str(label), font=lf,
-                      fill=(200, 200, 200, int(230 * alpha)))
+                      fill=(200, 200, 200, 230))
             vb = draw.textbbox((0, 0), str(val), font=vf)
             draw.text((cx - vb[2] // 2, card_y + 100), str(val), font=vf,
-                      fill=(*ac, int(250 * alpha)))
+                      fill=(*ac, 250))
             if i < 2:
                 dx = 60 + col_w * (i + 1)
                 draw.line([(dx, card_y + 40), (dx, card_y + card_h - 40)],
-                          fill=(*ac, int(120 * alpha)), width=2)
+                          fill=(*ac, 120), width=2)
     elif card_type == "single":
         # Tek büyük mesaj (motivasyon)
         label = str(card.get("label", ""))
@@ -336,15 +439,15 @@ def _add_lucky_bar(frame_arr, t: float, duration: float, accent_hex: str,
         card_h = 260
         draw.rounded_rectangle(
             [60, card_y, W - 60, card_y + card_h],
-            radius=24, fill=(0, 0, 0, int(210 * alpha)),
-            outline=(*ac, int(220 * alpha)), width=3
+            radius=24, fill=(0, 0, 0, 210),
+            outline=(*ac, 220), width=3
         )
         # Label üstte
         lf = _get_font(24)
         lb = draw.textbbox((0, 0), label, font=lf)
         lx = (W - lb[2]) // 2
         draw.text((lx, card_y + 30), label, font=lf,
-                  fill=(*ac, int(230 * alpha)))
+                  fill=(*ac, 230))
         # Value altta, wrap ile
         vf = _get_font(34)
         lines = _wrap_text(draw, value, vf, W - 180)[:3]
@@ -355,11 +458,13 @@ def _add_lucky_bar(frame_arr, t: float, duration: float, accent_hex: str,
             lb = draw.textbbox((0, 0), line, font=vf)
             lx = (W - lb[2]) // 2
             draw.text((lx, ty), line, font=vf,
-                      fill=(255, 245, 220, int(250 * alpha)))
+                      fill=(255, 245, 220, 250))
             ty += lh
 
-    result = Image.alpha_composite(img, overlay)
-    return np.array(result.convert("RGB"))
+    bbox = overlay.getbbox()
+    if not bbox:
+        return None
+    return overlay.crop(bbox), bbox[0], bbox[1]
 
 
 def _make_intro_clip(duration: float, sign_name: str, sign_symbol: str,
@@ -722,7 +827,7 @@ def render_video(content: dict, output_path: str,
     clips = []
 
     for i, seg in enumerate(segments):
-        img_arr = np.array(images[i])
+        img_src = np.asarray(images[i].convert("RGB"))
         zoom_in = (i % 2 == 0)
         direction = dirs[i % len(dirs)]
         show_hdr = (i == 0)
@@ -733,14 +838,15 @@ def render_video(content: dict, output_path: str,
             section_label = ""
         is_last = (i == len(segments) - 1)
 
-        def make_frame(t, _img=img_arr, _txt=narration_text, _sd=sd,
+        def make_frame(t, _img=img_src, _txt=narration_text, _sd=sd,
                        _zi=zoom_in, _dir=direction, _i=i, _sh=show_hdr,
                        _sec=section_label, _last=is_last,
                        _card=lucky_card, _ln=lucky_num,
                        _lc=lucky_col, _cp=compat):
-            frame = _ken_burns(Image.fromarray(_img), t, _sd, _zi, _dir)
-            frame = _add_text_overlay(
-                frame, t, _txt, _sd, accent,
+            img = Image.fromarray(
+                _ken_burns(_img, t, _sd, _zi, _dir)).convert("RGBA")
+            _apply_text_overlay(
+                img, t, _txt, _sd, accent,
                 sign_name=sign_name if _sh else "",
                 section_label=_sec,
                 seg_idx=_i, total=len(segments),
@@ -756,8 +862,8 @@ def render_video(content: dict, output_path: str,
                         "col3": ("UYUMLU BURÇ", _cp),
                     }
                 if card:
-                    frame = _add_lucky_bar(frame, t, _sd, accent, card=card)
-            return frame
+                    _apply_lucky_bar(img, t, _sd, accent, card)
+            return np.array(img.convert("RGB"))
 
         aclip = seg_audio_clips[i]
         fade_dur = min(0.5, aclip.duration * 0.15)
