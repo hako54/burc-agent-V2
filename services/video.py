@@ -30,6 +30,8 @@ from moviepy.editor import (
     concatenate_audioclips, concatenate_videoclips
 )
 
+from services.emoji_text import (draw_text, text_width, is_emoji_only,
+                                 emoji_image, paste_image)
 from services.images import fetch_image_urls, download_and_prepare, create_fallback_image
 from services.tts import generate_tts
 
@@ -117,7 +119,7 @@ def _wrap_text(draw, text: str, font, max_w: int) -> list:
     lines, cur = [], ""
     for w in words:
         test = (cur + " " + w).strip()
-        if draw.textbbox((0, 0), test, font=font)[2] > max_w and cur:
+        if text_width(draw, test, font) > max_w and cur:
             lines.append(cur)
             cur = w
         else:
@@ -197,8 +199,7 @@ def _text_layers(text: str, accent_hex: str, sign_name: str,
     # Bölüm etiketi (💕 Aşk, 💼 Kariyer vb)
     if section_label and section_label.strip():
         sf = _get_font(40)
-        sb = draw.textbbox((0, 0), section_label, font=sf)
-        sw = sb[2]
+        sw = text_width(draw, section_label, sf)
         sx2 = (W - sw) // 2
         sy2 = 260
         draw.rounded_rectangle(
@@ -206,8 +207,8 @@ def _text_layers(text: str, accent_hex: str, sign_name: str,
             radius=30, fill=(0, 0, 0, 180),
             outline=(*ac, 220), width=3
         )
-        draw.text((sx2, sy2), section_label, font=sf,
-                  fill=(255, 245, 220, 250))
+        draw_text(overlay, draw, (sx2, sy2), section_label, sf,
+                  (255, 245, 220, 250))
 
     # İlk segmentte burç adı + tarih başlığı
     if show_header and sign_name:
@@ -215,13 +216,11 @@ def _text_layers(text: str, accent_hex: str, sign_name: str,
         max_header_w = W - 200
         tf_size = 46
         tf = _get_font(tf_size)
-        tb = draw.textbbox((0, 0), sign_name, font=tf)
-        tw2 = tb[2]
+        tw2 = text_width(draw, sign_name, tf)
         while tw2 > max_header_w and tf_size > 30:
             tf_size -= 4
             tf = _get_font(tf_size)
-            tb = draw.textbbox((0, 0), sign_name, font=tf)
-            tw2 = tb[2]
+            tw2 = text_width(draw, sign_name, tf)
         # Hala sığmıyorsa wrap et
         if tw2 > max_header_w:
             header_lines = _wrap_text(draw, sign_name, tf, max_header_w)
@@ -231,13 +230,12 @@ def _text_layers(text: str, accent_hex: str, sign_name: str,
         ty2 = 80
         line_h2 = int(tf_size * 1.15)
         for line in header_lines:
-            lb = draw.textbbox((0, 0), line, font=tf)
-            lw = lb[2]
+            lw = text_width(draw, line, tf)
             tx = (W - lw) // 2
             for ox, oy in [(-3, -3), (3, -3), (-3, 3), (3, 3)]:
-                draw.text((tx + ox, ty2 + oy), line, font=tf,
-                          fill=(0, 0, 0, 220))
-            draw.text((tx, ty2), line, font=tf, fill=(*ac, 245))
+                draw_text(overlay, draw, (tx + ox, ty2 + oy), line, tf,
+                          (0, 0, 0, 220), emoji=False)
+            draw_text(overlay, draw, (tx, ty2), line, tf, (*ac, 245))
             ty2 += line_h2
 
         datestr = tr_date()
@@ -283,13 +281,13 @@ def _text_layers(text: str, accent_hex: str, sign_name: str,
                            (0, -3), (0, 3), (-3, 0), (3, 0)]
 
     for line in lines:
-        bb = tdraw.textbbox((0, 0), line, font=mfont)
-        lw = bb[2]
+        lw = text_width(tdraw, line, mfont)
         x = (W - lw) // 2
         for ox, oy in outline_offsets:
-            tdraw.text((x + ox, ty + oy), line, font=mfont,
-                       fill=(0, 0, 0, 230))
-        tdraw.text((x, ty), line, font=mfont, fill=(255, 252, 240, 255))
+            draw_text(text_layer, tdraw, (x + ox, ty + oy), line, mfont,
+                      (0, 0, 0, 230), emoji=False)
+        draw_text(text_layer, tdraw, (x, ty), line, mfont,
+                  (255, 252, 240, 255))
         ty += lh
 
     # Sadece metnin kapladığı bölgeyi sakla (kaydırma ucuz olsun)
@@ -542,31 +540,38 @@ def _make_intro_clip(duration: float, sign_name: str, sign_symbol: str,
 
         # Burç sembolü (büyük)
         sf = _get_font(360)
-        sb = d.textbbox((0, 0), sign_symbol, font=sf)
-        sw = sb[2] - sb[0]
-        sh = sb[3] - sb[1]
         scale = 0.9 + 0.1 * _ease_out(min(1.0, t / 0.6))
-        sx = (W - int(sw * scale)) // 2 - sb[0]
-        sy = H // 2 - int(sh * scale) // 2 - sb[1] - 80
-        for ox, oy in [(-6, -6), (6, -6), (-6, 6), (6, 6), (0, -8), (0, 8)]:
-            d.text((sx + ox, sy + oy), sign_symbol, font=sf,
-                   fill=(*ac, int(80 * alpha)))
-        d.text((sx, sy), sign_symbol, font=sf,
-               fill=(*ac, int(250 * alpha)))
+        if sign_symbol and is_emoji_only(sign_symbol, sf):
+            # Renkli emoji (örn. motivasyon kategorisi 🏆) — fontta yok
+            em = emoji_image(sign_symbol, int(300 * scale))
+            if em is not None:
+                paste_image(ov, em, ((W - em.width) // 2,
+                                     H // 2 - em.height // 2 - 80),
+                            alpha=alpha)
+        elif sign_symbol:
+            sb = d.textbbox((0, 0), sign_symbol, font=sf)
+            sw = sb[2] - sb[0]
+            sh = sb[3] - sb[1]
+            sx = (W - int(sw * scale)) // 2 - sb[0]
+            sy = H // 2 - int(sh * scale) // 2 - sb[1] - 80
+            for ox, oy in [(-6, -6), (6, -6), (-6, 6), (6, 6),
+                           (0, -8), (0, 8)]:
+                d.text((sx + ox, sy + oy), sign_symbol, font=sf,
+                       fill=(*ac, int(80 * alpha)))
+            d.text((sx, sy), sign_symbol, font=sf,
+                   fill=(*ac, int(250 * alpha)))
 
         # Burç adı / kategori adı / başlık — otomatik boyut ayarı
         # Mobilde sığması için max genişliği kontrol et, sığmazsa küçült
         max_text_w = W - 200  # her iki yanda 100px güvenli boşluk
         nf_size = 88
         nf = _get_font(nf_size)
-        nb = d.textbbox((0, 0), sign_name, font=nf)
-        nw = nb[2]
+        nw = text_width(d, sign_name, nf)
         # Sığmıyorsa font'u küçült
         while nw > max_text_w and nf_size > 40:
             nf_size -= 6
             nf = _get_font(nf_size)
-            nb = d.textbbox((0, 0), sign_name, font=nf)
-            nw = nb[2]
+            nw = text_width(d, sign_name, nf)
         # Hala sığmıyorsa wrap et (çok uzun başlık için)
         if nw > max_text_w:
             lines = _wrap_text(d, sign_name, nf, max_text_w)
@@ -580,14 +585,13 @@ def _make_intro_clip(duration: float, sign_name: str, sign_symbol: str,
         if len(lines) > 1:
             ny -= (len(lines) - 1) * line_h // 2
         for line in lines:
-            lb = d.textbbox((0, 0), line, font=nf)
-            lw = lb[2]
+            lw = text_width(d, line, nf)
             lx = (W - lw) // 2
             for ox, oy in [(-3, -3), (3, -3), (-3, 3), (3, 3)]:
-                d.text((lx + ox, ny + oy), line, font=nf,
-                       fill=(0, 0, 0, int(200 * alpha)))
-            d.text((lx, ny), line, font=nf,
-                   fill=(255, 245, 220, int(250 * alpha)))
+                draw_text(ov, d, (lx + ox, ny + oy), line, nf,
+                          (0, 0, 0, int(200 * alpha)), emoji=False)
+            draw_text(ov, d, (lx, ny), line, nf,
+                      (255, 245, 220, int(250 * alpha)))
             ny += line_h
         # Tarih için ny'yi en son satırın altına ayarla
         ny = ny - line_h + nf_size + 40
@@ -674,12 +678,11 @@ def _make_outro_clip(duration: float, sign_name: str,
 
         nf = _get_font(36)
         name_up = tr_upper(sign_name)
-        nb = d.textbbox((0, 0), name_up, font=nf)
-        nw = nb[2]
+        nw = text_width(d, name_up, nf)
         nx = (W - nw) // 2
         ny = sy + 110
-        d.text((nx, ny), name_up, font=nf,
-               fill=(200, 200, 200, int(220 * alpha)))
+        draw_text(ov, d, (nx, ny), name_up, nf,
+                  (200, 200, 200, int(220 * alpha)))
 
         result = Image.alpha_composite(img, ov)
         return np.array(result.convert("RGB"))
