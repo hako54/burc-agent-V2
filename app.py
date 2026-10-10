@@ -123,6 +123,30 @@ def health():
 
 # ── Kanal Yönetimi API ────────────────────────────────────────────
 
+@app.route("/api/presenter")
+def presenter_status():
+    """AI astrolog sunucu durumu + HeyGen'deki fotoğraf avatarları
+    (HEYGEN_PRESENTER_AVATAR_ID için id seçmek amacıyla)."""
+    from services import presenter
+    info = {
+        "enabled": presenter.enabled(),
+        "has_api_key": bool(os.environ.get("HEYGEN_API_KEY")),
+        "avatar_id": presenter.avatar_id() or None,
+        "switch_on": presenter._flag("ZODIAC_PRESENTER"),
+        "avatar_iv": presenter._flag("HEYGEN_PRESENTER_AVATAR_IV"),
+    }
+    if info["has_api_key"]:
+        try:
+            info["talking_photos"] = presenter.list_talking_photos()
+        except Exception as e:
+            info["talking_photos_error"] = str(e)[:300]
+        try:
+            info["avatar_groups"] = presenter.list_avatar_groups()
+        except Exception as e:
+            info["avatar_groups_error"] = str(e)[:300]
+    return jsonify(info)
+
+
 @app.route("/api/channels")
 def api_channels():
     """Tüm kanalları listele."""
