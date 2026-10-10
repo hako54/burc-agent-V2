@@ -450,7 +450,11 @@ def _draw_dramatic_text(img: Image.Image, text: str,
         lines = _wrap_text(draw, text, font, max_w)
         line_h = int(font_size * 1.05)
         total_h = line_h * len(lines)
-        if total_h <= ih * 0.6 and len(lines) <= 3:
+        # Tek uzun kelime (örn. "SÜKÛNETİN") satıra bölünemez; her satır
+        # gerçekten sığana kadar küçült, yoksa kenarlardan taşıyordu
+        fits = all(draw.textbbox((0, 0), ln, font=font)[2] <= max_w
+                   for ln in lines)
+        if total_h <= ih * 0.6 and len(lines) <= 3 and fits:
             break
         font_size -= 10
         font = _get_font(font_size)

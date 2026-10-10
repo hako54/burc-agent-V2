@@ -502,7 +502,12 @@ def _make_intro_clip(duration: float, sign_name: str, sign_symbol: str,
             log.warning(f"Intro face image yüklenemedi: {e}, fallback gradient")
             face_image_path = None  # fallback'e düş
 
-    if not (face_image_path and os.path.exists(face_image_path)):
+    # Arka plan görseli (Söz/motivasyon dikey kapağı) zaten büyük başlık
+    # içeriyor; ortaya ayrıca sembol çizmek o başlığı kapatıyordu.
+    has_face_bg = bool(face_image_path and os.path.exists(face_image_path))
+    draw_symbol = bool(sign_symbol) and not has_face_bg
+
+    if not has_face_bg:
         # Klasik gradient + halo
         base = Image.new("RGB", (W, H))
         draw = ImageDraw.Draw(base)
@@ -541,14 +546,14 @@ def _make_intro_clip(duration: float, sign_name: str, sign_symbol: str,
         # Burç sembolü (büyük)
         sf = _get_font(360)
         scale = 0.9 + 0.1 * _ease_out(min(1.0, t / 0.6))
-        if sign_symbol and is_emoji_only(sign_symbol, sf):
+        if draw_symbol and is_emoji_only(sign_symbol, sf):
             # Renkli emoji (örn. motivasyon kategorisi 🏆) — fontta yok
             em = emoji_image(sign_symbol, int(300 * scale))
             if em is not None:
                 paste_image(ov, em, ((W - em.width) // 2,
                                      H // 2 - em.height // 2 - 80),
                             alpha=alpha)
-        elif sign_symbol:
+        elif draw_symbol:
             sb = d.textbbox((0, 0), sign_symbol, font=sf)
             sw = sb[2] - sb[0]
             sh = sb[3] - sb[1]
