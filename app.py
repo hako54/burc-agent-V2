@@ -412,18 +412,14 @@ def api_channel_batch(channel_id):
     group_type = data.get("group", "today")
     require_approval = bool(data.get("require_approval", False))
 
-    from zodiac import (get_todays_group, GROUP_EVEN_DAYS,
-                        GROUP_ODD_DAYS, all_sign_keys)
-    from datetime import datetime as _dt, timedelta
+    from zodiac import get_todays_group, group_for_date, all_sign_keys
+    from datetime import timedelta
 
     if group_type == "today":
         topic_keys = get_todays_group()
         label = "Bugünün 6 burcu"
     elif group_type == "tomorrow":
-        # Yarın çift mi tek mi?
-        tomorrow_day = (now_local() + timedelta(days=1)).day
-        topic_keys = (GROUP_EVEN_DAYS if tomorrow_day % 2 == 0
-                      else GROUP_ODD_DAYS)
+        topic_keys = group_for_date(now_local() + timedelta(days=1))
         label = "Yarının 6 burcu"
     elif group_type == "all":
         topic_keys = all_sign_keys()
@@ -470,16 +466,14 @@ def api_channel_batch(channel_id):
 @app.route("/api/<channel_id>/group-info")
 def api_channel_group_info(channel_id):
     """Bugün/yarın hangi grup üretiliyor öğren."""
-    from zodiac import (get_todays_group, GROUP_EVEN_DAYS,
-                        GROUP_ODD_DAYS, get_sign)
-    from datetime import datetime as _dt, timedelta
+    from zodiac import group_for_date, group_label, get_sign
+    from datetime import timedelta
 
     today = now_local()
     tomorrow = today + timedelta(days=1)
 
-    today_group = get_todays_group()
-    tomorrow_keys = (GROUP_EVEN_DAYS if tomorrow.day % 2 == 0
-                     else GROUP_ODD_DAYS)
+    today_group = group_for_date(today)
+    tomorrow_keys = group_for_date(tomorrow)
 
     def keys_to_meta(keys):
         return [
@@ -491,13 +485,13 @@ def api_channel_group_info(channel_id):
     return jsonify({
         "today": {
             "date": tr_date(today),
-            "day_type": "ÇİFT" if today.day % 2 == 0 else "TEK",
+            "day_type": group_label(today),
             "keys": today_group,
             "topics": keys_to_meta(today_group),
         },
         "tomorrow": {
             "date": tr_date(tomorrow),
-            "day_type": "ÇİFT" if tomorrow.day % 2 == 0 else "TEK",
+            "day_type": group_label(tomorrow),
             "keys": tomorrow_keys,
             "topics": keys_to_meta(tomorrow_keys),
         },

@@ -195,17 +195,40 @@ def all_sign_keys() -> list:
 
 
 # ── Gün aşırı rotasyon grupları ────────────────────────────────────
+from datetime import date, datetime  # noqa: E402
 # YouTube günlük quota sınırı (~10.000/gün, 1 video ≈ 1.600 quota) nedeniyle
 # 12 burcun hepsini aynı gün yayınlayamıyoruz. Bu yüzden iki gruba böldük:
 GROUP_EVEN_DAYS = ["koc", "boga", "ikizler", "yengec", "aslan", "basak"]
 GROUP_ODD_DAYS = ["terazi", "akrep", "yay", "oglak", "kova", "balik"]
 
 
+# Gruplar her gün sırayla değişir. Eskiden ayın günü tek/çift diye
+# seçiliyordu; 31 → 1 geçişinde (ikisi de tek) aynı grup iki gün üst üste
+# yayınlanıp diğeri atlanıyordu. Artık sabit bir referans günden bu yana
+# geçen gün sayısına bakılıyor. Referans: 10 Ekim 2026 = Koç → Başak
+# (değişiklik anındaki takvim bozulmasın diye bu gün seçildi).
+_GROUP_ANCHOR = date(2026, 10, 10)
+
+
+def _as_date(d) -> date:
+    return d.date() if isinstance(d, datetime) else d
+
+
+def group_for_date(d) -> list:
+    """Verilen gün (date veya datetime) için yayınlanacak 6 burç."""
+    days = (_as_date(d) - _GROUP_ANCHOR).days
+    return GROUP_EVEN_DAYS if days % 2 == 0 else GROUP_ODD_DAYS
+
+
+def group_label(d) -> str:
+    """Kullanıcıya gösterilecek grup adı: 'Koç → Başak' gibi."""
+    group = group_for_date(d)
+    return f"{ZODIAC_SIGNS[group[0]]['name']} → " \
+           f"{ZODIAC_SIGNS[group[-1]]['name']}"
+
+
 def get_todays_group() -> list:
-    """Bugünün günü tek mi çift mi → ona göre 6 burç döner.
-    Çift günler (2, 4, 6...): Koç → Başak
-    Tek günler (1, 3, 5...): Terazi → Balık"""
+    """Bugün (TIMEZONE'a göre) yayınlanacak 6 burç."""
     from services.tr_locale import now_local
-    day = now_local().day
-    return GROUP_EVEN_DAYS if day % 2 == 0 else GROUP_ODD_DAYS
+    return group_for_date(now_local())
 

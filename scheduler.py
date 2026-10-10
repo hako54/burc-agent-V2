@@ -2,8 +2,9 @@
 Scheduler — Günlük Otomatik Üretim
 
 Strateji: Gün aşırı 6 burç rotasyonu (YouTube günlük quota sınırı nedeniyle)
-- Çift günler (2, 4, 6...): Koç, Boğa, İkizler, Yengeç, Aslan, Başak
-- Tek günler (1, 3, 5...): Terazi, Akrep, Yay, Oğlak, Kova, Balık
+- Gruplar her gün sırayla değişir (zodiac.group_for_date):
+  Koç, Boğa, İkizler, Yengeç, Aslan, Başak ↔ Terazi, Akrep, Yay, Oğlak,
+  Kova, Balık. Ay sonu geçişlerinde de sıra bozulmaz.
 
 Zamanlama:
 - 09:00 (BURC_BATCH_TIME) → 6 burç üretilir ve YouTube'a 'private'
@@ -22,7 +23,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from pipeline import produce_signs
 from services.tr_locale import tr_date
-from zodiac import get_todays_group, get_sign
+from zodiac import get_todays_group, get_sign, group_label
 from telegram_bot import send as tg_send
 
 log = logging.getLogger(__name__)
@@ -59,9 +60,9 @@ def _daily_batch_job():
     log.info("=" * 60)
     today = datetime.now(pytz.timezone(TIMEZONE))
     group = get_todays_group()
-    day_type = "ÇİFT" if today.day % 2 == 0 else "TEK"
+    day_type = group_label(today)
 
-    log.info(f"🔮 Günlük batch — {tr_date(today)} ({day_type} gün)")
+    log.info(f"🔮 Günlük batch — {tr_date(today)} ({day_type})")
     log.info(f"   Grup: {', '.join(group)}")
 
     group_names = ", ".join(get_sign(k)["name"] for k in group)
@@ -79,7 +80,7 @@ def _daily_batch_job():
 
     tg_send(
         f"🌅 <b>Günlük otomatik üretim</b>\n"
-        f"📅 {tr_date(today)} ({day_type} gün)\n"
+        f"📅 {tr_date(today)} ({day_type})\n"
         f"🔮 Bugünün burçları: {group_names}\n"
         f"📺 Kanallar: {len(all_channels)}\n"
         f"⏰ Yayın saati: {PUBLISH_TIME}"
@@ -293,7 +294,7 @@ def _channel_zodiac_job(channel_id: str):
     log.info("=" * 60)
     today = datetime.now(pytz.timezone(TIMEZONE))
     group = get_todays_group()
-    day_type = "ÇİFT" if today.day % 2 == 0 else "TEK"
+    day_type = group_label(today)
 
     log.info(f"🔮 Bur\u00e7 batch: {channel_id} — "
              f"{tr_date(today)} ({day_type})")
@@ -307,7 +308,7 @@ def _channel_zodiac_job(channel_id: str):
     group_names = ", ".join(get_sign(k)["name"] for k in group)
     tg_send(
         f"🌅 <b>{channel['name']}</b> otomatik üretim\n"
-        f"📅 {tr_date(today)} ({day_type} g\u00fcn)\n"
+        f"📅 {tr_date(today)} ({day_type})\n"
         f"🔮 {group_names}\n"
         f"⏰ Yay\u0131n: {PUBLISH_TIME}"
     )
