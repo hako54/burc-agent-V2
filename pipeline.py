@@ -229,6 +229,13 @@ def produce_content(
                 content["sign_symbol"] = sign["symbol"]
             content["intro_subtitle"] = "Günlük Burç Yorumu"
             content["outro_subtitle"] = "Her gün yeni burç yorumu"
+            # AI astrolog sunucu (HeyGen) — ayarlıysa açılış/kapanışı
+            # sunucu konuşur; hata olursa video klasik sürümle üretilir
+            from services import presenter
+            if sign and presenter.enabled():
+                content["presenter"] = True
+                content["intro_text"] = presenter.intro_line(sign["name"])
+                content["presenter_outro_text"] = presenter.outro_line()
         elif type_id == "motivation":
             # Motivasyon için topic meta bilgilerini intro'ya yerleştir
             topics = module.get_topics()

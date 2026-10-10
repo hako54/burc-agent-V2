@@ -26,7 +26,7 @@ try:  # OpenCV varsa Ken Burns ~6 kat hızlı; yoksa Pillow'a düşer
 except ImportError:  # pragma: no cover
     cv2 = None
 from moviepy.editor import (
-    VideoClip, AudioFileClip, CompositeAudioClip,
+    VideoClip, VideoFileClip, AudioFileClip, CompositeAudioClip,
     concatenate_audioclips, concatenate_videoclips
 )
 
@@ -706,6 +706,113 @@ def _find_bg_music(duration_needed: float) -> Optional[str]:
     return str(random.choice(candidates))
 
 
+# ── AI sunucu (HeyGen) klipleri ──────────────────────────────────────
+
+def _fit_cover(frame: np.ndarray) -> np.ndarray:
+    """Kareyi W×H'yi tamamen kaplayacak şekilde ölçekleyip ortadan kırpar."""
+    h, w = frame.shape[:2]
+    if (w, h) == (W, H):
+        return frame
+    s = max(W / w, H / h)
+    nw, nh = max(W, round(w * s)), max(H, round(h * s))
+    if cv2 is not None:
+        interp = cv2.INTER_AREA if s < 1 else cv2.INTER_LINEAR
+        fr = cv2.resize(frame, (nw, nh), interpolation=interp)
+    else:
+        fr = np.asarray(Image.fromarray(frame).resize((nw, nh), Image.LANCZOS))
+    x, y = (nw - W) // 2, (nh - H) // 2
+    return fr[y:y + H, x:x + W]
+
+
+def _presenter_label_layer(title: str, subtitle: str, accent_hex: str,
+                           top: bool) -> np.ndarray:
+    """Sunucu videosunun üstüne konan etiket (burç adı / abone çağrısı).
+    float32 (H, W, 4) döner; alfa 0..1."""
+    ac = _hex_to_rgb(accent_hex)
+    layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    tf, sf = _get_font(66), _get_font(38)
+    tw = text_width(draw, title, tf)
+    sw = text_width(draw, subtitle, sf) if subtitle else 0
+    box_w = min(W - 80, max(tw, sw) + 100)
+    box_h = 130 + (56 if subtitle else 0)
+    x0 = (W - box_w) // 2
+    y0 = 150 if top else H - box_h - 260
+    draw.rounded_rectangle([x0, y0, x0 + box_w, y0 + box_h], radius=36,
+                           fill=(10, 6, 20, 175), outline=ac + (255,),
+                           width=4)
+    draw_text(layer, draw, ((W - tw) // 2, y0 + 30), title, tf,
+              (255, 255, 255, 255))
+    if subtitle:
+        draw_text(layer, draw, ((W - sw) // 2, y0 + 112), subtitle, sf,
+                  ac + (255,))
+    arr = np.asarray(layer).astype(np.float32)
+    arr[..., 3] /= 255.0
+    return arr
+
+
+def _make_presenter_clip(video_path: str, title: str, subtitle: str,
+                         accent_hex: str, top: bool) -> VideoClip:
+    """HeyGen videosunu W×H'ye oturtur, etiketi ekler (sesi korunur)."""
+    src = VideoFileClip(video_path)
+    layer = _presenter_label_layer(title, subtitle, accent_hex, top)
+    rgb, alpha = layer[..., :3], layer[..., 3:4]
+    last_t = max(0.0, src.duration - 0.05)
+
+    def make_frame(t):
+        fr = _fit_cover(src.get_frame(min(t, last_t))).astype(np.float32)
+        k = alpha * _ease_out(t / 0.5)
+        return (fr * (1 - k) + rgb * k).astype(np.uint8)
+
+    clip = VideoClip(make_frame, duration=src.duration)
+    if src.audio is not None:
+        clip = clip.set_audio(src.audio)
+    return clip
+
+
+def _start_presenter(content: dict, tmp_prefix: str, intro_tts_path: str,
+                     voice_config: dict = None) -> dict:
+    """Açılış/kapanış sunucu videolarını HeyGen'de başlatır. Hata olursa
+    o parça atlanır (video eski açılış/kapanışla devam eder)."""
+    from services import presenter
+    jobs = {}
+    title = content.get("sign_name") or content.get("title", "burc")
+    try:
+        jobs["intro"] = presenter.start_clip(intro_tts_path,
+                                             f"{title} açılış")
+    except Exception as e:
+        log.warning(f"🎭 Sunucu açılışı başlatılamadı: {e}")
+    outro_text = content.get("presenter_outro_text")
+    if outro_text:
+        outro_tts = f"{tmp_prefix}_outro_tts.mp3"
+        try:
+            generate_tts(outro_text, outro_tts, voice_config=voice_config)
+            jobs["outro_tts"] = outro_tts
+            jobs["outro"] = presenter.start_clip(outro_tts,
+                                                 f"{title} kapanış")
+        except Exception as e:
+            log.warning(f"🎭 Sunucu kapanışı başlatılamadı: {e}")
+    return jobs
+
+
+def _fetch_presenter(jobs: dict, tmp_prefix: str, key: str, title: str,
+                     subtitle: str, accent_hex: str, top: bool):
+    """Başlatılan sunucu videosunu bekler/indirir; hata olursa None."""
+    if not jobs.get(key):
+        return None
+    from services import presenter
+    path = f"{tmp_prefix}_presenter_{key}.mp4"
+    try:
+        presenter.fetch_clip(jobs[key], path)
+        jobs.setdefault("files", []).append(path)
+        clip = _make_presenter_clip(path, title, subtitle, accent_hex, top)
+        log.info(f"🎭 Sunucu {key} hazır ({clip.duration:.1f}s)")
+        return clip
+    except Exception as e:
+        log.warning(f"🎭 Sunucu {key} kullanılamadı, klasik sürüm: {e}")
+        return None
+
+
 def render_video(content: dict, output_path: str,
                  sign_key: Optional[str] = None,
                  voice_config: dict = None) -> str:
@@ -806,6 +913,13 @@ def render_video(content: dict, output_path: str,
     intro_audio = AudioFileClip(intro_tts_path)
     intro_dur = max(intro_audio.duration + 0.8, 3.0)
 
+    # AI sunucu: HeyGen üretimi birkaç dakika sürer; şimdi başlatıp
+    # segment seslendirmesi sürerken arka planda hazırlanmasını sağla
+    presenter_jobs = {}
+    if content.get("presenter"):
+        presenter_jobs = _start_presenter(content, tmp_prefix,
+                                          intro_tts_path, voice_config)
+
     for i, seg in enumerate(segments):
         check_cancel()
         if jt and sign_key:
@@ -881,26 +995,46 @@ def render_video(content: dict, output_path: str,
         clips.append(vc)
 
     # 4) Intro/outro
-    intro_face = content.get("intro_face_image", "")
-    intro_clip = _make_intro_clip(intro_dur, sign_name, sign_symbol,
-                                  accent, bg, subtitle=intro_subtitle,
-                                  face_image_path=intro_face)
-    # Outro subtitle — kanal modülünden gelir, yoksa default
     outro_sub = content.get("outro_subtitle", "Her gün yeni içerik")
-    outro_clip = _make_outro_clip(2.8, sign_name, accent, bg,
-                                  subtitle=outro_sub)
+    p_intro = p_outro = None
+    if presenter_jobs:
+        if jt and sign_key:
+            jt.update_stage(sign_key, jt.STAGE_RENDER,
+                            detail="AI sunucu videosu bekleniyor")
+        label = f"{sign_symbol} {tr_upper(sign_name)}".strip()
+        p_intro = _fetch_presenter(presenter_jobs, tmp_prefix, "intro",
+                                   label, tr_date(), accent, top=True)
+        p_outro = _fetch_presenter(presenter_jobs, tmp_prefix, "outro",
+                                   "Abone ol 🔔", outro_sub, accent,
+                                   top=False)
 
-    intro_audio_end = min(intro_dur, intro_audio.duration + 0.3)
-    intro_audio_faded = intro_audio.audio_fadeout(0.3)
-    intro_clip = intro_clip.set_audio(
-        intro_audio_faded.set_start(0.3).set_end(intro_audio_end)
-    )
+    if p_intro is not None:
+        intro_clip = p_intro
+        intro_dur = p_intro.duration
+    else:
+        intro_face = content.get("intro_face_image", "")
+        intro_clip = _make_intro_clip(intro_dur, sign_name, sign_symbol,
+                                      accent, bg, subtitle=intro_subtitle,
+                                      face_image_path=intro_face)
+        intro_audio_end = min(intro_dur, intro_audio.duration + 0.3)
+        intro_audio_faded = intro_audio.audio_fadeout(0.3)
+        intro_clip = intro_clip.set_audio(
+            intro_audio_faded.set_start(0.3).set_end(intro_audio_end)
+        )
+
+    if p_outro is not None:
+        outro_clip = p_outro
+        outro_dur = p_outro.duration
+    else:
+        outro_dur = 2.8
+        outro_clip = _make_outro_clip(outro_dur, sign_name, accent, bg,
+                                      subtitle=outro_sub)
 
     # 5) Birleştir
     content_clip = concatenate_videoclips(clips, method="chain")
     final = concatenate_videoclips([intro_clip, content_clip, outro_clip],
                                    method="chain")
-    full_dur = intro_dur + total_dur + 2.8
+    full_dur = intro_dur + total_dur + outro_dur
 
     # 6) Arka plan müziği (varsa)
     music_path = _find_bg_music(full_dur)
@@ -941,7 +1075,11 @@ def render_video(content: dict, output_path: str,
     )
 
     # 8) Temp ses dosyalarını temizle
-    for f in [intro_tts_path] + seg_tts_paths:
+    temp_files = [intro_tts_path] + seg_tts_paths
+    temp_files += presenter_jobs.get("files", [])
+    if presenter_jobs.get("outro_tts"):
+        temp_files.append(presenter_jobs["outro_tts"])
+    for f in temp_files:
         try:
             os.remove(f)
         except Exception:
