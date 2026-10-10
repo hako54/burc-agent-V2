@@ -1025,7 +1025,7 @@ async function produceBatch(group) {
     const target = group === 'today' ? info.today : info.tomorrow;
     if (target) {
       const names = target.topics.map(t => `${t.symbol} ${t.name}`).join(', ');
-      preview = `\n\n${target.date} (${target.day_type} gün)\n${names}`;
+      preview = `\n\n${target.date} (${target.day_type})\n${names}`;
     }
   } catch (e) { /* ignore */ }
 
