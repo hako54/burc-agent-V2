@@ -21,6 +21,7 @@ from typing import Optional
 import requests
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageFilter
 
+from services.emoji_text import draw_text, text_width
 from services.tr_locale import tr_upper
 
 log = logging.getLogger(__name__)
@@ -491,9 +492,8 @@ def _draw_dramatic_text(img: Image.Image, text: str,
             else sign_name
         if label_text:
             lf = _get_font(48)
-            lb = draw.textbbox((0, 0), label_text, font=lf)
-            lw = lb[2]
-            lh = lb[3]
+            lw = text_width(draw, label_text, lf)
+            lh = draw.textbbox((0, 0), "Ag", font=lf)[3]
             pad = 24
             box_x = iw - lw - pad * 2 - 30
             box_y = ih - lh - pad * 2 - 30
@@ -504,8 +504,8 @@ def _draw_dramatic_text(img: Image.Image, text: str,
                 radius=20, fill=(0, 0, 0, 180),
                 outline=(*ac, 255), width=4,
             )
-            draw.text((box_x + pad, box_y + pad - 5), label_text,
-                      font=lf, fill=(*ac, 255))
+            draw_text(overlay, draw, (box_x + pad, box_y + pad - 5),
+                      label_text, lf, (*ac, 255))
 
     result = Image.alpha_composite(img, overlay)
     return result.convert("RGB")
