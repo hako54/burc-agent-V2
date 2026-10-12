@@ -68,6 +68,10 @@ FIELDS = OrderedDict([
 
 BUYER_COL = "Gelecek Dönem Buyer Grup"
 
+# Excel sütunu olmayan ama gizlenebilen bölümler
+HIDE_EXTRA = OrderedDict([("uyari", "RANGE Uyarıları")])
+HIDEABLE = list(HIDE_EXTRA) + list(FIELDS)
+
 # RANGE kontrol dosyasından (Option Kod ile) gelen alanlar
 RANGE_KEYS = ("kumas", "bitim", "paca", "yaka")
 
@@ -137,7 +141,7 @@ def save_settings(durumlar=None, gizli_alanlar=None, buyer_gruplar=None,
         if durumlar is not None:
             s["durumlar"] = [d for d in ALL_DURUM if d in durumlar]
         if gizli_alanlar is not None:
-            s["gizli_alanlar"] = [k for k in FIELDS if k in gizli_alanlar]
+            s["gizli_alanlar"] = [k for k in HIDEABLE if k in gizli_alanlar]
         if buyer_gruplar is not None:
             s["buyer_gruplar"] = [b.strip() for b in buyer_gruplar if b.strip()]
         if klasman_kelimeler is not None:
@@ -474,7 +478,7 @@ class _Report:
         self.title = title
         self.subtitle = subtitle
         self.out_path = out_path
-        self.warnings = warnings or []
+        self.warnings = [] if "uyari" in self.hidden else (warnings or [])
         # En başta uyarı sayfası(ları), sonra kapak
         self.warn_pages = -(-len(self.warnings) // self.WARN_ROWS)
         self.pre = self.warn_pages + 1
@@ -923,7 +927,11 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
   .noimg .img { display:none; }
   .kv.miss b { color:var(--accent); }
   .warn { margin:16px 20px 0; border:2px solid var(--accent); border-radius:8px; overflow:hidden; }
-  .warn h4 { background:var(--accent); color:#fff; padding:9px 12px; font-size:15px; }
+  .warn h4 { background:var(--accent); color:#fff; padding:9px 12px; font-size:15px;
+             display:flex; justify-content:space-between; align-items:center; }
+  .warn h4 button { background:#fff; color:var(--accent); border:0; border-radius:5px;
+                    padding:3px 10px; font-weight:700; cursor:pointer; font-size:12px; }
+  @media print { .warn h4 button { display:none; } }
   .warn p { padding:6px 12px 0; font-size:12px; color:var(--muted); }
   .warn table { width:100%; border-collapse:collapse; font-size:12px; margin:6px 0 4px; }
   .warn th, .warn td { text-align:left; padding:4px 12px; border-bottom:1px solid var(--line); }
@@ -1019,6 +1027,7 @@ function card(it) {
 
 function render() {
   document.body.classList.toggle('noimg', HIDDEN.has('resim'));
+  document.getElementById('warn').style.display = HIDDEN.has('uyari') ? 'none' : '';
   const keys = ['merch_alt_grup', 'klasman'].filter(k => !HIDDEN.has(k));
   const shown = DATA.filter(i => !OFF.cluster.has(i.cluster || '-') && !OFF.durum.has(i.durum));
   renderStats(shown);
@@ -1062,12 +1071,20 @@ document.getElementById('filters').addEventListener('change', e => {
   const {f} = e.target.dataset; e.target.checked ? OFF[f].delete(e.target.value) : OFF[f].add(e.target.value); render();
 });
 if (WARNINGS.length) document.getElementById('warn').innerHTML =
-  `<div class="warn"><h4>⚠ UYARI: ${WARNINGS.length} opsiyonda RANGE bilgisi eksik</h4>
+  `<div class="warn"><h4><span>⚠ UYARI: ${WARNINGS.length} opsiyonda RANGE bilgisi eksik</span>
+   <button type="button" onclick="hideWarn()">✕ Gizle</button></h4>
    <p>Kumaş ve Bitim İşlemi tüm ürünlerde, Paça Detayı pantolonlarda, Yaka Tipi hırkalarda RANGE kontrol dosyasında doldurulmalı.</p>
    <table><tr><th>Option Kod</th><th>Ürün Ad</th><th>Klasman</th><th>Sorun</th></tr>` +
   WARNINGS.map(w => `<tr><td><b>${esc(w.option_kod)}</b></td><td>${esc(w.urun_ad)}</td><td>${esc(w.klasman)}</td><td class="s">${esc(w.sorun)}</td></tr>`).join('') +
   '</table></div>';
-document.getElementById('toggles').innerHTML = FIELDS.filter(([k]) => HAS_RANGE || !RANGE_KEYS.includes(k)).map(([k, label]) =>
+function hideWarn() {
+  HIDDEN.add('uyari');
+  const cb = document.querySelector('#toggles input[value=uyari]');
+  if (cb) cb.checked = true;
+  render();
+}
+document.getElementById('toggles').innerHTML = (WARNINGS.length ? [['uyari', 'RANGE Uyarıları']] : [])
+  .concat(FIELDS.filter(([k]) => HAS_RANGE || !RANGE_KEYS.includes(k))).map(([k, label]) =>
   `<label><input type="checkbox" value="${k}" ${HIDDEN.has(k) ? 'checked' : ''}>${esc(label)}</label>`).join('');
 document.getElementById('toggles').addEventListener('change', e => {
   e.target.checked ? HIDDEN.add(e.target.value) : HIDDEN.delete(e.target.value); render();

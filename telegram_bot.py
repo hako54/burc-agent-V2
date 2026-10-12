@@ -191,7 +191,8 @@ def handle_merch_excel(chat_id: str, document: dict):
                 "lcw.com'dan yüklenir. İçindeki düğmeyle PDF olarak kaydedebilirsiniz."), chat_id)
 
     if merch_report.start_job(path, name, on_done=on_done):
-        gizli = ", ".join(merch_report.FIELDS[k][0] for k in s["gizli_alanlar"]) or "yok"
+        gizli = ", ".join(merch_report.HIDE_EXTRA.get(k) or merch_report.FIELDS[k][0]
+                          for k in s["gizli_alanlar"]) or "yok"
         send(f"📥 <b>{name}</b> alındı, rapor hazırlanıyor…\n"
              f"Durum: {', '.join(s['durumlar'])}\nGizli alanlar: {gizli}", chat_id)
     else:
@@ -211,7 +212,7 @@ def cmd_merch(chat_id: str, args: str):
     vals = [v.strip() for v in parts[1].split(",")] if len(parts) > 1 else []
 
     if sub == "gizle":
-        bad = [v for v in vals if v not in merch_report.FIELDS]
+        bad = [v for v in vals if v not in merch_report.HIDEABLE]
         if bad:
             send(f"⚠ Bilinmeyen alan: {', '.join(bad)}", chat_id)
             return
@@ -232,7 +233,8 @@ def cmd_merch(chat_id: str, args: str):
 
     alanlar = "\n".join(
         f"{'🙈' if k in s['gizli_alanlar'] else '✅'} <code>{k}</code> — {lab}"
-        for k, (lab, _) in merch_report.FIELDS.items())
+        for k, lab in list(merch_report.HIDE_EXTRA.items())
+        + [(k, v[0]) for k, v in merch_report.FIELDS.items()])
     send(
         "📊 <b>Merch raporu ayarları</b>\n"
         "Haftalık Excel'i (.xlsx) bu sohbete gönder, PDF otomatik hazırlanır.\n\n"

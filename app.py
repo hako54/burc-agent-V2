@@ -136,7 +136,8 @@ def api_merch_settings():
         merch_report.save_settings(data.get("durumlar"), data.get("gizli_alanlar"))
     return jsonify({
         "settings": merch_report.load_settings(),
-        "fields": [{"key": k, "label": v[0]} for k, v in merch_report.FIELDS.items()],
+        "fields": [{"key": k, "label": v} for k, v in merch_report.HIDE_EXTRA.items()]
+                  + [{"key": k, "label": v[0]} for k, v in merch_report.FIELDS.items()],
         "durumlar": merch_report.ALL_DURUM,
     })
 
