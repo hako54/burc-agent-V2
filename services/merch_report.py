@@ -434,8 +434,7 @@ class _Report:
         Döner: pages = [[(tip, veri, y), ...], ...], toc = [(grup, alt, sayfa)]"""
         def sort_key(it):
             return (tuple(it[k] for k in self.group_keys),
-                    DURUM_ORDER.get(it["durum"], 99),
-                    -(it["devir"] or 0))
+                    -(it["stok"] or 0))  # grup içinde stok adedi büyükten küçüğe
         items = sorted(self.items, key=sort_key)
 
         top = PAGE_H - MARGIN - HEADER_H
@@ -832,7 +831,7 @@ function render() {
   renderStats(shown);
   const items = shown.sort((a, b) =>
     keys.map(k => a[k].localeCompare(b[k], 'tr')).find(x => x) ||
-    (DURUM_ORDER[a.durum] ?? 99) - (DURUM_ORDER[b.durum] ?? 99) || (b.devir || 0) - (a.devir || 0));
+    (b.stok || 0) - (a.stok || 0));  // grup içinde stok adedi büyükten küçüğe
   let html = '', main = null, sub = null, buf = [];
   const flush = () => {
     if (!buf.length) return;
