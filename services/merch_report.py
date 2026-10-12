@@ -54,6 +54,7 @@ FIELDS = OrderedDict([
     ("urun_ad",        ("Ürün Ad",                         "Ürün Ad")),
     ("renk",           ("Renk Tanım",                      "Renk Tanım")),
     ("durum",          ("Durum",                           "DURUM")),
+    ("cluster",        ("Cluster",                         "Cluster")),
     ("stok",           ("Gün Sonu Reyon Stok Ort.",        "Gün Sonu Reyon Stok Ortalaması")),
     ("satis",          ("Satış Adet",                      "Satış Adet")),
     ("devir",          ("Devir Hızı",                      "Devir Hızı")),
@@ -61,12 +62,18 @@ FIELDS = OrderedDict([
     ("klasman",        ("Gelecek Dönem Ürün Klasman",      "Gelecek Dönem Ürün Klasman")),
 ])
 
+BUYER_COL = "Gelecek Dönem Buyer Grup"
+
 ALL_DURUM = ["Çok İyi", "İyi", "Orta", "Kötü", "Çok Kötü",
              "Minimum Mağaza Kısıtına Takıldı"]
 
 DEFAULT_SETTINGS = {
     "durumlar": ["Çok İyi", "İyi"],
     "gizli_alanlar": [],
+    # Boş liste = tüm buyer gruplar
+    "buyer_gruplar": ["ÖRME BASIC", "ÖRME", "ÖRME SET"],
+    # Büyük, detaylı görselli kartlar (sayfada 4 ürün) / normal (12 ürün)
+    "buyuk_gorsel": True,
 }
 
 DURUM_COLORS = {
@@ -100,13 +107,18 @@ def load_settings() -> dict:
     return s
 
 
-def save_settings(durumlar=None, gizli_alanlar=None) -> dict:
+def save_settings(durumlar=None, gizli_alanlar=None, buyer_gruplar=None,
+                  buyuk_gorsel=None) -> dict:
     with _settings_lock:
         s = load_settings()
         if durumlar is not None:
             s["durumlar"] = [d for d in ALL_DURUM if d in durumlar]
         if gizli_alanlar is not None:
             s["gizli_alanlar"] = [k for k in FIELDS if k in gizli_alanlar]
+        if buyer_gruplar is not None:
+            s["buyer_gruplar"] = [b.strip() for b in buyer_gruplar if b.strip()]
+        if buyuk_gorsel is not None:
+            s["buyuk_gorsel"] = bool(buyuk_gorsel)
         SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
         SETTINGS_FILE.write_text(json.dumps(s, ensure_ascii=False, indent=2),
                                  encoding="utf-8")
@@ -161,7 +173,7 @@ def _register_fonts():
 
 # ── Excel okuma ──────────────────────────────────────────────────
 
-def read_options(xlsx_path, durumlar) -> list:
+def read_options(xlsx_path, durumlar, buyer_gruplar=None) -> list:
     wb = load_workbook(xlsx_path, read_only=True, data_only=True)
     ws = wb.worksheets[0]
     rows = ws.iter_rows(values_only=True)
@@ -177,6 +189,11 @@ def read_options(xlsx_path, durumlar) -> list:
     if missing:
         wb.close()
         raise ValueError(f"Excel'de beklenen sütun yok: {', '.join(missing)}")
+    buyer_i = header.index(_norm(BUYER_COL)) if _norm(BUYER_COL) in header else None
+    if buyer_gruplar and buyer_i is None:
+        wb.close()
+        raise ValueError(f"Excel'de beklenen sütun yok: {BUYER_COL}")
+    wanted_buyer = {_norm(b) for b in buyer_gruplar or []}
 
     wanted = {_norm(d) for d in durumlar}
     items = []
@@ -190,12 +207,17 @@ def read_options(xlsx_path, durumlar) -> list:
         durum = str(g("durum") or "").strip()
         if _norm(durum) not in wanted:
             continue
+        buyer = str(r[buyer_i] or "").strip() if buyer_i is not None else ""
+        if wanted_buyer and _norm(buyer) not in wanted_buyer:
+            continue
         items.append({
             "resim": str(g("resim") or "").strip(),
             "option_kod": str(g("option_kod")).strip(),
             "urun_ad": str(g("urun_ad") or "").strip(),
             "renk": str(g("renk") or "").strip(),
             "durum": durum,
+            "cluster": str(g("cluster") or "").strip(),
+            "buyer": buyer,
             "stok": _num(g("stok")),
             "satis": _num(g("satis")),
             "devir": _num(g("devir")),
@@ -216,41 +238,105 @@ _http.headers.update({
 })
 
 
-def _fetch_image(url: str):
-    """Görseli indirir, küçültür, diske cache'ler. Hata → None."""
-    if not url.startswith("http"):
-        return None
-    path = IMG_CACHE_DIR / (hashlib.sha1(url.encode()).hexdigest() + ".jpg")
+_CDN = "https://img-lcwaikiki.mncdn.com"
+_CDN_RE = re.compile(
+    r"https?://img-lcwaikiki\.mncdn\.com/(?:mn\w+/\d+/\d+/(?:[0-9a-fA-F]{6}/)?)?"
+    r"(pim/productimages/[^\s\"'<>?]+?\.(?:jpe?g|png|webp))", re.I)
+
+
+def _hires_candidates(url: str) -> list:
+    """Excel'deki küçük (600x800) görsel linkinden yüksek çözünürlüklü
+    adayları türetir; en sonda orijinal link denenir."""
+    out = []
+    m = _CDN_RE.match(url or "")
+    if m:
+        path = m.group(1)
+        out += [f"{_CDN}/mnpadding/1200/1600/ffffff/{path}", f"{_CDN}/{path}"]
+    if url and url.startswith("http"):
+        out.append(url)
+    return list(dict.fromkeys(out))
+
+
+def search_lcw_image(option_kod: str):
+    """lcw.com'da option kod ile arama yapıp ürün görselinin linkini bulur.
+    LCW görsel dosya adları option kodu içerir (ör. ..._20262-w6if34z8-cvl_u.jpg)."""
+    code = option_kod.lower()
+    for url in (f"https://www.lcw.com/arama?q={option_kod}",
+                f"https://www.lcw.com/arama?q={option_kod.split('-')[0]}"):
+        try:
+            r = _http.get(url, timeout=20)
+            if r.status_code != 200:
+                continue
+        except Exception as e:
+            log.debug(f"lcw.com araması başarısız {option_kod}: {e}")
+            return None
+        html = r.text.replace("\\/", "/")
+        paths = [m.group(1) for m in _CDN_RE.finditer(html)]
+        hit = [p for p in paths if code in p.lower()]
+        if hit:
+            # Ön görünüm (_a) varsa onu tercih et
+            hit.sort(key=lambda p: 0 if re.search(r"_a\.\w+$", p) else 1)
+            return f"{_CDN}/{hit[0]}"
+    return None
+
+
+def _download(url: str, size):
+    r = _http.get(url, timeout=25)
+    r.raise_for_status()
+    im = Image.open(io.BytesIO(r.content)).convert("RGB")
+    if im.width < 200:
+        raise ValueError("görsel çok küçük")
+    im.thumbnail(size)
+    return im
+
+
+def _fetch_image(url: str, option_kod: str = "", size=(600, 800)):
+    """Ürün görselini en yüksek çözünürlükle indirir, diske cache'ler.
+    Excel linki çalışmazsa lcw.com'da option kod ile arar. Hata → None."""
+    key = hashlib.sha1(f"{url}|{option_kod}|{size}".encode()).hexdigest()
+    path = IMG_CACHE_DIR / (key + ".jpg")
     if path.exists():
         return str(path)
-    try:
-        r = _http.get(url, timeout=20)
-        r.raise_for_status()
-        im = Image.open(io.BytesIO(r.content)).convert("RGB")
-        im.thumbnail((300, 400))
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        im.save(tmp, "JPEG", quality=82, optimize=True)
-        tmp.replace(path)
-        return str(path)
-    except Exception as e:
-        log.debug(f"Görsel indirilemedi {url}: {e}")
+    im = None
+    for cand in _hires_candidates(url):
+        try:
+            im = _download(cand, size)
+            break
+        except Exception as e:
+            log.debug(f"Görsel indirilemedi {cand}: {e}")
+    if im is None and option_kod:
+        found = search_lcw_image(option_kod)
+        for cand in _hires_candidates(found):
+            try:
+                im = _download(cand, size)
+                break
+            except Exception as e:
+                log.debug(f"Görsel indirilemedi {cand}: {e}")
+    if im is None:
         return None
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    im.save(tmp, "JPEG", quality=85, optimize=True)
+    tmp.replace(path)
+    return str(path)
 
 
-def fetch_images(items, workers=16, progress=None) -> int:
-    urls = list({it["resim"] for it in items if it["resim"]})
+def fetch_images(items, workers=12, progress=None, size=(600, 800)) -> int:
+    keys = list(dict.fromkeys((it["resim"], it["option_kod"]) for it in items))
     done = ok = 0
     results = {}
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        for url, p in zip(urls, ex.map(_fetch_image, urls)):
-            results[url] = p
+        for k, p in zip(keys, ex.map(lambda k: _fetch_image(k[0], k[1], size), keys)):
+            results[k] = p
             done += 1
             ok += bool(p)
-            if progress and done % 50 == 0:
-                progress(f"Görseller: {done}/{len(urls)}")
+            if progress and done % 25 == 0:
+                progress(f"Görseller: {done}/{len(keys)}")
     for it in items:
-        it["img_path"] = results.get(it["resim"])
+        it["img_path"] = results.get((it["resim"], it["option_kod"]))
+        # Kartta tıklanınca açılacak link: Excel'deki link yoksa lcw.com araması
+        if not it["resim"].startswith("http"):
+            it["resim"] = f"https://www.lcw.com/arama?q={it['option_kod']}"
     return ok
 
 
@@ -266,7 +352,7 @@ GROUP_H = 22
 
 
 class _Report:
-    def __init__(self, items, hidden, title, subtitle, out_path):
+    def __init__(self, items, hidden, title, subtitle, out_path, big=False):
         self.items = items
         self.hidden = set(hidden)
         self.title = title
@@ -274,10 +360,20 @@ class _Report:
         self.out_path = out_path
         self.font, self.bold = _register_fonts()
         self.show_img = "resim" not in self.hidden
-        self.cols = COLS if self.show_img else COLS - 1
+        self.big = big and self.show_img
+        if self.big:
+            # Detaylı görsel: sayfada 4 büyük kart
+            self.cols = 4
+        else:
+            self.cols = COLS if self.show_img else COLS - 1
         self.card_w = (PAGE_W - 2 * MARGIN - (self.cols - 1) * GAP) / self.cols
-        # Sayfaya 2 kart satırı + 2 grup başlığı sığacak yükseklik
-        self.img_h = 126 if self.show_img else 0
+        if not self.show_img:
+            self.img_h = 0
+        elif self.big:
+            self.img_h = (self.card_w - 8) * 4 / 3
+        else:
+            # Sayfaya 2 kart satırı + 2 grup başlığı sığacak yükseklik
+            self.img_h = 126
         self.card_h = self.img_h + 8 + len(self._card_lines(None)) * 10.5 + 6
         # Görünür olan Merch Alt Grup / Klasman alanları gruplama başlığı olur
         self.group_keys = [k for k in ("merch_alt_grup", "klasman")
@@ -297,6 +393,8 @@ class _Report:
                                 ("devir", "Devir Hızı", 2)):
             if key not in self.hidden:
                 lines.append(("kv", it and (label, _fmt(it[key], dec))))
+        if "cluster" not in self.hidden:
+            lines.append(("kv", it and ("Cluster", it["cluster"] or "-")))
         return lines
 
     # ── Sayfalama ────────────────────────────────────────────────
@@ -575,6 +673,7 @@ class _Report:
 # ── Dış API ──────────────────────────────────────────────────────
 
 def build_report(xlsx_path, source_name=None, durumlar=None, gizli_alanlar=None,
+                 buyer_gruplar=None, buyuk_gorsel=None,
                  out_path=None, download_images=True, progress=None):
     """Excel'den PDF üretir. Ayar verilmezse kayıtlı ayarlar kullanılır.
 
@@ -585,28 +684,33 @@ def build_report(xlsx_path, source_name=None, durumlar=None, gizli_alanlar=None,
     s = load_settings()
     durumlar = durumlar if durumlar is not None else s["durumlar"]
     gizli = gizli_alanlar if gizli_alanlar is not None else s["gizli_alanlar"]
+    buyer = buyer_gruplar if buyer_gruplar is not None else s["buyer_gruplar"]
+    big = buyuk_gorsel if buyuk_gorsel is not None else s["buyuk_gorsel"]
     if not durumlar:
         raise ValueError("En az bir Durum seçilmeli")
 
     if progress:
         progress("Excel okunuyor…")
-    items = read_options(xlsx_path, durumlar)
+    items = read_options(xlsx_path, durumlar, buyer)
     if not items:
-        raise ValueError(f"Seçilen durumlarda ({', '.join(durumlar)}) opsiyon bulunamadı")
+        raise ValueError(f"Seçilen filtrede opsiyon bulunamadı (Durum: {', '.join(durumlar)}"
+                         f"; Buyer Grup: {', '.join(buyer) or 'tümü'})")
 
     img_ok = 0
     if download_images and "resim" not in gizli:
         if progress:
             progress(f"{len(items)} opsiyon bulundu, görseller indiriliyor…")
-        img_ok = fetch_images(items, progress=progress)
+        img_ok = fetch_images(items, progress=progress,
+                              size=(600, 800) if big else (300, 400))
     else:
         for it in items:
             it["img_path"] = None
 
     week = week_label(source_name)
     title = f"LCW Opsiyon Performans Raporu{' — ' + week if week else ''}"
-    subtitle = (f"Durum: {', '.join(durumlar)}   ·   Kırılım: Merch Alt Grup › "
-                f"Gelecek Dönem Ürün Klasman   ·   Kaynak: {source_name}")
+    subtitle = (f"Durum: {', '.join(durumlar)}   ·   Buyer Grup: {', '.join(buyer) or 'Tümü'}"
+                f"   ·   Kırılım: Merch Alt Grup › Gelecek Dönem Ürün Klasman"
+                f"   ·   Kaynak: {source_name}")
 
     if out_path is None:
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -616,7 +720,7 @@ def build_report(xlsx_path, source_name=None, durumlar=None, gizli_alanlar=None,
 
     if progress:
         progress("PDF oluşturuluyor…")
-    pages = _Report(items, gizli, title, subtitle, out_path).render()
+    pages = _Report(items, gizli, title, subtitle, out_path, big=big).render()
 
     summary = {
         "pdf": out_path.name,
@@ -627,6 +731,7 @@ def build_report(xlsx_path, source_name=None, durumlar=None, gizli_alanlar=None,
         "sayfa": pages,
         "durumlar": durumlar,
         "gizli_alanlar": gizli,
+        "buyer_gruplar": buyer,
         "durum_dagilimi": {d: sum(1 for it in items if it["durum"] == d)
                            for d in durumlar},
         "merch_alt_grup": len({it["merch_alt_grup"] for it in items}),
@@ -720,11 +825,16 @@ if __name__ == "__main__":
     ap.add_argument("-o", "--out")
     ap.add_argument("--durum", help="Virgüllü durum listesi (varsayılan: Çok İyi,İyi)")
     ap.add_argument("--gizle", help=f"Gizlenecek alanlar: {','.join(FIELDS)}")
+    ap.add_argument("--buyer", help="Virgüllü buyer grup listesi ('hepsi' = filtre yok)")
+    ap.add_argument("--normal-gorsel", action="store_true", help="Küçük kartlar (sayfada 12)")
     ap.add_argument("--resimsiz", action="store_true", help="Görselleri indirme")
     a = ap.parse_args()
     p, summ = build_report(
         a.xlsx, out_path=a.out,
         durumlar=[d.strip() for d in a.durum.split(",")] if a.durum else None,
         gizli_alanlar=[g.strip() for g in a.gizle.split(",")] if a.gizle else None,
+        buyer_gruplar=(([] if a.buyer.strip().lower() == "hepsi" else
+                        [b.strip() for b in a.buyer.split(",")]) if a.buyer else None),
+        buyuk_gorsel=False if a.normal_gorsel else None,
         download_images=not a.resimsiz, progress=print)
     print(json.dumps(summ, ensure_ascii=False, indent=2))
