@@ -276,3 +276,9 @@ opsiyonlara **Kumaş**, **Bitim İşlemi**, pantolonlarda **Paça Detayı**, hı
 başında kırmızı uyarı olarak listelenir.
 
 Komut satırı: `python -m services.merch_report dosya.xlsx --gizle stok [--range RANGE.xlsx]`
+
+**Bilgisayarda tek dosyalık araç** — `tools/Merch_Rapor_Olusturucu.html`: çift tıklayınca
+tarayıcıda açılır; haftalık Excel ve RANGE dosyası bırakılınca rapor bilgisayarda
+hazırlanır (sunucu, kurulum, internet gerekmez; görseller için internet gerekir).
+Excel okuma kütüphanesi (SheetJS, Apache-2.0) dosyanın içine gömülüdür.
+Rapor şablonu değişirse aracı yeniden üretin: `python tools/build_merch_tool.py`
