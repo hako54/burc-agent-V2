@@ -1158,8 +1158,10 @@ function render() {
 
 // ── Özet: Durum filtresi hariç diğer filtrelere uyan satırlar; durumlar sütunlarda ──
 const pct = (n, t) => t ? (n / t * 100).toLocaleString('tr-TR', {maximumFractionDigits: 1}) + '%' : '-';
+// Özette "Minimum Mağaza Kısıtına Takıldı" satırları sayılmaz
+const OZET_HARIC = 'Minimum Mağaza Kısıtına Takıldı';
 function summaryTable(base, key, title, extra) {
-  const durums = FILTERS.durum[1];
+  const durums = FILTERS.durum[1].filter(d => d !== OZET_HARIC);
   const groups = new Map();
   for (const i of base) {
     const g = i[key] || '-';
@@ -1187,13 +1189,14 @@ function summaryTable(base, key, title, extra) {
     rows.map(([g, r]) => line(g, r)).join('') + line('Toplam', tot, 'tot') + '</tbody></table></div>';
 }
 function renderSummary() {
-  const base = DATA.filter(i => Object.keys(FILTERS).every(k => k === 'durum' || !OFF[k].has(i[k] || '-')));
+  const base = DATA.filter(i => i.durum !== OZET_HARIC &&
+    Object.keys(FILTERS).every(k => k === 'durum' || !OFF[k].has(i[k] || '-')));
   const good = base.filter(i => i.durum === 'Çok İyi' || i.durum === 'İyi').length;
   document.getElementById('ozet').innerHTML =
     `<div class="stats"><div class="stat"><b>${base.length}</b><span>Option Adet</span></div>
       <div class="stat" style="border-color:${DURUM_COLORS['Çok İyi']}"><b>${good}</b><span>Çok İyi + İyi</span></div>
       <div class="stat" style="border-color:${DURUM_COLORS['İyi']}"><b>${pct(good, base.length)}</b><span>Çok İyi + İyi Oranı</span></div></div>
-     <p class="note">Buyer Grup / Merch Alt Grup / Klasman / Cluster filtrelerine göre hesaplanır; Durum filtresi bu sayfada uygulanmaz (tüm durumlar sütunlarda).
+     <p class="note">Buyer Grup / Merch Alt Grup / Klasman / Cluster filtrelerine göre hesaplanır; Durum filtresi bu sayfada uygulanmaz (tüm durumlar sütunlarda); "Minimum Mağaza Kısıtına Takıldı" hariçtir.
       Oranlar satır toplamına göredir. G ve K birlikte seçiliyse bir option her cluster için ayrı sayılır.</p>` +
     summaryTable(base, 'buyer', 'Buyer Grup › Durum') +
     summaryTable(base, 'klasman', 'Klasman › Durum', ['buyer', 'Buyer Grup']);
