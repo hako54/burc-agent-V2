@@ -214,6 +214,9 @@ def cmd_merch(chat_id: str, args: str):
             send("⚠ Geçerli durumlar: " + ", ".join(merch_report.ALL_DURUM), chat_id)
             return
         s = merch_report.save_settings(durumlar=secim)
+    elif sub == "cluster":
+        secim = [] if "hepsi" in [v.lower() for v in vals] else [v.upper() for v in vals if v]
+        s = merch_report.save_settings(clusterlar=secim)
 
     alanlar = "\n".join(
         f"{'🙈' if k in s['gizli_alanlar'] else '✅'} <code>{k}</code> — {lab}"
@@ -221,9 +224,10 @@ def cmd_merch(chat_id: str, args: str):
     send(
         "📊 <b>Merch raporu ayarları</b>\n"
         "Haftalık Excel'i (.xlsx) bu sohbete gönder, PDF otomatik hazırlanır.\n\n"
-        f"<b>Durum:</b> {', '.join(s['durumlar'])}\n\n<b>Alanlar:</b>\n{alanlar}\n\n"
+        f"<b>Durum:</b> {', '.join(s['durumlar'])}\n"
+        f"<b>Cluster:</b> {', '.join(s.get('clusterlar') or []) or 'Tümü'}\n\n<b>Alanlar:</b>\n{alanlar}\n\n"
         "/merch gizle stok,satis\n/merch goster stok (veya: goster hepsi)\n"
-        "/merch durum Çok İyi,İyi",
+        "/merch durum Çok İyi,İyi\n/merch cluster K (veya: cluster hepsi)",
         chat_id,
     )
 

@@ -55,6 +55,8 @@ FIELDS = OrderedDict([
     ("renk",           ("Renk Tanım",                      "Renk Tanım")),
     ("durum",          ("Durum",                           "DURUM")),
     ("cluster",        ("Cluster",                         "Cluster")),
+    ("kumas",          ("Kumaş",                           "Kumaş")),
+    ("ana_kumas",      ("Ana Kumaş",                       "Ana Kumaş")),
     ("stok",           ("Gün Sonu Reyon Stok Ort.",        "Gün Sonu Reyon Stok Ortalaması")),
     ("satis",          ("Satış Adet",                      "Satış Adet")),
     ("devir",          ("Devir Hızı",                      "Devir Hızı")),
@@ -63,6 +65,15 @@ FIELDS = OrderedDict([
 ])
 
 BUYER_COL = "Gelecek Dönem Buyer Grup"
+
+# Excel'de farklı yazılabilecek başlıklar (ilk bulunan kullanılır)
+COL_ALIASES = {
+    "kumas": ["Kumaş", "Kumaş Tanım", "Kumaş Adı", "Kumaş Cinsi", "Kumas"],
+    "ana_kumas": ["Ana Kumaş", "Ana Kumaş Tanım", "Ana Kumaş Adı", "Ana Kumas"],
+}
+
+# Sadece Excel'de varsa gösterilen alanlar
+OPTIONAL_TEXT = ("kumas", "ana_kumas")
 
 ALL_DURUM = ["Çok İyi", "İyi", "Orta", "Kötü", "Çok Kötü",
              "Minimum Mağaza Kısıtına Takıldı"]
@@ -74,6 +85,8 @@ DEFAULT_SETTINGS = {
     "buyer_gruplar": ["ÖRME BASIC", "ÖRME", "ÖRME SET"],
     # Klasman adında geçen kelimeler (ör. HIRKA → "KEY ORME HIRKA SET"); boş = tümü
     "klasman_kelimeler": ["HIRKA", "PANTOLON"],
+    # Boş liste = tüm clusterlar (ör. ["K"] sadece K cluster)
+    "clusterlar": [],
     # Büyük, detaylı görselli kartlar (sayfada 4 ürün) / normal (12 ürün)
     "buyuk_gorsel": True,
 }
@@ -110,7 +123,7 @@ def load_settings() -> dict:
 
 
 def save_settings(durumlar=None, gizli_alanlar=None, buyer_gruplar=None,
-                  buyuk_gorsel=None, klasman_kelimeler=None) -> dict:
+                  buyuk_gorsel=None, klasman_kelimeler=None, clusterlar=None) -> dict:
     with _settings_lock:
         s = load_settings()
         if durumlar is not None:
@@ -121,6 +134,8 @@ def save_settings(durumlar=None, gizli_alanlar=None, buyer_gruplar=None,
             s["buyer_gruplar"] = [b.strip() for b in buyer_gruplar if b.strip()]
         if klasman_kelimeler is not None:
             s["klasman_kelimeler"] = [k.strip() for k in klasman_kelimeler if k.strip()]
+        if clusterlar is not None:
+            s["clusterlar"] = [c.strip() for c in clusterlar if c.strip()]
         if buyuk_gorsel is not None:
             s["buyuk_gorsel"] = bool(buyuk_gorsel)
         SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -177,7 +192,8 @@ def _register_fonts():
 
 # ── Excel okuma ──────────────────────────────────────────────────
 
-def read_options(xlsx_path, durumlar, buyer_gruplar=None, klasman_kelimeler=None) -> list:
+def read_options(xlsx_path, durumlar, buyer_gruplar=None, klasman_kelimeler=None,
+                 clusterlar=None) -> list:
     wb = load_workbook(xlsx_path, read_only=True, data_only=True)
     ws = wb.worksheets[0]
     rows = ws.iter_rows(values_only=True)
@@ -185,10 +201,8 @@ def read_options(xlsx_path, durumlar, buyer_gruplar=None, klasman_kelimeler=None
 
     idx = {}
     for key, (_, col) in FIELDS.items():
-        try:
-            idx[key] = header.index(_norm(col))
-        except ValueError:
-            idx[key] = None
+        idx[key] = next((header.index(_norm(c)) for c in COL_ALIASES.get(key, [col])
+                         if _norm(c) in header), None)
     missing = [FIELDS[k][1] for k in ("option_kod", "durum") if idx[k] is None]
     if missing:
         wb.close()
@@ -199,6 +213,7 @@ def read_options(xlsx_path, durumlar, buyer_gruplar=None, klasman_kelimeler=None
         raise ValueError(f"Excel'de beklenen sütun yok: {BUYER_COL}")
     wanted_buyer = {_norm(b) for b in buyer_gruplar or []}
     klasman_words = [_norm(k) for k in klasman_kelimeler or []]
+    wanted_cluster = {_norm(c) for c in clusterlar or []}
 
     wanted = {_norm(d) for d in durumlar}
     items = []
@@ -217,6 +232,8 @@ def read_options(xlsx_path, durumlar, buyer_gruplar=None, klasman_kelimeler=None
             continue
         if klasman_words and not any(w in _norm(g("klasman")) for w in klasman_words):
             continue
+        if wanted_cluster and _norm(g("cluster")) not in wanted_cluster:
+            continue
         items.append({
             "resim": str(g("resim") or "").strip(),
             "option_kod": str(g("option_kod")).strip(),
@@ -224,6 +241,8 @@ def read_options(xlsx_path, durumlar, buyer_gruplar=None, klasman_kelimeler=None
             "renk": str(g("renk") or "").strip(),
             "durum": durum,
             "cluster": str(g("cluster") or "").strip(),
+            "kumas": str(g("kumas") or "").strip(),
+            "ana_kumas": str(g("ana_kumas") or "").strip(),
             "buyer": buyer,
             "stok": _num(g("stok")),
             "satis": _num(g("satis")),
@@ -381,6 +400,8 @@ class _Report:
         else:
             # Sayfaya 2 kart satırı + 2 grup başlığı sığacak yükseklik
             self.img_h = 126
+        # Kumaş / Ana Kumaş Excel'de yoksa kartta boş satır açma
+        self.optional = {k for k in OPTIONAL_TEXT if any(it.get(k) for it in items)}
         self.card_h = self.img_h + 8 + len(self._card_lines(None)) * 10.5 + 6
         # Görünür olan Merch Alt Grup / Klasman alanları gruplama başlığı olur
         self.group_keys = [k for k in ("merch_alt_grup", "klasman")
@@ -402,6 +423,9 @@ class _Report:
                 lines.append(("kv", it and (label, _fmt(it[key], dec))))
         if "cluster" not in self.hidden:
             lines.append(("kv", it and ("Cluster", it["cluster"] or "-")))
+        for key in OPTIONAL_TEXT:
+            if key in self.optional and key not in self.hidden:
+                lines.append(("kv", it and (FIELDS[key][0], it[key] or "-")))
         return lines
 
     # ── Sayfalama ────────────────────────────────────────────────
@@ -466,7 +490,8 @@ class _Report:
         c.drawRightString(PAGE_W - MARGIN, PAGE_H - 22, right)
         c.setFillColor(C_MUTED)
         c.setFont(self.font, 7.5)
-        c.drawString(MARGIN, MARGIN - 6, self.subtitle)
+        c.drawString(MARGIN, MARGIN - 6,
+                     self._fit(c, self.subtitle, self.font, 7.5, PAGE_W - 2 * MARGIN - 70))
         c.drawRightString(PAGE_W - MARGIN, MARGIN - 6, f"Sayfa {page_no} / {total}")
 
     def _fit(self, c, text, font, size, width):
@@ -696,7 +721,9 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
   .bar { position:sticky; top:0; z-index:5; background:#fff; border-bottom:1px solid var(--line);
          padding:10px 20px; display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center; }
   .bar b { font-size:12px; color:var(--muted); font-weight:600; }
-  #toggles { display:flex; flex-wrap:wrap; gap:4px 12px; flex:1; }
+  .chk { display:flex; flex-wrap:wrap; gap:4px 12px; flex:1; }
+  .chk i { color:var(--line); font-style:normal; }
+  .bar .break { flex-basis:100%; height:0; }
   .bar label { font-size:12px; display:flex; gap:4px; align-items:center; cursor:pointer; }
   .bar button { margin-left:auto; background:var(--brand); color:#fff; border:0; border-radius:6px;
                 padding:8px 14px; font-weight:600; cursor:pointer; }
@@ -740,9 +767,12 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
 <body>
 <header><h1>__TITLE__</h1><p>__SUBTITLE__</p></header>
 <div class="bar" id="bar">
-  <b>Gizle:</b>
-  <span id="toggles"></span>
+  <b>Filtre:</b>
+  <span id="filters" class="chk"></span>
   <button onclick="window.print()">PDF olarak kaydet / Yazdır</button>
+  <span class="break"></span>
+  <b>Gizle:</b>
+  <span id="toggles" class="chk"></span>
 </div>
 <div class="stats" id="stats"></div>
 <main id="main"></main>
@@ -752,6 +782,14 @@ const FIELDS = __FIELDS__;
 const HIDDEN = new Set(__HIDDEN__);
 const DURUM_COLORS = __COLORS__;
 const DURUM_ORDER = __ORDER__;
+// Kumaş / Ana Kumaş sadece Excel'de varsa gösterilir
+const HAS = {kumas: DATA.some(i => i.kumas), ana_kumas: DATA.some(i => i.ana_kumas)};
+// Sayfa içi filtreler: işaretli olmayan değerler gizlenir
+const FILTERS = {
+  cluster: ['Cluster', [...new Set(DATA.map(i => i.cluster || '-'))].sort()],
+  durum: ['Durum', [...new Set(DATA.map(i => i.durum))].sort((a, b) => (DURUM_ORDER[a] ?? 99) - (DURUM_ORDER[b] ?? 99))],
+};
+const OFF = {cluster: new Set(), durum: new Set()};
 const fmt = (v, d) => v == null ? '-' : v.toLocaleString('tr-TR', {minimumFractionDigits: d, maximumFractionDigits: d});
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const search = code => 'https://www.lcw.com/arama?q=' + encodeURIComponent(code);
@@ -782,13 +820,17 @@ function card(it) {
     ${kv('satis', 'Satış Adet', fmt(it.satis, 0))}
     ${kv('devir', 'Devir Hızı', fmt(it.devir, 2))}
     ${kv('cluster', 'Cluster', esc(it.cluster || '-'))}
+    ${HAS.kumas ? kv('kumas', 'Kumaş', esc(it.kumas || '-')) : ''}
+    ${HAS.ana_kumas ? kv('ana_kumas', 'Ana Kumaş', esc(it.ana_kumas || '-')) : ''}
   </div></div>`;
 }
 
 function render() {
   document.body.classList.toggle('noimg', HIDDEN.has('resim'));
   const keys = ['merch_alt_grup', 'klasman'].filter(k => !HIDDEN.has(k));
-  const items = [...DATA].sort((a, b) =>
+  const shown = DATA.filter(i => !OFF.cluster.has(i.cluster || '-') && !OFF.durum.has(i.durum));
+  renderStats(shown);
+  const items = shown.sort((a, b) =>
     keys.map(k => a[k].localeCompare(b[k], 'tr')).find(x => x) ||
     (DURUM_ORDER[a.durum] ?? 99) - (DURUM_ORDER[b.durum] ?? 99) || (b.devir || 0) - (a.devir || 0));
   let html = '', main = null, sub = null, buf = [];
@@ -813,13 +855,21 @@ function render() {
   document.getElementById('main').innerHTML = html;
 }
 
-const cnt = {}; DATA.forEach(i => cnt[i.durum] = (cnt[i.durum] || 0) + 1);
-document.getElementById('stats').innerHTML =
-  `<div class="stat"><b>${DATA.length}</b><span>Toplam Opsiyon</span></div>` +
-  Object.entries(cnt).sort((a, b) => (DURUM_ORDER[a[0]] ?? 99) - (DURUM_ORDER[b[0]] ?? 99)).map(([d, n]) =>
-    `<div class="stat" style="border-color:${DURUM_COLORS[d] || '#555'}"><b>${n}</b><span>${esc(d)}</span></div>`).join('') +
-  `<div class="stat"><b>${fmt(DATA.reduce((s, i) => s + (i.satis || 0), 0), 0)}</b><span>Toplam Satış Adet</span></div>`;
-document.getElementById('toggles').innerHTML = FIELDS.map(([k, label]) =>
+function renderStats(rows) {
+  const cnt = {}; rows.forEach(i => cnt[i.durum] = (cnt[i.durum] || 0) + 1);
+  document.getElementById('stats').innerHTML =
+    `<div class="stat"><b>${rows.length}</b><span>Toplam Opsiyon</span></div>` +
+    Object.entries(cnt).sort((a, b) => (DURUM_ORDER[a[0]] ?? 99) - (DURUM_ORDER[b[0]] ?? 99)).map(([d, n]) =>
+      `<div class="stat" style="border-color:${DURUM_COLORS[d] || '#555'}"><b>${n}</b><span>${esc(d)}</span></div>`).join('') +
+    `<div class="stat"><b>${fmt(rows.reduce((s, i) => s + (i.satis || 0), 0), 0)}</b><span>Toplam Satış Adet</span></div>`;
+}
+document.getElementById('filters').innerHTML = Object.entries(FILTERS).map(([k, [label, vals]]) =>
+  `<span>${esc(label)}:</span>` + vals.map(v =>
+    `<label><input type="checkbox" data-f="${k}" value="${esc(v)}" checked>${esc(v)}</label>`).join('')).join('<i>|</i>');
+document.getElementById('filters').addEventListener('change', e => {
+  const {f} = e.target.dataset; e.target.checked ? OFF[f].delete(e.target.value) : OFF[f].add(e.target.value); render();
+});
+document.getElementById('toggles').innerHTML = FIELDS.filter(([k]) => !(k in HAS) || HAS[k]).map(([k, label]) =>
   `<label><input type="checkbox" value="${k}" ${HIDDEN.has(k) ? 'checked' : ''}>${esc(label)}</label>`).join('');
 document.getElementById('toggles').addEventListener('change', e => {
   e.target.checked ? HIDDEN.add(e.target.value) : HIDDEN.delete(e.target.value); render();
@@ -838,7 +888,8 @@ def render_html(items, hidden, title, subtitle, out_path):
     data = []
     for it in items:
         d = {k: it.get(k) for k in ("option_kod", "urun_ad", "renk", "durum", "stok",
-                                     "satis", "devir", "cluster", "merch_alt_grup", "klasman")}
+                                     "satis", "devir", "cluster", "kumas", "ana_kumas",
+                                     "merch_alt_grup", "klasman")}
         d["urls"] = _hires_candidates(it["resim"])
         data.append(d)
 
@@ -862,6 +913,7 @@ def render_html(items, hidden, title, subtitle, out_path):
 
 def build_report(xlsx_path, source_name=None, durumlar=None, gizli_alanlar=None,
                  buyer_gruplar=None, buyuk_gorsel=None, klasman_kelimeler=None,
+                 clusterlar=None,
                  out_path=None, download_images=True, progress=None):
     """Excel'den PDF üretir. Ayar verilmezse kayıtlı ayarlar kullanılır.
 
@@ -875,17 +927,19 @@ def build_report(xlsx_path, source_name=None, durumlar=None, gizli_alanlar=None,
     buyer = buyer_gruplar if buyer_gruplar is not None else s["buyer_gruplar"]
     klasman_w = (klasman_kelimeler if klasman_kelimeler is not None
                  else s.get("klasman_kelimeler", []))
+    cluster_f = clusterlar if clusterlar is not None else s.get("clusterlar", [])
     big = buyuk_gorsel if buyuk_gorsel is not None else s["buyuk_gorsel"]
     if not durumlar:
         raise ValueError("En az bir Durum seçilmeli")
 
     if progress:
         progress("Excel okunuyor…")
-    items = read_options(xlsx_path, durumlar, buyer, klasman_w)
+    items = read_options(xlsx_path, durumlar, buyer, klasman_w, cluster_f)
     if not items:
         raise ValueError(f"Seçilen filtrede opsiyon bulunamadı (Durum: {', '.join(durumlar)}"
                          f"; Buyer Grup: {', '.join(buyer) or 'tümü'}"
-                         f"; Klasman: {', '.join(klasman_w) or 'tümü'})")
+                         f"; Klasman: {', '.join(klasman_w) or 'tümü'}"
+                         f"; Cluster: {', '.join(cluster_f) or 'tümü'})")
 
     img_ok = 0
     if download_images and "resim" not in gizli:
@@ -901,6 +955,7 @@ def build_report(xlsx_path, source_name=None, durumlar=None, gizli_alanlar=None,
     title = f"LCW Opsiyon Performans Raporu{' — ' + week if week else ''}"
     subtitle = (f"Durum: {', '.join(durumlar)}   ·   Buyer Grup: {', '.join(buyer) or 'Tümü'}"
                 f"   ·   Klasman: {', '.join(klasman_w) or 'Tümü'}"
+                f"   ·   Cluster: {', '.join(cluster_f) or 'Tümü'}"
                 f"   ·   Kırılım: Merch Alt Grup › Gelecek Dönem Ürün Klasman"
                 f"   ·   Kaynak: {source_name}")
 
@@ -928,6 +983,7 @@ def build_report(xlsx_path, source_name=None, durumlar=None, gizli_alanlar=None,
         "gizli_alanlar": gizli,
         "buyer_gruplar": buyer,
         "klasman_kelimeler": klasman_w,
+        "clusterlar": cluster_f,
         "durum_dagilimi": {d: sum(1 for it in items if it["durum"] == d)
                            for d in durumlar},
         "merch_alt_grup": len({it["merch_alt_grup"] for it in items}),
@@ -1022,6 +1078,7 @@ if __name__ == "__main__":
     ap.add_argument("--durum", help="Virgüllü durum listesi (varsayılan: Çok İyi,İyi)")
     ap.add_argument("--gizle", help=f"Gizlenecek alanlar: {','.join(FIELDS)}")
     ap.add_argument("--buyer", help="Virgüllü buyer grup listesi ('hepsi' = filtre yok)")
+    ap.add_argument("--cluster", help="Virgüllü cluster listesi, ör. K veya G,K ('hepsi' = filtre yok)")
     ap.add_argument("--normal-gorsel", action="store_true", help="Küçük kartlar (sayfada 12)")
     ap.add_argument("--resimsiz", action="store_true", help="Görselleri indirme")
     a = ap.parse_args()
@@ -1031,6 +1088,8 @@ if __name__ == "__main__":
         gizli_alanlar=[g.strip() for g in a.gizle.split(",")] if a.gizle else None,
         buyer_gruplar=(([] if a.buyer.strip().lower() == "hepsi" else
                         [b.strip() for b in a.buyer.split(",")]) if a.buyer else None),
+        clusterlar=(([] if a.cluster.strip().lower() == "hepsi" else
+                     [c.strip() for c in a.cluster.split(",")]) if a.cluster else None),
         buyuk_gorsel=False if a.normal_gorsel else None,
         download_images=not a.resimsiz, progress=print)
     print(json.dumps(summ, ensure_ascii=False, indent=2))
