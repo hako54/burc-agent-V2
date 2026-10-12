@@ -72,6 +72,8 @@ DEFAULT_SETTINGS = {
     "gizli_alanlar": [],
     # Boş liste = tüm buyer gruplar
     "buyer_gruplar": ["ÖRME BASIC", "ÖRME", "ÖRME SET"],
+    # Klasman adında geçen kelimeler (ör. HIRKA → "KEY ORME HIRKA SET"); boş = tümü
+    "klasman_kelimeler": ["HIRKA", "PANTOLON"],
     # Büyük, detaylı görselli kartlar (sayfada 4 ürün) / normal (12 ürün)
     "buyuk_gorsel": True,
 }
@@ -108,7 +110,7 @@ def load_settings() -> dict:
 
 
 def save_settings(durumlar=None, gizli_alanlar=None, buyer_gruplar=None,
-                  buyuk_gorsel=None) -> dict:
+                  buyuk_gorsel=None, klasman_kelimeler=None) -> dict:
     with _settings_lock:
         s = load_settings()
         if durumlar is not None:
@@ -117,6 +119,8 @@ def save_settings(durumlar=None, gizli_alanlar=None, buyer_gruplar=None,
             s["gizli_alanlar"] = [k for k in FIELDS if k in gizli_alanlar]
         if buyer_gruplar is not None:
             s["buyer_gruplar"] = [b.strip() for b in buyer_gruplar if b.strip()]
+        if klasman_kelimeler is not None:
+            s["klasman_kelimeler"] = [k.strip() for k in klasman_kelimeler if k.strip()]
         if buyuk_gorsel is not None:
             s["buyuk_gorsel"] = bool(buyuk_gorsel)
         SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -173,7 +177,7 @@ def _register_fonts():
 
 # ── Excel okuma ──────────────────────────────────────────────────
 
-def read_options(xlsx_path, durumlar, buyer_gruplar=None) -> list:
+def read_options(xlsx_path, durumlar, buyer_gruplar=None, klasman_kelimeler=None) -> list:
     wb = load_workbook(xlsx_path, read_only=True, data_only=True)
     ws = wb.worksheets[0]
     rows = ws.iter_rows(values_only=True)
@@ -194,6 +198,7 @@ def read_options(xlsx_path, durumlar, buyer_gruplar=None) -> list:
         wb.close()
         raise ValueError(f"Excel'de beklenen sütun yok: {BUYER_COL}")
     wanted_buyer = {_norm(b) for b in buyer_gruplar or []}
+    klasman_words = [_norm(k) for k in klasman_kelimeler or []]
 
     wanted = {_norm(d) for d in durumlar}
     items = []
@@ -209,6 +214,8 @@ def read_options(xlsx_path, durumlar, buyer_gruplar=None) -> list:
             continue
         buyer = str(r[buyer_i] or "").strip() if buyer_i is not None else ""
         if wanted_buyer and _norm(buyer) not in wanted_buyer:
+            continue
+        if klasman_words and not any(w in _norm(g("klasman")) for w in klasman_words):
             continue
         items.append({
             "resim": str(g("resim") or "").strip(),
@@ -673,7 +680,7 @@ class _Report:
 # ── Dış API ──────────────────────────────────────────────────────
 
 def build_report(xlsx_path, source_name=None, durumlar=None, gizli_alanlar=None,
-                 buyer_gruplar=None, buyuk_gorsel=None,
+                 buyer_gruplar=None, buyuk_gorsel=None, klasman_kelimeler=None,
                  out_path=None, download_images=True, progress=None):
     """Excel'den PDF üretir. Ayar verilmezse kayıtlı ayarlar kullanılır.
 
@@ -685,16 +692,19 @@ def build_report(xlsx_path, source_name=None, durumlar=None, gizli_alanlar=None,
     durumlar = durumlar if durumlar is not None else s["durumlar"]
     gizli = gizli_alanlar if gizli_alanlar is not None else s["gizli_alanlar"]
     buyer = buyer_gruplar if buyer_gruplar is not None else s["buyer_gruplar"]
+    klasman_w = (klasman_kelimeler if klasman_kelimeler is not None
+                 else s.get("klasman_kelimeler", []))
     big = buyuk_gorsel if buyuk_gorsel is not None else s["buyuk_gorsel"]
     if not durumlar:
         raise ValueError("En az bir Durum seçilmeli")
 
     if progress:
         progress("Excel okunuyor…")
-    items = read_options(xlsx_path, durumlar, buyer)
+    items = read_options(xlsx_path, durumlar, buyer, klasman_w)
     if not items:
         raise ValueError(f"Seçilen filtrede opsiyon bulunamadı (Durum: {', '.join(durumlar)}"
-                         f"; Buyer Grup: {', '.join(buyer) or 'tümü'})")
+                         f"; Buyer Grup: {', '.join(buyer) or 'tümü'}"
+                         f"; Klasman: {', '.join(klasman_w) or 'tümü'})")
 
     img_ok = 0
     if download_images and "resim" not in gizli:
@@ -709,6 +719,7 @@ def build_report(xlsx_path, source_name=None, durumlar=None, gizli_alanlar=None,
     week = week_label(source_name)
     title = f"LCW Opsiyon Performans Raporu{' — ' + week if week else ''}"
     subtitle = (f"Durum: {', '.join(durumlar)}   ·   Buyer Grup: {', '.join(buyer) or 'Tümü'}"
+                f"   ·   Klasman: {', '.join(klasman_w) or 'Tümü'}"
                 f"   ·   Kırılım: Merch Alt Grup › Gelecek Dönem Ürün Klasman"
                 f"   ·   Kaynak: {source_name}")
 
@@ -732,6 +743,7 @@ def build_report(xlsx_path, source_name=None, durumlar=None, gizli_alanlar=None,
         "durumlar": durumlar,
         "gizli_alanlar": gizli,
         "buyer_gruplar": buyer,
+        "klasman_kelimeler": klasman_w,
         "durum_dagilimi": {d: sum(1 for it in items if it["durum"] == d)
                            for d in durumlar},
         "merch_alt_grup": len({it["merch_alt_grup"] for it in items}),
