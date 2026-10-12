@@ -12,83 +12,77 @@
   header { background:var(--brand); color:#fff; padding:14px 20px; border-bottom:3px solid var(--accent); }
   header h1 { font-size:19px; }
   header p { font-size:12px; color:#cfd8ea; }
-  .wrap { max-width:1100px; margin:0 auto; padding:16px; }
+  .wrap { max-width:1200px; margin:0 auto; padding:16px; }
   .panel { background:#fff; border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:14px; }
-  .panel h2 { font-size:14px; color:var(--brand); margin-bottom:10px; }
+  .panel h2 { font-size:15px; color:var(--brand); margin-bottom:4px; }
+  .hint { font-size:12px; color:var(--muted); margin-bottom:10px; }
   .drops { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
   @media (max-width:700px) { .drops { grid-template-columns:1fr; } }
   .drop { border:2px dashed var(--line); border-radius:10px; padding:18px; text-align:center; cursor:pointer;
           color:var(--muted); display:block; min-height:96px; }
   .drop.over { border-color:var(--brand); background:#eef3fb; }
   .drop.done { border-style:solid; border-color:var(--ok); background:#f1f9f4; color:var(--text); }
+  .drop.busy { border-style:solid; border-color:#d9a400; background:#fffaeb; }
   .drop b { display:block; color:var(--text); font-size:15px; margin-bottom:2px; }
   .drop small { display:block; margin-top:4px; }
-  .grid2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:10px 18px; }
-  label.f { font-size:12px; color:var(--muted); display:block; margin-bottom:3px; }
-  input[type=text] { width:100%; padding:7px 9px; border:1px solid var(--line); border-radius:6px; font:inherit; }
-  .chips { display:flex; flex-wrap:wrap; gap:6px 12px; font-size:13px; }
-  .chips label { display:flex; gap:4px; align-items:center; cursor:pointer; }
-  .row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
-  button { background:var(--brand); color:#fff; border:0; border-radius:7px; padding:9px 16px;
+  .dims { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; }
+  .dim { border:1px solid var(--line); border-radius:8px; overflow:hidden; display:flex; flex-direction:column; }
+  .dim h3 { font-size:13px; background:var(--soft); padding:7px 10px; display:flex; justify-content:space-between; }
+  .dim h3 small { color:var(--muted); font-weight:400; }
+  .dim .opts { max-height:220px; overflow:auto; padding:6px 10px; font-size:13px; }
+  .dim label { display:flex; gap:6px; align-items:center; cursor:pointer; padding:1px 0; }
+  .dim label .n { margin-left:auto; color:var(--muted); font-size:11px; }
+  .dim label.all { font-weight:600; border-bottom:1px solid var(--line); padding-bottom:4px; margin-bottom:3px; }
+  .empty { color:var(--muted); font-size:13px; padding:14px 0; }
+  .row { display:flex; flex-wrap:wrap; gap:10px 14px; align-items:center; }
+  .opt { font-size:13px; display:flex; gap:6px; align-items:center; cursor:pointer; }
+  button { background:var(--brand); color:#fff; border:0; border-radius:7px; padding:10px 18px;
            font-weight:600; font-size:14px; cursor:pointer; }
   button.sec { background:#fff; color:var(--brand); border:1px solid var(--brand); }
   button:disabled { opacity:.45; cursor:default; }
   #status { font-size:13px; color:var(--muted); }
   #status.err { color:var(--accent); font-weight:600; }
   #status.ok { color:var(--ok); font-weight:600; }
-  #preview { width:100%; height:80vh; border:1px solid var(--line); border-radius:10px; background:#fff; display:none; }
-  details summary { cursor:pointer; color:var(--brand); font-weight:600; font-size:14px; }
+  #count { font-size:14px; font-weight:700; color:var(--brand); }
 </style>
 </head>
 <body>
 <header>
   <h1>📊 Merch Rapor Oluşturucu</h1>
-  <p>Haftalık Excel'i ve RANGE kontrol dosyasını bırakın; rapor bilgisayarınızda hazırlanır, dosyalar hiçbir yere gönderilmez.</p>
+  <p>Dosyaları bırakın, seçimleri yapın, "Raporu Oluştur"a basın. Dosyalar bilgisayarınızda işlenir, hiçbir yere gönderilmez.</p>
 </header>
 <div class="wrap">
   <div class="panel">
+    <h2>1 · Dosyalar</h2>
+    <p class="hint">Bıraktığınız anda arka planda okunur; okuma sürerken seçimleri yapabilirsiniz.</p>
     <div class="drops">
-      <label class="drop" id="dropW"><input type="file" accept=".xlsx,.xlsm,.xls" hidden>
-        <b>1 · Haftalık Excel</b><span>Dosyayı seçin veya buraya sürükleyin</span><small></small></label>
-      <label class="drop" id="dropR"><input type="file" accept=".xlsx,.xlsm,.xls" hidden>
-        <b>2 · RANGE kontrol dosyası</b><span>Opsiyonel · Kumaş / Bitim / Paça / Yaka için</span><small></small></label>
+      <label class="drop" id="dropW"><input type="file" accept=".xlsx,.xlsm,.xlsb,.xls" hidden>
+        <b>Haftalık Excel</b><span>Dosyayı seçin veya buraya sürükleyin</span><small></small></label>
+      <label class="drop" id="dropR"><input type="file" accept=".xlsx,.xlsm,.xlsb,.xls" hidden>
+        <b>RANGE kontrol dosyası</b><span>Opsiyonel · Kumaş / Bitim / Paça / Yaka için</span><small></small></label>
     </div>
   </div>
 
   <div class="panel">
-    <details>
-      <summary>Filtreler ve açılış seçimleri</summary>
-      <p style="font-size:13px;font-weight:600;margin-top:12px">Raporun açılışında seçili gelenler
-        <span style="font-weight:400;color:var(--muted)">(rapor tüm ürünleri içerir; rapordaki kutucuklarla değiştirilir)</span></p>
-      <div class="grid2" style="margin-top:6px">
-        <div><label class="f">Merch Alt Grup</label><input type="text" id="v_merch"></div>
-        <div><label class="f">Cluster</label><input type="text" id="v_cluster"></div>
-        <div><label class="f">Durum</label><input type="text" id="v_durum"></div>
-      </div>
-      <p style="font-size:13px;font-weight:600;margin-top:14px">Rapora alınacak ürünler</p>
-      <div class="grid2" style="margin-top:12px">
-        <div><label class="f">Durum</label><div class="chips" id="durumlar"></div></div>
-        <div><label class="f">Gelecek Dönem Buyer Grup (virgülle; boş = tümü)</label><input type="text" id="buyer"></div>
-        <div><label class="f">Klasman adında geçen (virgülle; boş = tümü)</label><input type="text" id="klasman"></div>
-        <div><label class="f">Cluster (virgülle; boş = tümü)</label><input type="text" id="cluster"></div>
-      </div>
-      <p style="font-size:12px;color:var(--muted);margin-top:8px">Filtreler bu bilgisayarda hatırlanır.</p>
-    </details>
+    <h2>2 · Filtre ve açılış seçimleri</h2>
+    <p class="hint">Rapor bu seçimlerle açılır; rapordaki kutucuklarla sonradan değiştirilebilir. Seçimler bu bilgisayarda hatırlanır.</p>
+    <div class="dims" id="dims"><div class="empty">Haftalık Excel okununca seçenekler burada listelenir.</div></div>
+    <div class="row" style="margin-top:12px">
+      <label class="opt"><input type="checkbox" id="onlySel">Rapora sadece seçili ürünleri koy (daha küçük ve hızlı dosya)</label>
+      <span id="count"></span>
+    </div>
   </div>
 
   <div class="panel row">
     <button id="go" disabled>Raporu Oluştur</button>
     <button id="save" class="sec" disabled>Raporu kaydet (HTML)</button>
-    <button id="open" class="sec" disabled>Yeni sekmede aç</button>
     <span id="status"></span>
   </div>
-
-  <iframe id="preview" title="Rapor önizleme"></iframe>
 </div>
 
 <script id="xlsxlib">@@TOOL_XLSX_JS@@</script>
 <script id="core">
-// ── Çekirdek: hem arka plan işçisinde (Web Worker) hem yedek olarak sayfada çalışır ──
+// ── Çekirdek: arka plan işçisinde (Web Worker), işçi açılamazsa sayfada çalışır ──
 const FIELDS = @@TOOL_FIELDS@@;            // [key, etiket, Excel başlığı]
 const BUYER_COL = @@TOOL_BUYER_COL@@;
 const RANGE_KEYS = ['kumas', 'bitim', 'paca', 'yaka'];
@@ -101,7 +95,7 @@ function optKey(s) { return String(s ?? '').toUpperCase().replace(/[^0-9A-Z]/g, 
 function num(v) { return (v === null || v === '' || isNaN(+v)) ? null : +v; }
 function str(v) { return (v === null || v === undefined) ? '' : String(v).trim(); }
 
-// Hızlı okuma: formül/biçim/stil bilgisi atlanır, sadece ilk sayfa (haftalık dosyada)
+// Hızlı okuma: formül/biçim/stil bilgisi atlanır, haftalık dosyada sadece ilk sayfa
 function readBook(buf, firstOnly) {
   return XLSX.read(buf, {type: 'array', dense: true, cellFormula: false, cellHTML: false, cellText: false,
                          cellStyles: false, cellNF: false, cellDates: false, sheetStubs: false,
@@ -111,8 +105,8 @@ function sheetRows(ws) {
   return XLSX.utils.sheet_to_json(ws, {header: 1, raw: true, defval: null, blankrows: false});
 }
 
-// ── Haftalık Excel ──
-function readWeekly(wb, s) {
+// ── Haftalık Excel: tüm satırlar (filtreleme raporda) ──
+function readWeekly(wb) {
   const rows = sheetRows(wb.Sheets[wb.SheetNames[0]]);
   const header = (rows[0] || []).map(norm);
   const idx = {};
@@ -120,26 +114,19 @@ function readWeekly(wb, s) {
   const missing = ['option_kod', 'durum'].filter(k => idx[k] === null).map(k => COL[k]);
   if (missing.length) throw new Error(`Haftalık Excel'de beklenen sütun yok: ${missing.join(', ')}`);
   const bi = header.indexOf(norm(BUYER_COL));
-  if (s.buyer_gruplar.length && bi < 0) throw new Error(`Haftalık Excel'de beklenen sütun yok: ${BUYER_COL}`);
-  const wD = new Set(s.durumlar.map(norm)), wB = new Set(s.buyer_gruplar.map(norm));
-  const wK = s.klasman_kelimeler.map(norm), wC = new Set(s.clusterlar.map(norm));
   const items = [];
   for (const r of rows.slice(1)) {
     const g = k => idx[k] === null ? null : r[idx[k]];
     if (!g('option_kod')) continue;
-    const durum = str(g('durum'));
-    if (!wD.has(norm(durum))) continue;
-    const buyer = bi < 0 ? '' : str(r[bi]);
-    if (wB.size && !wB.has(norm(buyer))) continue;
-    if (wK.length && !wK.some(w => norm(g('klasman')).includes(w))) continue;
-    if (wC.size && !wC.has(norm(g('cluster')))) continue;
     items.push({
-      resim: str(g('resim')), option_kod: str(g('option_kod')), urun_ad: str(g('urun_ad')),
-      renk: str(g('renk')), durum, cluster: str(g('cluster')),
+      img: str(g('resim')), option_kod: str(g('option_kod')), urun_ad: str(g('urun_ad')),
+      renk: str(g('renk')), durum: str(g('durum')), cluster: str(g('cluster')),
+      buyer: bi < 0 ? '' : str(r[bi]),
       stok: num(g('stok')), satis: num(g('satis')), devir: num(g('devir')),
       merch_alt_grup: str(g('merch_alt_grup')) || '-', klasman: str(g('klasman')) || '-',
     });
   }
+  if (!items.length) throw new Error('Haftalık Excel\'de opsiyon satırı bulunamadı');
   return items;
 }
 
@@ -193,157 +180,218 @@ function applyRange(items, rng) {
   return warnings;
 }
 
-
-// Haftalık + RANGE dosyalarını işler; rapora girecek satırlar ve uyarılar
-function processFiles(wbuf, rbuf, s) {
-  const items = readWeekly(readBook(wbuf, true), s);
-  if (!items.length) throw new Error('Seçilen filtrelerde opsiyon bulunamadı');
-  const warnings = rbuf ? applyRange(items, readRange(readBook(rbuf, false))) : [];
-  // Boş alanlar yazılmaz; görsel tek link (adaylar raporda türetilir) → küçük rapor dosyası
-  const data = items.map(it => {
-    const d = {...it, img: it.resim};
-    delete d.resim;
+// Dosyalar ayrı ayrı okunur ve saklanır; biri değişince diğeri tekrar okunmaz
+const STATE = {items: null, rng: null};
+function handle(msg) {
+  const t0 = Date.now();
+  if (msg.type === 'weekly') STATE.items = readWeekly(readBook(msg.buf, true));
+  if (msg.type === 'range') STATE.rng = readRange(readBook(msg.buf, false));
+  const sure = (Date.now() - t0) / 1000;
+  if (!STATE.items) return {kind: msg.type, sure, pending: true};
+  const items = STATE.items.map(it => ({...it}));
+  const warnings = STATE.rng ? applyRange(items, STATE.rng) : [];
+  // Boş alanlar yazılmaz → küçük rapor dosyası
+  const data = items.map(d => {
     for (const k of Object.keys(d)) if (d[k] === null || d[k] === '' || (Array.isArray(d[k]) && !d[k].length)) delete d[k];
     return d;
   });
-  return {data, warnings};
+  return {kind: msg.type, sure, data, warnings, hasRange: !!STATE.rng};
 }
 </script>
 <script>
 const REPORT_TEMPLATE = @@TOOL_REPORT_TEMPLATE@@;
-const ALL_DURUM = @@TOOL_DURUM@@;
 const DEFAULTS = @@TOOL_DEFAULTS@@;
 const DURUM_COLORS = @@TOOL_COLORS@@;
 const DURUM_ORDER = @@TOOL_ORDER@@;
 const $ = id => document.getElementById(id);
-const list = s => s.split(',').map(x => x.trim()).filter(Boolean);
 const status = (msg, cls = '') => { $('status').textContent = msg; $('status').className = cls; };
+const escHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const js = v => JSON.stringify(v).replace(/<\//g, '<\\/');
+const normV = v => String(v ?? '').trim().toLocaleLowerCase('tr');
 
-// ── Ayarlar (bu bilgisayarda hatırlanır) ──
-let S = {...DEFAULTS};
-try { Object.assign(S, JSON.parse(localStorage.getItem('merchToolSettings_v4') || '{}')); } catch (e) {}
-$('durumlar').innerHTML = ALL_DURUM.map(d =>
-  `<label><input type="checkbox" value="${d}" ${S.durumlar.includes(d) ? 'checked' : ''}>${d}</label>`).join('');
-$('buyer').value = S.buyer_gruplar.join(', ');
-$('klasman').value = S.klasman_kelimeler.join(', ');
-$('cluster').value = (S.clusterlar || []).join(', ');
-const V = S.rapor_varsayilan || {};
-$('v_merch').value = (V.merch_alt_grup || []).join(', ');
-$('v_cluster').value = (V.cluster || []).join(', ');
-$('v_durum').value = (V.durum || []).join(', ');
-function readSettings() {
-  S.durumlar = [...$('durumlar').querySelectorAll('input:checked')].map(i => i.value);
-  S.buyer_gruplar = list($('buyer').value);
-  S.klasman_kelimeler = list($('klasman').value);
-  S.clusterlar = list($('cluster').value);
-  S.rapor_varsayilan = {merch_alt_grup: list($('v_merch').value), cluster: list($('v_cluster').value),
-                        durum: list($('v_durum').value)};
-  try { localStorage.setItem('merchToolSettings_v4', JSON.stringify(S)); } catch (e) {}
-  return S;
+// Seçim boyutları (rapordaki filtrelerle aynı)
+const DIMS = [
+  ['buyer', 'Buyer Grup'], ['merch_alt_grup', 'Merch Alt Grup'], ['klasman', 'Klasman'],
+  ['cluster', 'Cluster'], ['durum', 'Durum'],
+];
+
+// ── Seçimler (bu bilgisayarda hatırlanır) ──
+let SAVED = {...(DEFAULTS.rapor_varsayilan || {})};
+try { Object.assign(SAVED, JSON.parse(localStorage.getItem('merchToolSecim_v1') || '{}')); } catch (e) {}
+let onlySel = false;
+try { onlySel = localStorage.getItem('merchToolSadeceSecili') === '1'; } catch (e) {}
+$('onlySel').checked = onlySel;
+
+let RESULT = null;        // {data, warnings, hasRange}
+const SEL = {};           // boyut → seçili değerler (Set)
+
+function valuesOf(k) {
+  const cnt = new Map();
+  for (const it of RESULT.data) { const v = it[k] || '-'; cnt.set(v, (cnt.get(v) || 0) + 1); }
+  const vals = [...cnt.keys()];
+  vals.sort(k === 'durum' ? (a, b) => (DURUM_ORDER[a] ?? 99) - (DURUM_ORDER[b] ?? 99) : (a, b) => a.localeCompare(b, 'tr'));
+  return vals.map(v => [v, cnt.get(v)]);
 }
 
-// ── Dosya seçimi ──
-const files = {W: null, R: null};
-function setupDrop(id, key) {
+function renderDims() {
+  $('dims').innerHTML = DIMS.map(([k, label]) => {
+    const vals = valuesOf(k);
+    // Kayıtlı seçim bu dosyada yoksa o boyutta hepsi seçili
+    const want = new Set((SAVED[k] || []).map(normV));
+    const hit = vals.filter(([v]) => want.has(normV(v))).map(([v]) => v);
+    SEL[k] = new Set(hit.length ? hit : vals.map(([v]) => v));
+    const all = SEL[k].size === vals.length;
+    return `<div class="dim"><h3>${escHtml(label)} <small id="c-${k}">${SEL[k].size}/${vals.length}</small></h3><div class="opts">
+      <label class="all"><input type="checkbox" data-all="${k}" ${all ? 'checked' : ''}>Tümü</label>` +
+      vals.map(([v, n]) => `<label><input type="checkbox" data-d="${k}" value="${escHtml(v)}" ${SEL[k].has(v) ? 'checked' : ''}>${escHtml(v)}<span class="n">${n}</span></label>`).join('') +
+      '</div></div>';
+  }).join('');
+  updateCount();
+}
+
+$('dims').addEventListener('change', e => {
+  const {d, all} = e.target.dataset;
+  const k = d || all;
+  if (all) {
+    $('dims').querySelectorAll(`input[data-d="${k}"]`).forEach(cb => {
+      cb.checked = e.target.checked;
+      e.target.checked ? SEL[k].add(cb.value) : SEL[k].delete(cb.value);
+    });
+  } else {
+    e.target.checked ? SEL[k].add(e.target.value) : SEL[k].delete(e.target.value);
+    $('dims').querySelector(`input[data-all="${k}"]`).checked =
+      SEL[k].size === $('dims').querySelectorAll(`input[data-d="${k}"]`).length;
+  }
+  $('c-' + k).textContent = `${SEL[k].size}/${$('dims').querySelectorAll(`input[data-d="${k}"]`).length}`;
+  SAVED[k] = [...SEL[k]];
+  try { localStorage.setItem('merchToolSecim_v1', JSON.stringify(SAVED)); } catch (e2) {}
+  updateCount();
+});
+$('onlySel').onchange = e => {
+  onlySel = e.target.checked;
+  try { localStorage.setItem('merchToolSadeceSecili', onlySel ? '1' : '0'); } catch (e2) {}
+};
+
+const selected = () => RESULT.data.filter(it => DIMS.every(([k]) => SEL[k].has(it[k] || '-')));
+function updateCount() {
+  if (!RESULT) return;
+  const n = selected().length;
+  $('count').textContent = `Seçili görünüm: ${n.toLocaleString('tr-TR')} / ${RESULT.data.length.toLocaleString('tr-TR')} ürün`;
+  $('go').disabled = $('save').disabled = n === 0;
+}
+
+// ── Arka plan okuma (Web Worker); işçi açılamazsa sayfada ──
+let worker = null, busy = 0;
+function getWorker() {
+  if (worker !== null) return worker;
+  try {
+    const src = $('xlsxlib').textContent + '\n' + $('core').textContent +
+      '\nonmessage = e => { try { postMessage(handle(e.data)); } catch (err) { postMessage({kind: e.data.type, error: err.message}); } };';
+    worker = new Worker(URL.createObjectURL(new Blob([src], {type: 'text/javascript'})));
+    worker.onmessage = e => onResult(e.data);
+  } catch (e) { worker = false; }
+  return worker;
+}
+function onResult(r) {
+  busy--;
+  const el = $(r.kind === 'weekly' ? 'dropW' : 'dropR');
+  el.classList.remove('busy');
+  if (r.error) {
+    el.classList.remove('done');
+    el.querySelector('small').textContent = '✗ ' + r.error;
+    status('Hata: ' + r.error, 'err');
+    return;
+  }
+  el.classList.add('done');
+  el.querySelector('small').textContent = `✓ ${el.dataset.info} · okundu (${r.sure.toFixed(1)} sn)`;
+  if (r.pending) { status('RANGE okundu; haftalık Excel bekleniyor.'); return; }
+  RESULT = r;
+  renderDims();
+  if (!busy) status(`Hazır: ${r.data.length.toLocaleString('tr-TR')} satır` +
+    (r.hasRange ? ` · ${r.warnings.length} RANGE uyarısı` : ' · RANGE dosyası eklenmedi') +
+    '. Seçimleri yapıp "Raporu Oluştur"a basın.', 'ok');
+  if (pendingOpen) { const w = pendingOpen; pendingOpen = null; openReport(w); }
+}
+async function load(kind, file) {
+  const el = $(kind === 'weekly' ? 'dropW' : 'dropR');
+  el.classList.remove('done'); el.classList.add('busy');
+  el.dataset.info = `${file.name} · ${(file.size / 1e6).toFixed(1)} MB`;
+  el.querySelector('small').textContent = el.dataset.info + ' · okunuyor…';
+  if (kind === 'weekly') fileName = file.name; else rangeName = file.name;
+  status('Dosya arka planda okunuyor…');
+  busy++;
+  const buf = await file.arrayBuffer();
+  const wk = getWorker();
+  if (wk) wk.postMessage({type: kind, buf}, [buf]);
+  else setTimeout(() => { try { onResult(handle({type: kind, buf})); } catch (err) { onResult({kind, error: err.message}); } }, 20);
+}
+
+let fileName = '', rangeName = '';
+function setupDrop(id, kind) {
   const el = $(id), input = el.querySelector('input');
-  const set = f => {
-    if (!f) return;
-    files[key] = f;
-    el.classList.add('done');
-    el.querySelector('small').textContent = `✓ ${f.name} · ${(f.size / 1e6).toFixed(1)} MB`;
-    $('go').disabled = !files.W;
-    if (files.W) build();  // dosya bırakılınca otomatik oluştur
-  };
-  input.onchange = e => set(e.target.files[0]);
+  input.onchange = e => e.target.files[0] && load(kind, e.target.files[0]);
   ['dragover', 'dragleave', 'drop'].forEach(ev => el.addEventListener(ev, e => {
     e.preventDefault();
     el.classList.toggle('over', ev === 'dragover');
-    if (ev === 'drop') set(e.dataTransfer.files[0]);
+    if (ev === 'drop' && e.dataTransfer.files[0]) load(kind, e.dataTransfer.files[0]);
   }));
 }
-setupDrop('dropW', 'W');
-setupDrop('dropR', 'R');
+setupDrop('dropW', 'weekly');
+setupDrop('dropR', 'range');
 
-// Excel'i arka planda (Web Worker) işle: sayfa donmaz. İşçi açılamazsa sayfada çalışır.
-let worker = null;
-function getWorker() {
-  if (worker) return worker;
-  try {
-    const src = document.getElementById('xlsxlib').textContent + '\n' + document.getElementById('core').textContent +
-      '\nonmessage = e => { try { postMessage(processFiles(e.data.w, e.data.r, e.data.s)); }' +
-      ' catch (err) { postMessage({error: err.message}); } };';
-    worker = new Worker(URL.createObjectURL(new Blob([src], {type: 'text/javascript'})));
-  } catch (e) { worker = null; }
-  return worker;
-}
-async function runProcess(s) {
-  const w = await files.W.arrayBuffer(), r = files.R ? await files.R.arrayBuffer() : null;
-  const wk = getWorker();
-  if (!wk) return processFiles(w, r, s);
-  return new Promise((resolve, reject) => {
-    wk.onmessage = e => e.data.error ? reject(new Error(e.data.error)) : resolve(e.data);
-    wk.onerror = e => { e.preventDefault(); worker = null; resolve(processFiles(w, r, s)); };
-    wk.postMessage({w, r, s}, [w, ...(r ? [r] : [])]);
-  });
-}
-
-const escHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const js = v => JSON.stringify(v).replace(/<\//g, '<\\/');
-
-let reportHtml = null, reportName = 'merch_raporu.html';
-async function build() {
-  if (!files.W) return;
-  const s = readSettings();
-  if (!s.durumlar.length) { status('En az bir Durum seçin', 'err'); return; }
-  $('go').disabled = $('save').disabled = $('open').disabled = true;
-  try {
-    status(files.R ? 'Dosyalar arka planda okunuyor…' : 'Haftalık Excel arka planda okunuyor…');
-    const t0 = performance.now();
-    const {data, warnings} = await runProcess(s);
-    const m = /(\d{1,2})\s*\.?\s*hafta/i.exec(files.W.name);
-    const week = m ? `${m[1]}. Hafta` : '';
-    const title = `LCW Opsiyon Performans Raporu${week ? ' — ' + week : ''}`;
-    const subtitle = [`Durum: ${s.durumlar.join(', ')}`,
-      `Buyer Grup: ${s.buyer_gruplar.join(', ') || 'Tümü'}`,
-      `Klasman: ${s.klasman_kelimeler.join(', ') || 'Tümü'}`,
-      `Cluster: ${s.clusterlar.join(', ') || 'Tümü'}`,
-      'Kırılım: Merch Alt Grup › Gelecek Dönem Ürün Klasman',
-      `Kaynak: ${files.W.name}` + (files.R ? ` + ${files.R.name}` : '')].join(' · ');
-    reportHtml = REPORT_TEMPLATE
-      .replace(/__TITLE__/g, escHtml(title))
-      .replace('__SUBTITLE__', escHtml(subtitle))
-      .replace('__DATA__', () => js(data))
-      .replace('__FIELDS__', () => js(FIELDS.map(([k, l]) => [k, l])))
-      .replace('__HIDDEN__', '[]')
-      .replace('__WARNINGS__', () => js(warnings))
-      .replace('__DEFAULT_ON__', () => js(s.rapor_varsayilan || {}))
-      .replace('__COLORS__', () => js(DURUM_COLORS))
-      .replace('__ORDER__', () => js(DURUM_ORDER));
-    reportName = `${week ? week.replace('. Hafta', '_hafta') : 'merch'}_raporu.html`;
-    $('preview').srcdoc = reportHtml;
-    $('preview').style.display = 'block';
-    status(`Hazır: ${data.length} opsiyon` + (files.R ? ` · ${warnings.length} RANGE uyarısı` : ' · RANGE dosyası eklenmedi') +
-           ` · ${((performance.now() - t0) / 1000).toFixed(1)} sn`,
-           warnings.length ? 'err' : 'ok');
-    $('save').disabled = $('open').disabled = false;
-  } catch (e) {
-    console.error(e);
-    status('Hata: ' + e.message, 'err');
-  }
-  $('go').disabled = !files.W;
+// ── Rapor ──
+function buildReport() {
+  const data = onlySel ? selected() : RESULT.data;
+  const codes = onlySel ? new Set(data.map(i => i.option_kod)) : null;
+  const warnings = codes ? RESULT.warnings.filter(w => codes.has(w.option_kod)) : RESULT.warnings;
+  // Açılış seçimi: bir boyutta hepsi seçiliyse filtre yok
+  const defaultOn = Object.fromEntries(DIMS.map(([k]) => {
+    const n = new Set(RESULT.data.map(i => i[k] || '-')).size;
+    return [k, SEL[k].size === n ? [] : [...SEL[k]]];
+  }));
+  const m = /(\d{1,2})\s*\.?\s*hafta/i.exec(fileName);
+  const week = m ? `${m[1]}. Hafta` : '';
+  const title = `LCW Opsiyon Performans Raporu${week ? ' — ' + week : ''}`;
+  const sel = DIMS.filter(([k]) => defaultOn[k].length).map(([k, l]) => `${l}: ${defaultOn[k].join(', ')}`);
+  const subtitle = ['Kırılım: Merch Alt Grup › Gelecek Dönem Ürün Klasman',
+    sel.length ? `Seçim: ${sel.join(' · ')}` : 'Seçim: Tümü',
+    onlySel ? 'Sadece seçili ürünler' : 'Tüm ürünler (rapor içinden filtrelenebilir)',
+    `Kaynak: ${fileName}` + (rangeName && RESULT.hasRange ? ` + ${rangeName}` : '')].join(' · ');
+  const name = `${week ? week.replace('. Hafta', '_hafta') : 'merch'}_raporu.html`;
+  const html = REPORT_TEMPLATE
+    .replace(/__TITLE__/g, escHtml(title))
+    .replace('__SUBTITLE__', escHtml(subtitle))
+    .replace('__DATA__', () => js(data))
+    .replace('__FIELDS__', () => js(FIELDS.map(([k, l]) => [k, l])))
+    .replace('__HIDDEN__', '[]')
+    .replace('__WARNINGS__', () => js(warnings))
+    .replace('__DEFAULT_ON__', () => js(defaultOn))
+    .replace('__COLORS__', () => js(DURUM_COLORS))
+    .replace('__ORDER__', () => js(DURUM_ORDER));
+  return {html, name};
 }
 
-$('go').onclick = build;
+let pendingOpen = null;
+function openReport(win) {
+  const {html} = buildReport();
+  const url = URL.createObjectURL(new Blob([html], {type: 'text/html'}));
+  if (win && !win.closed) win.location.href = url;
+  else if (!window.open(url, '_blank')) status('Tarayıcı yeni sekmeyi engelledi; "Raporu kaydet" ile indirebilirsiniz.', 'err');
+}
+$('go').onclick = () => {
+  // Sekme tıklama anında açılır (açılır pencere engelleyicisine takılmasın), rapor hazır olunca dolar
+  const win = window.open('', '_blank');
+  if (win) win.document.write('<p style="font:16px sans-serif;padding:20px">Rapor hazırlanıyor…</p>');
+  if (busy) { pendingOpen = win; status('Dosya okunuyor; bitince rapor açılacak…'); return; }
+  openReport(win);
+};
 $('save').onclick = () => {
+  const {html, name} = buildReport();
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([reportHtml], {type: 'text/html'}));
-  a.download = reportName;
+  a.href = URL.createObjectURL(new Blob([html], {type: 'text/html'}));
+  a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-};
-$('open').onclick = () => {
-  const url = URL.createObjectURL(new Blob([reportHtml], {type: 'text/html'}));
-  window.open(url, '_blank');
 };
 </script>
 </body>

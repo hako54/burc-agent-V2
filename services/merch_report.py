@@ -76,7 +76,7 @@ HIDEABLE = list(HIDE_EXTRA) + list(FIELDS)
 RANGE_KEYS = ("kumas", "bitim", "paca", "yaka")
 
 
-VIEW_KEYS = ("merch_alt_grup", "klasman", "cluster", "durum")
+VIEW_KEYS = ("buyer", "merch_alt_grup", "klasman", "cluster", "durum")
 
 
 def default_view(items, varsayilan) -> list:
@@ -110,7 +110,7 @@ DEFAULT_SETTINGS = {
     "durumlar": list(ALL_DURUM),
     "gizli_alanlar": [],
     # Boş liste = tüm buyer gruplar
-    "buyer_gruplar": ["ÖRME BASIC", "ÖRME", "ÖRME SET"],
+    "buyer_gruplar": [],
     # Klasman adında geçen kelimeler (ör. HIRKA → "KEY ORME HIRKA SET"); boş = tümü
     "klasman_kelimeler": [],
     # Boş liste = tüm clusterlar (ör. ["K"] sadece K cluster)
@@ -118,6 +118,7 @@ DEFAULT_SETTINGS = {
     # Rapor açılışında seçili gelen filtreler (rapor yine tüm ürünleri içerir;
     # kutucuklardan değiştirilebilir). Değer veride yoksa o grup "Tümü" açılır.
     "rapor_varsayilan": {
+        "buyer": ["ÖRME BASIC", "ÖRME", "ÖRME SET"],
         "durum": ["Çok İyi", "İyi"],
         "cluster": ["K"],
         "merch_alt_grup": ["BUC"],
@@ -1011,6 +1012,7 @@ const HAS_RANGE = DATA.some(i => i.range_need);
 const RANGE_KEYS = ['kumas', 'bitim', 'paca', 'yaka'];
 // Sayfa içi filtreler: işaretli olmayan değerler gizlenir
 const FILTERS = {
+  buyer: ['Buyer Grup', [...new Set(DATA.map(i => i.buyer || '-'))].sort((a, b) => a.localeCompare(b, 'tr'))],
   merch_alt_grup: ['Merch Alt Grup', [...new Set(DATA.map(i => i.merch_alt_grup || '-'))].sort()],
   klasman: ['Klasman', [...new Set(DATA.map(i => i.klasman || '-'))].sort((a, b) => a.localeCompare(b, 'tr'))],
   cluster: ['Cluster', [...new Set(DATA.map(i => i.cluster || '-'))].sort()],
@@ -1191,7 +1193,7 @@ def render_html(items, hidden, title, subtitle, out_path, warnings=None, varsayi
         d = {k: it.get(k) for k in ("option_kod", "urun_ad", "renk", "durum", "stok",
                                      "satis", "devir", "cluster", "kumas", "bitim",
                                      "paca", "yaka", "range_need", "range_eksik",
-                                     "merch_alt_grup", "klasman")}
+                                     "merch_alt_grup", "klasman", "buyer")}
         d["img"] = it["resim"]
         # Boş alanları yazma: binlerce satırda dosyayı belirgin küçültür
         data.append({k: v for k, v in d.items() if v not in (None, "", [])})
@@ -1287,7 +1289,8 @@ def build_report(xlsx_path, source_name=None, durumlar=None, gizli_alanlar=None,
     pdf_codes = {it["option_kod"] for it in pdf_items}
     pdf_warn = None if warnings is None else [w for w in warnings if w["option_kod"] in pdf_codes]
     view_txt = " · ".join(f"{lab}: {', '.join(varsayilan[k])}" for k, lab in
-                          (("merch_alt_grup", "Merch Alt Grup"), ("klasman", "Klasman"),
+                          (("buyer", "Buyer Grup"), ("merch_alt_grup", "Merch Alt Grup"),
+                           ("klasman", "Klasman"),
                            ("cluster", "Cluster"),
                            ("durum", "Durum")) if varsayilan.get(k))
     pdf_subtitle = subtitle + (f"   ·   Görünüm: {view_txt}" if view_txt else "")

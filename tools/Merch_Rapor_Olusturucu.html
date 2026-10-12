@@ -12,78 +12,72 @@
   header { background:var(--brand); color:#fff; padding:14px 20px; border-bottom:3px solid var(--accent); }
   header h1 { font-size:19px; }
   header p { font-size:12px; color:#cfd8ea; }
-  .wrap { max-width:1100px; margin:0 auto; padding:16px; }
+  .wrap { max-width:1200px; margin:0 auto; padding:16px; }
   .panel { background:#fff; border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:14px; }
-  .panel h2 { font-size:14px; color:var(--brand); margin-bottom:10px; }
+  .panel h2 { font-size:15px; color:var(--brand); margin-bottom:4px; }
+  .hint { font-size:12px; color:var(--muted); margin-bottom:10px; }
   .drops { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
   @media (max-width:700px) { .drops { grid-template-columns:1fr; } }
   .drop { border:2px dashed var(--line); border-radius:10px; padding:18px; text-align:center; cursor:pointer;
           color:var(--muted); display:block; min-height:96px; }
   .drop.over { border-color:var(--brand); background:#eef3fb; }
   .drop.done { border-style:solid; border-color:var(--ok); background:#f1f9f4; color:var(--text); }
+  .drop.busy { border-style:solid; border-color:#d9a400; background:#fffaeb; }
   .drop b { display:block; color:var(--text); font-size:15px; margin-bottom:2px; }
   .drop small { display:block; margin-top:4px; }
-  .grid2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:10px 18px; }
-  label.f { font-size:12px; color:var(--muted); display:block; margin-bottom:3px; }
-  input[type=text] { width:100%; padding:7px 9px; border:1px solid var(--line); border-radius:6px; font:inherit; }
-  .chips { display:flex; flex-wrap:wrap; gap:6px 12px; font-size:13px; }
-  .chips label { display:flex; gap:4px; align-items:center; cursor:pointer; }
-  .row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
-  button { background:var(--brand); color:#fff; border:0; border-radius:7px; padding:9px 16px;
+  .dims { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; }
+  .dim { border:1px solid var(--line); border-radius:8px; overflow:hidden; display:flex; flex-direction:column; }
+  .dim h3 { font-size:13px; background:var(--soft); padding:7px 10px; display:flex; justify-content:space-between; }
+  .dim h3 small { color:var(--muted); font-weight:400; }
+  .dim .opts { max-height:220px; overflow:auto; padding:6px 10px; font-size:13px; }
+  .dim label { display:flex; gap:6px; align-items:center; cursor:pointer; padding:1px 0; }
+  .dim label .n { margin-left:auto; color:var(--muted); font-size:11px; }
+  .dim label.all { font-weight:600; border-bottom:1px solid var(--line); padding-bottom:4px; margin-bottom:3px; }
+  .empty { color:var(--muted); font-size:13px; padding:14px 0; }
+  .row { display:flex; flex-wrap:wrap; gap:10px 14px; align-items:center; }
+  .opt { font-size:13px; display:flex; gap:6px; align-items:center; cursor:pointer; }
+  button { background:var(--brand); color:#fff; border:0; border-radius:7px; padding:10px 18px;
            font-weight:600; font-size:14px; cursor:pointer; }
   button.sec { background:#fff; color:var(--brand); border:1px solid var(--brand); }
   button:disabled { opacity:.45; cursor:default; }
   #status { font-size:13px; color:var(--muted); }
   #status.err { color:var(--accent); font-weight:600; }
   #status.ok { color:var(--ok); font-weight:600; }
-  #preview { width:100%; height:80vh; border:1px solid var(--line); border-radius:10px; background:#fff; display:none; }
-  details summary { cursor:pointer; color:var(--brand); font-weight:600; font-size:14px; }
+  #count { font-size:14px; font-weight:700; color:var(--brand); }
 </style>
 </head>
 <body>
 <header>
   <h1>📊 Merch Rapor Oluşturucu</h1>
-  <p>Haftalık Excel'i ve RANGE kontrol dosyasını bırakın; rapor bilgisayarınızda hazırlanır, dosyalar hiçbir yere gönderilmez.</p>
+  <p>Dosyaları bırakın, seçimleri yapın, "Raporu Oluştur"a basın. Dosyalar bilgisayarınızda işlenir, hiçbir yere gönderilmez.</p>
 </header>
 <div class="wrap">
   <div class="panel">
+    <h2>1 · Dosyalar</h2>
+    <p class="hint">Bıraktığınız anda arka planda okunur; okuma sürerken seçimleri yapabilirsiniz.</p>
     <div class="drops">
-      <label class="drop" id="dropW"><input type="file" accept=".xlsx,.xlsm,.xls" hidden>
-        <b>1 · Haftalık Excel</b><span>Dosyayı seçin veya buraya sürükleyin</span><small></small></label>
-      <label class="drop" id="dropR"><input type="file" accept=".xlsx,.xlsm,.xls" hidden>
-        <b>2 · RANGE kontrol dosyası</b><span>Opsiyonel · Kumaş / Bitim / Paça / Yaka için</span><small></small></label>
+      <label class="drop" id="dropW"><input type="file" accept=".xlsx,.xlsm,.xlsb,.xls" hidden>
+        <b>Haftalık Excel</b><span>Dosyayı seçin veya buraya sürükleyin</span><small></small></label>
+      <label class="drop" id="dropR"><input type="file" accept=".xlsx,.xlsm,.xlsb,.xls" hidden>
+        <b>RANGE kontrol dosyası</b><span>Opsiyonel · Kumaş / Bitim / Paça / Yaka için</span><small></small></label>
     </div>
   </div>
 
   <div class="panel">
-    <details>
-      <summary>Filtreler ve açılış seçimleri</summary>
-      <p style="font-size:13px;font-weight:600;margin-top:12px">Raporun açılışında seçili gelenler
-        <span style="font-weight:400;color:var(--muted)">(rapor tüm ürünleri içerir; rapordaki kutucuklarla değiştirilir)</span></p>
-      <div class="grid2" style="margin-top:6px">
-        <div><label class="f">Merch Alt Grup</label><input type="text" id="v_merch"></div>
-        <div><label class="f">Cluster</label><input type="text" id="v_cluster"></div>
-        <div><label class="f">Durum</label><input type="text" id="v_durum"></div>
-      </div>
-      <p style="font-size:13px;font-weight:600;margin-top:14px">Rapora alınacak ürünler</p>
-      <div class="grid2" style="margin-top:12px">
-        <div><label class="f">Durum</label><div class="chips" id="durumlar"></div></div>
-        <div><label class="f">Gelecek Dönem Buyer Grup (virgülle; boş = tümü)</label><input type="text" id="buyer"></div>
-        <div><label class="f">Klasman adında geçen (virgülle; boş = tümü)</label><input type="text" id="klasman"></div>
-        <div><label class="f">Cluster (virgülle; boş = tümü)</label><input type="text" id="cluster"></div>
-      </div>
-      <p style="font-size:12px;color:var(--muted);margin-top:8px">Filtreler bu bilgisayarda hatırlanır.</p>
-    </details>
+    <h2>2 · Filtre ve açılış seçimleri</h2>
+    <p class="hint">Rapor bu seçimlerle açılır; rapordaki kutucuklarla sonradan değiştirilebilir. Seçimler bu bilgisayarda hatırlanır.</p>
+    <div class="dims" id="dims"><div class="empty">Haftalık Excel okununca seçenekler burada listelenir.</div></div>
+    <div class="row" style="margin-top:12px">
+      <label class="opt"><input type="checkbox" id="onlySel">Rapora sadece seçili ürünleri koy (daha küçük ve hızlı dosya)</label>
+      <span id="count"></span>
+    </div>
   </div>
 
   <div class="panel row">
     <button id="go" disabled>Raporu Oluştur</button>
     <button id="save" class="sec" disabled>Raporu kaydet (HTML)</button>
-    <button id="open" class="sec" disabled>Yeni sekmede aç</button>
     <span id="status"></span>
   </div>
-
-  <iframe id="preview" title="Rapor önizleme"></iframe>
 </div>
 
 <script id="xlsxlib">/*! xlsx.js (C) 2013-present SheetJS -- http://sheetjs.com */
@@ -110,7 +104,7 @@ var o=((a=s[17])==null?void 0:a[0])?Ob(e,e[_b(s[17][0].data)][0]):[];var l=vb(s[
 var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.s.r;c<=n.e.r;++c){i=Ta(c);for(f=n.s.c;f<=n.e.c;++f){r=s[f]+i;t=l?(e[c]||[])[f]:e[r];a="";if(t===undefined)continue;else if(t.F!=null){r=t.F;if(!t.f)continue;a=t.f;if(r.indexOf(":")==-1)r=r+":"+r}if(t.f!=null)a=t.f;else if(t.t=="z")continue;else if(t.t=="n"&&t.v!=null)a=""+t.v;else if(t.t=="b")a=t.v?"TRUE":"FALSE";else if(t.w!==undefined)a="'"+t.w;else if(t.v===undefined)continue;else if(t.t=="s")a="'"+t.v;else a=""+t.v;o[o.length]=r+"="+a}}return o}function xw(e,r,t){var a=t||{};var n=+!a.skipHeader;var i=e||{};var s=0,f=0;if(i&&a.origin!=null){if(typeof a.origin=="number")s=a.origin;else{var o=typeof a.origin=="string"?Oa(a.origin):a.origin;s=o.r;f=o.c}}var l;var c={s:{c:0,r:0},e:{c:f,r:s+r.length-1+n}};if(i["!ref"]){var h=Da(i["!ref"]);c.e.c=Math.max(c.e.c,h.e.c);c.e.r=Math.max(c.e.r,h.e.r);if(s==-1){s=h.e.r+1;c.e.r=s+r.length-1+n}}else{if(s==-1){s=0;c.e.r=r.length-1+n}}var u=a.header||[],d=0;r.forEach(function(e,r){rr(e).forEach(function(t){if((d=u.indexOf(t))==-1)u[d=u.length]=t;var o=e[t];var c="z";var h="";var v=Ra({c:f+d,r:s+r+n});l=Rw(i,v);if(o&&typeof o==="object"&&!(o instanceof Date)){i[v]=o}else{if(typeof o=="number")c="n";else if(typeof o=="boolean")c="b";else if(typeof o=="string")c="s";else if(o instanceof Date){c="d";if(!a.cellDates){c="n";o=fr(o)}h=a.dateNF||X[14]}else if(o===null&&a.nullError){c="e";o=0}if(!l)i[v]=l={t:c,v:o};else{l.t=c;l.v=o;delete l.w;delete l.R;if(h)l.z=h}if(h)l.z=h}})});c.e.c=Math.max(c.e.c,f+u.length-1);var v=Ta(s);if(n)for(d=0;d<u.length;++d)i[ya(d+f)+v]={t:"s",v:u[d]};i["!ref"]=Na(c);return i}function Ow(e,r){return xw(null,e,r)}function Rw(e,r,t){if(typeof r=="string"){if(Array.isArray(e)){var a=Oa(r);if(!e[a.r])e[a.r]=[];return e[a.r][a.c]||(e[a.r][a.c]={t:"z"})}return e[r]||(e[r]={t:"z"})}if(typeof r!="number")return Rw(e,Ra(r));return Rw(e,Ra({r:r,c:t||0}))}function Iw(e,r){if(typeof r=="number"){if(r>=0&&e.SheetNames.length>r)return r;throw new Error("Cannot find sheet # "+r)}else if(typeof r=="string"){var t=e.SheetNames.indexOf(r);if(t>-1)return t;throw new Error("Cannot find sheet name |"+r+"|")}else throw new Error("Cannot find sheet |"+r+"|")}function Nw(){return{SheetNames:[],Sheets:{}}}function Dw(e,r,t,a){var n=1;if(!t)for(;n<=65535;++n,t=undefined)if(e.SheetNames.indexOf(t="Sheet"+n)==-1)break;if(!t||e.SheetNames.length>=65535)throw new Error("Too many worksheets");if(a&&e.SheetNames.indexOf(t)>=0){var i=t.match(/(^.*?)(\d+)$/);n=i&&+i[2]||0;var s=i&&i[1]||t;for(++n;n<=65535;++n)if(e.SheetNames.indexOf(t=s+n)==-1)break}Jp(t);if(e.SheetNames.indexOf(t)>=0)throw new Error("Worksheet with name |"+t+"| already exists!");e.SheetNames.push(t);e.Sheets[t]=r;return t}function Fw(e,r,t){if(!e.Workbook)e.Workbook={};if(!e.Workbook.Sheets)e.Workbook.Sheets=[];var a=Iw(e,r);if(!e.Workbook.Sheets[a])e.Workbook.Sheets[a]={};switch(t){case 0:;case 1:;case 2:break;default:throw new Error("Bad sheet visibility setting "+t);}e.Workbook.Sheets[a].Hidden=t}function Pw(e,r){e.z=r;return e}function Lw(e,r,t){if(!r){delete e.l}else{e.l={Target:r};if(t)e.l.Tooltip=t}return e}function Mw(e,r,t){return Lw(e,"#"+r,t)}function Uw(e,r,t){if(!e.c)e.c=[];e.c.push({t:r,a:t||"SheetJS"})}function Bw(e,r,t,a){var n=typeof r!="string"?r:Da(r);var i=typeof r=="string"?r:Na(r);for(var s=n.s.r;s<=n.e.r;++s)for(var f=n.s.c;f<=n.e.c;++f){var o=Rw(e,s,f);o.t="n";o.F=i;delete o.v;if(s==n.s.r&&f==n.s.c){o.f=t;if(a)o.D=true}}return e}var Ww={encode_col:ya,encode_row:Ta,encode_cell:Ra,encode_range:Na,decode_col:Ca,decode_row:ka,split_cell:xa,decode_cell:Oa,decode_range:Ia,format_cell:Pa,sheet_add_aoa:Ma,sheet_add_json:xw,sheet_add_dom:Gm,aoa_to_sheet:Ua,json_to_sheet:Ow,table_to_sheet:jm,table_to_book:Xm,sheet_to_csv:yw,sheet_to_txt:Sw,sheet_to_json:Aw,sheet_to_html:Vm,sheet_to_formulae:_w,sheet_to_row_object_array:Aw,sheet_get_cell:Rw,book_new:Nw,book_append_sheet:Dw,book_set_sheet_visibility:Fw,cell_set_number_format:Pw,cell_set_hyperlink:Lw,cell_set_internal_link:Mw,cell_add_comment:Uw,sheet_set_array_formula:Bw,consts:{SHEET_VISIBLE:0,SHEET_HIDDEN:1,SHEET_VERY_HIDDEN:2}};var Hw;function zw(e){Hw=e}function Vw(e,r){var t=Hw();var a=r==null?{}:r;if(e==null||e["!ref"]==null){t.push(null);return t}var n=Da(e["!ref"]);var i=a.FS!==undefined?a.FS:",",s=i.charCodeAt(0);var f=a.RS!==undefined?a.RS:"\n",o=f.charCodeAt(0);var l=new RegExp((i=="|"?"\\|":i)+"+$");var c="",h=[];a.dense=Array.isArray(e);var u=a.skipHidden&&e["!cols"]||[];var d=a.skipHidden&&e["!rows"]||[];for(var v=n.s.c;v<=n.e.c;++v)if(!(u[v]||{}).hidden)h[v]=ya(v);var p=n.s.r;var g=false,m=0;t._read=function(){if(!g){g=true;return t.push("\ufeff")}while(p<=n.e.r){++p;if((d[p-1]||{}).hidden)continue;c=Cw(e,n,p-1,h,s,o,i,a);if(c!=null){if(a.strip)c=c.replace(l,"");if(c||a.blankrows!==false)return t.push((m++?f:"")+c)}}return t.push(null)};return t}function Gw(e,r){var t=Hw();var a=r||{};var n=a.header!=null?a.header:Bm;var i=a.footer!=null?a.footer:Wm;t.push(n);var s=Ia(e["!ref"]);a.dense=Array.isArray(e);t.push(zm(e,s,a));var f=s.s.r;var o=false;t._read=function(){if(f>s.e.r){if(!o){o=true;t.push("</table>"+i)}return t.push(null)}while(f<=s.e.r){t.push(Um(e,s,f,a));++f;break}};return t}function jw(e,r){var t=Hw({objectMode:true});if(e==null||e["!ref"]==null){t.push(null);return t}var a={t:"n",v:0},n=0,i=1,s=[],f=0,o="";var l={s:{r:0,c:0},e:{r:0,c:0}};var c=r||{};var h=c.range!=null?c.range:e["!ref"];if(c.header===1)n=1;else if(c.header==="A")n=2;else if(Array.isArray(c.header))n=3;switch(typeof h){case"string":l=Da(h);break;case"number":l=Da(e["!ref"]);l.s.r=h;break;default:l=h;}if(n>0)i=0;var u=Ta(l.s.r);var d=[];var v=0;var p=Array.isArray(e);var g=l.s.r,m=0;var b={};if(p&&!e[g])e[g]=[];var w=c.skipHidden&&e["!cols"]||[];var k=c.skipHidden&&e["!rows"]||[];for(m=l.s.c;m<=l.e.c;++m){if((w[m]||{}).hidden)continue;d[m]=ya(m);a=p?e[g][m]:e[d[m]+u];switch(n){case 1:s[m]=m-l.s.c;break;case 2:s[m]=d[m];break;case 3:s[m]=c.header[m-l.s.c];break;default:if(a==null)a={w:"__EMPTY",t:"s"};o=f=Pa(a,null,c);v=b[f]||0;if(!v)b[f]=1;else{do{o=f+"_"+v++}while(b[o]);b[f]=v;b[o]=1}s[m]=o;}}g=l.s.r+i;t._read=function(){while(g<=l.e.r){if((k[g-1]||{}).hidden)continue;var r=Tw(e,l,g,d,n,s,p,c);++g;if(r.isempty===false||(n===1?c.blankrows!==false:!!c.blankrows)){t.push(r.row);return}}return t.push(null)};return t}var Xw={to_json:jw,to_html:Gw,to_csv:Vw,set_readable:zw};if(typeof vm!=="undefined")e.parse_xlscfb=vm;e.parse_zip=Xb;e.read=iw;e.readFile=sw;e.readFileSync=sw;e.write=gw;e.writeFile=bw;e.writeFileSync=bw;e.writeFileAsync=kw;e.utils=Ww;e.writeXLSX=pw;e.writeFileXLSX=ww;e.SSF=Ve;if(typeof Xw!=="undefined")e.stream=Xw;if(typeof Ke!=="undefined")e.CFB=Ke;if(typeof require!=="undefined"){var $w=undefined;if(($w||{}).Readable)zw($w.Readable)}}if(typeof exports!=="undefined")make_xlsx_lib(exports);else if(typeof module!=="undefined"&&module.exports)make_xlsx_lib(module.exports);else if(typeof define==="function"&&define.amd)define("xlsx",function(){if(!XLSX.version)make_xlsx_lib(XLSX);return XLSX});else make_xlsx_lib(XLSX);if(typeof window!=="undefined"&&!window.XLSX)try{window.XLSX=XLSX}catch(e){}
 </script>
 <script id="core">
-// ── Çekirdek: hem arka plan işçisinde (Web Worker) hem yedek olarak sayfada çalışır ──
+// ── Çekirdek: arka plan işçisinde (Web Worker), işçi açılamazsa sayfada çalışır ──
 const FIELDS = [["resim", "Ürün Görseli", "Ürün Resim Linki"], ["option_kod", "Option Kod", "Option Kod"], ["urun_ad", "Ürün Ad", "Ürün Ad"], ["renk", "Renk Tanım", "Renk Tanım"], ["durum", "Durum", "DURUM"], ["cluster", "Cluster", "Cluster"], ["kumas", "Kumaş", "KUMAŞ-MALZEME TİPİ"], ["bitim", "Bitim İşlemi", "KUMAŞ-ÜRÜN BİTİM İŞLEMİ"], ["paca", "Paça Detayı", "PAÇA DETAYI"], ["yaka", "Yaka Tipi", "YAKA TİPİ"], ["stok", "Gün Sonu Reyon Stok Ort.", "Gün Sonu Reyon Stok Ortalaması"], ["satis", "Satış Adet", "Satış Adet"], ["devir", "Devir Hızı", "Devir Hızı"], ["merch_alt_grup", "Merch Alt Grup", "Merch Alt Grup"], ["klasman", "Gelecek Dönem Ürün Klasman", "Gelecek Dönem Ürün Klasman"]];            // [key, etiket, Excel başlığı]
 const BUYER_COL = "Gelecek Dönem Buyer Grup";
 const RANGE_KEYS = ['kumas', 'bitim', 'paca', 'yaka'];
@@ -123,7 +117,7 @@ function optKey(s) { return String(s ?? '').toUpperCase().replace(/[^0-9A-Z]/g, 
 function num(v) { return (v === null || v === '' || isNaN(+v)) ? null : +v; }
 function str(v) { return (v === null || v === undefined) ? '' : String(v).trim(); }
 
-// Hızlı okuma: formül/biçim/stil bilgisi atlanır, sadece ilk sayfa (haftalık dosyada)
+// Hızlı okuma: formül/biçim/stil bilgisi atlanır, haftalık dosyada sadece ilk sayfa
 function readBook(buf, firstOnly) {
   return XLSX.read(buf, {type: 'array', dense: true, cellFormula: false, cellHTML: false, cellText: false,
                          cellStyles: false, cellNF: false, cellDates: false, sheetStubs: false,
@@ -133,8 +127,8 @@ function sheetRows(ws) {
   return XLSX.utils.sheet_to_json(ws, {header: 1, raw: true, defval: null, blankrows: false});
 }
 
-// ── Haftalık Excel ──
-function readWeekly(wb, s) {
+// ── Haftalık Excel: tüm satırlar (filtreleme raporda) ──
+function readWeekly(wb) {
   const rows = sheetRows(wb.Sheets[wb.SheetNames[0]]);
   const header = (rows[0] || []).map(norm);
   const idx = {};
@@ -142,26 +136,19 @@ function readWeekly(wb, s) {
   const missing = ['option_kod', 'durum'].filter(k => idx[k] === null).map(k => COL[k]);
   if (missing.length) throw new Error(`Haftalık Excel'de beklenen sütun yok: ${missing.join(', ')}`);
   const bi = header.indexOf(norm(BUYER_COL));
-  if (s.buyer_gruplar.length && bi < 0) throw new Error(`Haftalık Excel'de beklenen sütun yok: ${BUYER_COL}`);
-  const wD = new Set(s.durumlar.map(norm)), wB = new Set(s.buyer_gruplar.map(norm));
-  const wK = s.klasman_kelimeler.map(norm), wC = new Set(s.clusterlar.map(norm));
   const items = [];
   for (const r of rows.slice(1)) {
     const g = k => idx[k] === null ? null : r[idx[k]];
     if (!g('option_kod')) continue;
-    const durum = str(g('durum'));
-    if (!wD.has(norm(durum))) continue;
-    const buyer = bi < 0 ? '' : str(r[bi]);
-    if (wB.size && !wB.has(norm(buyer))) continue;
-    if (wK.length && !wK.some(w => norm(g('klasman')).includes(w))) continue;
-    if (wC.size && !wC.has(norm(g('cluster')))) continue;
     items.push({
-      resim: str(g('resim')), option_kod: str(g('option_kod')), urun_ad: str(g('urun_ad')),
-      renk: str(g('renk')), durum, cluster: str(g('cluster')),
+      img: str(g('resim')), option_kod: str(g('option_kod')), urun_ad: str(g('urun_ad')),
+      renk: str(g('renk')), durum: str(g('durum')), cluster: str(g('cluster')),
+      buyer: bi < 0 ? '' : str(r[bi]),
       stok: num(g('stok')), satis: num(g('satis')), devir: num(g('devir')),
       merch_alt_grup: str(g('merch_alt_grup')) || '-', klasman: str(g('klasman')) || '-',
     });
   }
+  if (!items.length) throw new Error('Haftalık Excel\'de opsiyon satırı bulunamadı');
   return items;
 }
 
@@ -215,157 +202,218 @@ function applyRange(items, rng) {
   return warnings;
 }
 
-
-// Haftalık + RANGE dosyalarını işler; rapora girecek satırlar ve uyarılar
-function processFiles(wbuf, rbuf, s) {
-  const items = readWeekly(readBook(wbuf, true), s);
-  if (!items.length) throw new Error('Seçilen filtrelerde opsiyon bulunamadı');
-  const warnings = rbuf ? applyRange(items, readRange(readBook(rbuf, false))) : [];
-  // Boş alanlar yazılmaz; görsel tek link (adaylar raporda türetilir) → küçük rapor dosyası
-  const data = items.map(it => {
-    const d = {...it, img: it.resim};
-    delete d.resim;
+// Dosyalar ayrı ayrı okunur ve saklanır; biri değişince diğeri tekrar okunmaz
+const STATE = {items: null, rng: null};
+function handle(msg) {
+  const t0 = Date.now();
+  if (msg.type === 'weekly') STATE.items = readWeekly(readBook(msg.buf, true));
+  if (msg.type === 'range') STATE.rng = readRange(readBook(msg.buf, false));
+  const sure = (Date.now() - t0) / 1000;
+  if (!STATE.items) return {kind: msg.type, sure, pending: true};
+  const items = STATE.items.map(it => ({...it}));
+  const warnings = STATE.rng ? applyRange(items, STATE.rng) : [];
+  // Boş alanlar yazılmaz → küçük rapor dosyası
+  const data = items.map(d => {
     for (const k of Object.keys(d)) if (d[k] === null || d[k] === '' || (Array.isArray(d[k]) && !d[k].length)) delete d[k];
     return d;
   });
-  return {data, warnings};
+  return {kind: msg.type, sure, data, warnings, hasRange: !!STATE.rng};
 }
 </script>
 <script>
-const REPORT_TEMPLATE = "<!DOCTYPE html>\n<html lang=\"tr\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>__TITLE__<\/title>\n<style>\n  :root { --brand:#002f6c; --accent:#e30613; --text:#1d2433; --muted:#6b7385;\n          --line:#d9dee8; --soft:#f3f5f9; }\n  * { box-sizing:border-box; margin:0; padding:0; }\n  body { font:13px/1.4 -apple-system,\"Segoe UI\",Roboto,Arial,sans-serif; color:var(--text); background:#fff; }\n  header { background:var(--brand); color:#fff; padding:14px 20px; border-bottom:3px solid var(--accent); }\n  header h1 { font-size:20px; }\n  header p { font-size:12px; color:#cfd8ea; margin-top:2px; }\n  .bar { position:sticky; top:0; z-index:5; background:#fff; border-bottom:1px solid var(--line);\n         padding:10px 20px; display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center; }\n  .bar b { font-size:12px; color:var(--muted); font-weight:600; }\n  .chk { display:flex; flex-wrap:wrap; gap:4px 12px; flex:1; }\n  .chk i { color:var(--line); font-style:normal; }\n  .bar .break { flex-basis:100%; height:0; }\n  .bar label { font-size:12px; display:flex; gap:4px; align-items:center; cursor:pointer; }\n  .bar button { margin-left:auto; background:var(--brand); color:#fff; border:0; border-radius:6px;\n                padding:8px 14px; font-weight:600; cursor:pointer; }\n  .stats { display:flex; flex-wrap:wrap; gap:10px; padding:16px 20px 4px; }\n  .stat { background:var(--soft); border-left:4px solid var(--brand); border-radius:6px; padding:8px 14px; min-width:130px; }\n  .stat b { font-size:20px; display:block; }\n  .stat span { font-size:11px; color:var(--muted); }\n  main { padding:8px 20px 30px; }\n  h2 { font-size:16px; color:#fff; background:var(--brand); padding:8px 12px; border-radius:6px; margin:22px 0 8px; }\n  h3 { font-size:13px; color:var(--brand); background:var(--soft); border-left:4px solid var(--accent);\n       padding:7px 10px; border-radius:4px; margin:14px 0 8px; display:flex; justify-content:space-between; }\n  h3 small { color:var(--muted); font-weight:400; }\n  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:10px; }\n  .card { border:1px solid var(--line); border-radius:8px; overflow:hidden; break-inside:avoid; page-break-inside:avoid; background:#fff;\n          content-visibility:auto; contain-intrinsic-size:auto 440px; }\n  .dd { position:relative; font-size:12px; }\n  .dd summary { cursor:pointer; padding:2px 8px; border:1px solid var(--line); border-radius:6px; }\n  .dd .ddl { position:absolute; z-index:10; background:#fff; border:1px solid var(--line); border-radius:8px;\n             box-shadow:0 6px 18px rgba(0,0,0,.12); padding:8px 10px; max-height:340px; overflow:auto;\n             min-width:280px; display:flex; flex-direction:column; gap:3px; }\n  .img { position:relative; aspect-ratio:3/4; background:var(--soft); display:block; }\n  .img img { width:100%; height:100%; object-fit:contain; display:block; }\n  .img .ph { position:absolute; inset:0; display:none; align-items:center; justify-content:center;\n             text-align:center; color:var(--muted); font-size:12px; padding:10px; }\n  .img.err img { display:none; } .img.err .ph { display:flex; }\n  .badge { position:absolute; top:6px; right:6px; color:#fff; font-size:10px; font-weight:700;\n           border-radius:10px; padding:2px 8px; }\n  .body { padding:7px 9px 9px; }\n  .code { font-weight:700; color:var(--brand); text-decoration:none; }\n  .zoom { float:right; text-decoration:none; font-size:12px; }\n  @media print { .zoom { display:none; } }\n  .name { font-size:12px; } .color { font-size:11px; color:var(--muted); }\n  .kv { display:flex; justify-content:space-between; font-size:11px; color:var(--muted); }\n  .kv b { color:var(--text); }\n  .noimg .img { display:none; }\n  .kv.miss b { color:var(--accent); }\n  .warn { margin:16px 20px 0; border:2px solid var(--accent); border-radius:8px; overflow:hidden; }\n  .warn h4 { background:var(--accent); color:#fff; padding:9px 12px; font-size:15px;\n             display:flex; justify-content:space-between; align-items:center; }\n  .warn h4 button { background:#fff; color:var(--accent); border:0; border-radius:5px;\n                    padding:3px 10px; font-weight:700; cursor:pointer; font-size:12px; }\n  .warn .more { padding:6px 12px 10px; }\n  .warn .more button { background:#fff; color:var(--accent); border:1px solid var(--accent); border-radius:5px;\n                       padding:4px 12px; font-weight:600; cursor:pointer; }\n  @media print { .warn h4 button, .warn .more { display:none; } }\n  .warn p { padding:6px 12px 0; font-size:12px; color:var(--muted); }\n  .warn table { width:100%; border-collapse:collapse; font-size:12px; margin:6px 0 4px; }\n  .warn th, .warn td { text-align:left; padding:4px 12px; border-bottom:1px solid var(--line); }\n  .warn td.s { color:var(--accent); font-weight:600; }\n  .warn th { color:var(--muted); font-weight:500; }\n  .noimg .badge { position:static; display:inline-block; margin-bottom:3px; }\n  @media print {\n    @page { size:A4 landscape; margin:9mm; }\n    .bar { display:none; }\n    .card { content-visibility:visible; }\n    header { -webkit-print-color-adjust:exact; print-color-adjust:exact; }\n    h2, h3, .badge, .stat { -webkit-print-color-adjust:exact; print-color-adjust:exact; }\n    .grid { grid-template-columns:repeat(5,1fr); gap:6px; }\n    h2 { break-before:page; } h2.first { break-before:auto; }\n    h3 { break-after:avoid; }\n    body { font-size:11px; }\n  }\n<\/style>\n<\/head>\n<body>\n<header><h1>__TITLE__<\/h1><p>__SUBTITLE__<\/p><\/header>\n<div class=\"bar\" id=\"bar\">\n  <b>Filtre:<\/b>\n  <span id=\"filters\" class=\"chk\"><\/span>\n  <button onclick=\"window.print()\">PDF olarak kaydet / Yazdır<\/button>\n  <span class=\"break\"><\/span>\n  <b>Gizle:<\/b>\n  <span id=\"toggles\" class=\"chk\"><\/span>\n<\/div>\n<div id=\"warn\"><\/div>\n<div class=\"stats\" id=\"stats\"><\/div>\n<main id=\"main\"><\/main>\n<script>\nconst DATA = __DATA__;\nconst FIELDS = __FIELDS__;\nconst HIDDEN = new Set(__HIDDEN__);\nconst DURUM_COLORS = __COLORS__;\nconst DURUM_ORDER = __ORDER__;\n// Kumaş / Ana Kumaş sadece Excel'de varsa gösterilir\nconst WARNINGS = __WARNINGS__;\n// RANGE dosyası yüklüyse Kumaş / Bitim İşlemi / Paça Detayı / Yaka Tipi gösterilir\nconst HAS_RANGE = DATA.some(i => i.range_need);\nconst RANGE_KEYS = ['kumas', 'bitim', 'paca', 'yaka'];\n// Sayfa içi filtreler: işaretli olmayan değerler gizlenir\nconst FILTERS = {\n  merch_alt_grup: ['Merch Alt Grup', [...new Set(DATA.map(i => i.merch_alt_grup || '-'))].sort()],\n  klasman: ['Klasman', [...new Set(DATA.map(i => i.klasman || '-'))].sort((a, b) => a.localeCompare(b, 'tr'))],\n  cluster: ['Cluster', [...new Set(DATA.map(i => i.cluster || '-'))].sort()],\n  durum: ['Durum', [...new Set(DATA.map(i => i.durum))].sort((a, b) => (DURUM_ORDER[a] ?? 99) - (DURUM_ORDER[b] ?? 99))],\n};\n// Açılışta seçili gelenler; değerlerin hiçbiri veride yoksa o grup \"Tümü\"\nconst DEFAULT_ON = __DEFAULT_ON__;\nconst OFF = {};\nconst normV = v => String(v ?? '').trim().toLocaleLowerCase('tr');\nfor (const [k, [, vals]] of Object.entries(FILTERS)) {\n  const want = new Set((DEFAULT_ON[k] || []).map(normV));\n  const hit = vals.filter(v => want.has(normV(v)));\n  OFF[k] = new Set(hit.length ? vals.filter(v => !want.has(normV(v))) : []);\n}\nconst fmt = (v, d) => v == null ? '-' : v.toLocaleString('tr-TR', {minimumFractionDigits: d, maximumFractionDigits: d});\nconst esc = s => String(s ?? '').replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));\nconst search = code => 'https://www.lcw.com/arama?q=' + encodeURIComponent(code);\n\n// Kartta Excel'deki 600x800 görsel (hızlı), olmazsa diğer boyutlar; 🔍 yüksek çözünürlük\nconst CDN = 'https://img-lcwaikiki.mncdn.com';\nconst CDN_RE = /^https?:\\/\\/img-lcwaikiki\\.mncdn\\.com\\/(?:mn\\w+\\/\\d+\\/\\d+\\/(?:[0-9a-fA-F]{6}\\/)?)?(pim\\/productimages\\/[^\\s\"'<>?]+?\\.(?:jpe?g|png|webp))/i;\nfunction imgUrls(u) {\n  if (!u || !u.startsWith('http')) return {card: [], big: ''};\n  const m = CDN_RE.exec(u);\n  if (!m) return {card: [u], big: u};\n  const big = `${CDN}/mnpadding/1200/1600/ffffff/${m[1]}`;\n  return {card: [...new Set([u, `${CDN}/mnpadding/600/800/ffffff/${m[1]}`, big, `${CDN}/${m[1]}`])], big};\n}\n// Görsel sırayla denenir; hepsi başarısızsa \"lcw.com'da ara\" gösterilir\nfunction imgFail(el) {\n  const urls = JSON.parse(el.dataset.urls);\n  const i = +(el.dataset.i || 0) + 1;\n  if (i < urls.length) { el.dataset.i = i; el.src = urls[i]; }\n  else el.parentNode.classList.add('err');\n}\n\nconst LABELS = Object.fromEntries(FIELDS);\nfunction rangeLines(it) {\n  // Kumaş ve Bitim İşlemi her üründe; Paça Detayı pantolonda, Yaka Tipi hırkada\n  return RANGE_KEYS.filter(k => (k === 'kumas' || k === 'bitim' || (it.range_need || []).includes(k)) && !HIDDEN.has(k))\n    .map(k => (it.range_eksik || []).includes(k)\n      ? `<div class=\"kv miss\"><span>${LABELS[k]}<\/span><b>EKSİK<\/b><\/div>`\n      : `<div class=\"kv\"><span>${LABELS[k]}<\/span><b>${esc(it[k] || '-')}<\/b><\/div>`).join('');\n}\n\nfunction card(it) {\n  const h = HIDDEN;\n  const col = DURUM_COLORS[it.durum] || '#555';\n  const badge = h.has('durum') ? '' : `<span class=\"badge\" style=\"background:${col}\">${esc(it.durum)}<\/span>`;\n  // Görsele tıklayınca lcw.com'da ürün aranır (kumaş vb. detaylar ürün sayfasında)\n  const link = search(it.option_kod);\n  const u = imgUrls(it.img);\n  const img = h.has('resim') ? '' : `<a class=\"img${u.card.length ? '' : ' err'}\" href=\"${esc(link)}\" target=\"_blank\" rel=\"noopener\">\n      ${u.card.length ? `<img loading=\"lazy\" decoding=\"async\" src=\"${esc(u.card[0])}\" data-urls='${esc(JSON.stringify(u.card))}' onerror=\"imgFail(this)\" alt=\"${esc(it.option_kod)}\">` : ''}\n      <span class=\"ph\">Görsel yüklenemedi<br>lcw.com'da açmak için tıklayın<\/span>${badge}<\/a>`;\n  const kv = (k, label, v) => h.has(k) ? '' : `<div class=\"kv\"><span>${label}<\/span><b>${v}<\/b><\/div>`;\n  return `<div class=\"card\">${img}<div class=\"body\">\n    ${h.has('resim') ? badge : ''}\n    ${h.has('option_kod') ? '' : `<a class=\"code\" href=\"${esc(search(it.option_kod))}\" target=\"_blank\" rel=\"noopener\" title=\"lcw.com'da aç\">${esc(it.option_kod)}<\/a>`}\n    ${u.big ? `<a class=\"zoom\" href=\"${esc(u.big)}\" target=\"_blank\" rel=\"noopener\" title=\"Görseli büyük aç\">🔍<\/a>` : ''}\n    ${h.has('urun_ad') ? '' : `<div class=\"name\">${esc(it.urun_ad)}<\/div>`}\n    ${h.has('renk') ? '' : `<div class=\"color\">${esc(it.renk)}<\/div>`}\n    ${kv('stok', 'Gün Sonu Reyon Stok Ort.', fmt(it.stok, 0))}\n    ${kv('satis', 'Satış Adet', fmt(it.satis, 0))}\n    ${kv('devir', 'Devir Hızı', fmt(it.devir, 2))}\n    ${kv('cluster', 'Cluster', esc(it.cluster || '-'))}\n    ${HAS_RANGE ? rangeLines(it) : ''}\n  <\/div><\/div>`;\n}\n\nfunction render() {\n  document.body.classList.toggle('noimg', HIDDEN.has('resim'));\n  document.getElementById('warn').style.display = HIDDEN.has('uyari') ? 'none' : '';\n  const keys = ['merch_alt_grup', 'klasman'].filter(k => !HIDDEN.has(k));\n  const shown = DATA.filter(i => Object.keys(FILTERS).every(k => !OFF[k].has(i[k] || '-')));\n  renderStats(shown);\n  renderWarn(shown);\n  const items = shown.sort((a, b) =>\n    keys.map(k => a[k].localeCompare(b[k], 'tr')).find(x => x) ||\n    (b.stok || 0) - (a.stok || 0));  // grup içinde stok adedi büyükten küçüğe\n  let html = '', main = null, sub = null, buf = [];\n  const flush = () => {\n    if (!buf.length) return;\n    if (keys.includes('klasman')) {\n      const cnt = {}; buf.forEach(i => cnt[i.durum] = (cnt[i.durum] || 0) + 1);\n      html += `<h3>${esc(sub)} <small>${buf.length} opsiyon · ${Object.entries(cnt).map(([d, n]) => `${esc(d)}: ${n}`).join(' · ')}<\/small><\/h3>`;\n    }\n    html += `<div class=\"grid\">${buf.map(card).join('')}<\/div>`; buf = [];\n  };\n  let first = true;\n  for (const it of items) {\n    if (keys.includes('merch_alt_grup') && it.merch_alt_grup !== main) {\n      flush(); main = it.merch_alt_grup; sub = null;\n      html += `<h2 class=\"${first ? 'first' : ''}\">${esc(main)}<\/h2>`; first = false;\n    }\n    if (keys.includes('klasman') && it.klasman !== sub) { flush(); sub = it.klasman; }\n    buf.push(it);\n  }\n  flush();\n  document.getElementById('main').innerHTML = html;\n}\n\nfunction renderStats(rows) {\n  const cnt = {}; rows.forEach(i => cnt[i.durum] = (cnt[i.durum] || 0) + 1);\n  document.getElementById('stats').innerHTML =\n    `<div class=\"stat\"><b>${rows.length}<\/b><span>Toplam Opsiyon<\/span><\/div>` +\n    Object.entries(cnt).sort((a, b) => (DURUM_ORDER[a[0]] ?? 99) - (DURUM_ORDER[b[0]] ?? 99)).map(([d, n]) =>\n      `<div class=\"stat\" style=\"border-color:${DURUM_COLORS[d] || '#555'}\"><b>${n}<\/b><span>${esc(d)}<\/span><\/div>`).join('') +\n    `<div class=\"stat\"><b>${fmt(rows.reduce((s, i) => s + (i.satis || 0), 0), 0)}<\/b><span>Toplam Satış Adet<\/span><\/div>`;\n}\n// Her grubun başında \"Tümü\": hepsini seçer / kaldırır. Çok değerli gruplar (Klasman) açılır listede\nconst ddLabel = k => `${FILTERS[k][0]} (${FILTERS[k][1].length - OFF[k].size}/${FILTERS[k][1].length})`;\ndocument.getElementById('filters').innerHTML = Object.entries(FILTERS).map(([k, [label, vals]]) => {\n  const boxes = `<label><input type=\"checkbox\" data-all=\"${k}\" ${OFF[k].size ? '' : 'checked'}><b>Tümü<\/b><\/label>` + vals.map(v =>\n    `<label><input type=\"checkbox\" data-f=\"${k}\" value=\"${esc(v)}\" ${OFF[k].has(v) ? '' : 'checked'}>${esc(v)}<\/label>`).join('');\n  return vals.length > 8\n    ? `<details class=\"dd\"><summary id=\"dd-${k}\">${esc(ddLabel(k))}<\/summary><div class=\"ddl\">${boxes}<\/div><\/details>`\n    : `<span>${esc(label)}:<\/span>${boxes}`;\n}).join('<i>|<\/i>');\ndocument.getElementById('filters').addEventListener('change', e => {\n  const {f, all} = e.target.dataset;\n  const box = document.getElementById('filters');\n  if (all) {\n    box.querySelectorAll(`input[data-f=\"${all}\"]`).forEach(cb => {\n      cb.checked = e.target.checked;\n      e.target.checked ? OFF[all].delete(cb.value) : OFF[all].add(cb.value);\n    });\n  } else {\n    e.target.checked ? OFF[f].delete(e.target.value) : OFF[f].add(e.target.value);\n    box.querySelector(`input[data-all=\"${f}\"]`).checked = OFF[f].size === 0;\n  }\n  const k = all || f, dd = document.getElementById('dd-' + k);\n  if (dd) dd.textContent = ddLabel(k);\n  render();\n});\n// Uyarı listesi sadece filtrede görünen opsiyonları kapsar; ilk 10 satır, gerisi \"Tümünü göster\"\nlet warnAll = false;\nfunction renderWarn(shown) {\n  const codes = new Set(shown.map(i => i.option_kod));\n  const ws = WARNINGS.filter(w => codes.has(w.option_kod));\n  const el = document.getElementById('warn');\n  if (!ws.length) { el.innerHTML = ''; return; }\n  const rows = warnAll ? ws : ws.slice(0, 10);\n  el.innerHTML =\n    `<div class=\"warn\"><h4><span>⚠ UYARI: ${ws.length} opsiyonda RANGE bilgisi eksik<\/span>\n     <button type=\"button\" onclick=\"hideWarn()\">✕ Gizle<\/button><\/h4>\n     <p>Kumaş ve Bitim İşlemi tüm ürünlerde, Paça Detayı pantolonlarda, Yaka Tipi hırkalarda RANGE kontrol dosyasında doldurulmalı.<\/p>\n     <table><tr><th>Option Kod<\/th><th>Ürün Ad<\/th><th>Klasman<\/th><th>Sorun<\/th><\/tr>` +\n    rows.map(w => `<tr><td><b>${esc(w.option_kod)}<\/b><\/td><td>${esc(w.urun_ad)}<\/td><td>${esc(w.klasman)}<\/td><td class=\"s\">${esc(w.sorun)}<\/td><\/tr>`).join('') +\n    '<\/table>' + (ws.length > 10 ? `<p class=\"more\"><button type=\"button\" onclick=\"warnAll=!warnAll;render()\">${\n      warnAll ? 'İlk 10 satırı göster' : `Tümünü göster (${ws.length})`}<\/button><\/p>` : '') + '<\/div>';\n}\nfunction hideWarn() {\n  HIDDEN.add('uyari');\n  const cb = document.querySelector('#toggles input[value=uyari]');\n  if (cb) cb.checked = true;\n  render();\n}\ndocument.getElementById('toggles').innerHTML = (WARNINGS.length ? [['uyari', 'RANGE Uyarıları']] : [])\n  .concat(FIELDS.filter(([k]) => HAS_RANGE || !RANGE_KEYS.includes(k))).map(([k, label]) =>\n  `<label><input type=\"checkbox\" value=\"${k}\" ${HIDDEN.has(k) ? 'checked' : ''}>${esc(label)}<\/label>`).join('');\ndocument.getElementById('toggles').addEventListener('change', e => {\n  e.target.checked ? HIDDEN.add(e.target.value) : HIDDEN.delete(e.target.value); render();\n});\nrender();\n<\/script>\n<\/body>\n<\/html>\n";
-const ALL_DURUM = ["Çok İyi", "İyi", "Orta", "Kötü", "Çok Kötü", "Minimum Mağaza Kısıtına Takıldı"];
-const DEFAULTS = {"durumlar": ["Çok İyi", "İyi", "Orta", "Kötü", "Çok Kötü", "Minimum Mağaza Kısıtına Takıldı"], "buyer_gruplar": ["ÖRME BASIC", "ÖRME", "ÖRME SET"], "klasman_kelimeler": [], "clusterlar": [], "rapor_varsayilan": {"durum": ["Çok İyi", "İyi"], "cluster": ["K"], "merch_alt_grup": ["BUC"], "klasman": []}};
+const REPORT_TEMPLATE = "<!DOCTYPE html>\n<html lang=\"tr\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>__TITLE__<\/title>\n<style>\n  :root { --brand:#002f6c; --accent:#e30613; --text:#1d2433; --muted:#6b7385;\n          --line:#d9dee8; --soft:#f3f5f9; }\n  * { box-sizing:border-box; margin:0; padding:0; }\n  body { font:13px/1.4 -apple-system,\"Segoe UI\",Roboto,Arial,sans-serif; color:var(--text); background:#fff; }\n  header { background:var(--brand); color:#fff; padding:14px 20px; border-bottom:3px solid var(--accent); }\n  header h1 { font-size:20px; }\n  header p { font-size:12px; color:#cfd8ea; margin-top:2px; }\n  .bar { position:sticky; top:0; z-index:5; background:#fff; border-bottom:1px solid var(--line);\n         padding:10px 20px; display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center; }\n  .bar b { font-size:12px; color:var(--muted); font-weight:600; }\n  .chk { display:flex; flex-wrap:wrap; gap:4px 12px; flex:1; }\n  .chk i { color:var(--line); font-style:normal; }\n  .bar .break { flex-basis:100%; height:0; }\n  .bar label { font-size:12px; display:flex; gap:4px; align-items:center; cursor:pointer; }\n  .bar button { margin-left:auto; background:var(--brand); color:#fff; border:0; border-radius:6px;\n                padding:8px 14px; font-weight:600; cursor:pointer; }\n  .stats { display:flex; flex-wrap:wrap; gap:10px; padding:16px 20px 4px; }\n  .stat { background:var(--soft); border-left:4px solid var(--brand); border-radius:6px; padding:8px 14px; min-width:130px; }\n  .stat b { font-size:20px; display:block; }\n  .stat span { font-size:11px; color:var(--muted); }\n  main { padding:8px 20px 30px; }\n  h2 { font-size:16px; color:#fff; background:var(--brand); padding:8px 12px; border-radius:6px; margin:22px 0 8px; }\n  h3 { font-size:13px; color:var(--brand); background:var(--soft); border-left:4px solid var(--accent);\n       padding:7px 10px; border-radius:4px; margin:14px 0 8px; display:flex; justify-content:space-between; }\n  h3 small { color:var(--muted); font-weight:400; }\n  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:10px; }\n  .card { border:1px solid var(--line); border-radius:8px; overflow:hidden; break-inside:avoid; page-break-inside:avoid; background:#fff;\n          content-visibility:auto; contain-intrinsic-size:auto 440px; }\n  .dd { position:relative; font-size:12px; }\n  .dd summary { cursor:pointer; padding:2px 8px; border:1px solid var(--line); border-radius:6px; }\n  .dd .ddl { position:absolute; z-index:10; background:#fff; border:1px solid var(--line); border-radius:8px;\n             box-shadow:0 6px 18px rgba(0,0,0,.12); padding:8px 10px; max-height:340px; overflow:auto;\n             min-width:280px; display:flex; flex-direction:column; gap:3px; }\n  .img { position:relative; aspect-ratio:3/4; background:var(--soft); display:block; }\n  .img img { width:100%; height:100%; object-fit:contain; display:block; }\n  .img .ph { position:absolute; inset:0; display:none; align-items:center; justify-content:center;\n             text-align:center; color:var(--muted); font-size:12px; padding:10px; }\n  .img.err img { display:none; } .img.err .ph { display:flex; }\n  .badge { position:absolute; top:6px; right:6px; color:#fff; font-size:10px; font-weight:700;\n           border-radius:10px; padding:2px 8px; }\n  .body { padding:7px 9px 9px; }\n  .code { font-weight:700; color:var(--brand); text-decoration:none; }\n  .zoom { float:right; text-decoration:none; font-size:12px; }\n  @media print { .zoom { display:none; } }\n  .name { font-size:12px; } .color { font-size:11px; color:var(--muted); }\n  .kv { display:flex; justify-content:space-between; font-size:11px; color:var(--muted); }\n  .kv b { color:var(--text); }\n  .noimg .img { display:none; }\n  .kv.miss b { color:var(--accent); }\n  .warn { margin:16px 20px 0; border:2px solid var(--accent); border-radius:8px; overflow:hidden; }\n  .warn h4 { background:var(--accent); color:#fff; padding:9px 12px; font-size:15px;\n             display:flex; justify-content:space-between; align-items:center; }\n  .warn h4 button { background:#fff; color:var(--accent); border:0; border-radius:5px;\n                    padding:3px 10px; font-weight:700; cursor:pointer; font-size:12px; }\n  .warn .more { padding:6px 12px 10px; }\n  .warn .more button { background:#fff; color:var(--accent); border:1px solid var(--accent); border-radius:5px;\n                       padding:4px 12px; font-weight:600; cursor:pointer; }\n  @media print { .warn h4 button, .warn .more { display:none; } }\n  .warn p { padding:6px 12px 0; font-size:12px; color:var(--muted); }\n  .warn table { width:100%; border-collapse:collapse; font-size:12px; margin:6px 0 4px; }\n  .warn th, .warn td { text-align:left; padding:4px 12px; border-bottom:1px solid var(--line); }\n  .warn td.s { color:var(--accent); font-weight:600; }\n  .warn th { color:var(--muted); font-weight:500; }\n  .noimg .badge { position:static; display:inline-block; margin-bottom:3px; }\n  @media print {\n    @page { size:A4 landscape; margin:9mm; }\n    .bar { display:none; }\n    .card { content-visibility:visible; }\n    header { -webkit-print-color-adjust:exact; print-color-adjust:exact; }\n    h2, h3, .badge, .stat { -webkit-print-color-adjust:exact; print-color-adjust:exact; }\n    .grid { grid-template-columns:repeat(5,1fr); gap:6px; }\n    h2 { break-before:page; } h2.first { break-before:auto; }\n    h3 { break-after:avoid; }\n    body { font-size:11px; }\n  }\n<\/style>\n<\/head>\n<body>\n<header><h1>__TITLE__<\/h1><p>__SUBTITLE__<\/p><\/header>\n<div class=\"bar\" id=\"bar\">\n  <b>Filtre:<\/b>\n  <span id=\"filters\" class=\"chk\"><\/span>\n  <button onclick=\"window.print()\">PDF olarak kaydet / Yazdır<\/button>\n  <span class=\"break\"><\/span>\n  <b>Gizle:<\/b>\n  <span id=\"toggles\" class=\"chk\"><\/span>\n<\/div>\n<div id=\"warn\"><\/div>\n<div class=\"stats\" id=\"stats\"><\/div>\n<main id=\"main\"><\/main>\n<script>\nconst DATA = __DATA__;\nconst FIELDS = __FIELDS__;\nconst HIDDEN = new Set(__HIDDEN__);\nconst DURUM_COLORS = __COLORS__;\nconst DURUM_ORDER = __ORDER__;\n// Kumaş / Ana Kumaş sadece Excel'de varsa gösterilir\nconst WARNINGS = __WARNINGS__;\n// RANGE dosyası yüklüyse Kumaş / Bitim İşlemi / Paça Detayı / Yaka Tipi gösterilir\nconst HAS_RANGE = DATA.some(i => i.range_need);\nconst RANGE_KEYS = ['kumas', 'bitim', 'paca', 'yaka'];\n// Sayfa içi filtreler: işaretli olmayan değerler gizlenir\nconst FILTERS = {\n  buyer: ['Buyer Grup', [...new Set(DATA.map(i => i.buyer || '-'))].sort((a, b) => a.localeCompare(b, 'tr'))],\n  merch_alt_grup: ['Merch Alt Grup', [...new Set(DATA.map(i => i.merch_alt_grup || '-'))].sort()],\n  klasman: ['Klasman', [...new Set(DATA.map(i => i.klasman || '-'))].sort((a, b) => a.localeCompare(b, 'tr'))],\n  cluster: ['Cluster', [...new Set(DATA.map(i => i.cluster || '-'))].sort()],\n  durum: ['Durum', [...new Set(DATA.map(i => i.durum))].sort((a, b) => (DURUM_ORDER[a] ?? 99) - (DURUM_ORDER[b] ?? 99))],\n};\n// Açılışta seçili gelenler; değerlerin hiçbiri veride yoksa o grup \"Tümü\"\nconst DEFAULT_ON = __DEFAULT_ON__;\nconst OFF = {};\nconst normV = v => String(v ?? '').trim().toLocaleLowerCase('tr');\nfor (const [k, [, vals]] of Object.entries(FILTERS)) {\n  const want = new Set((DEFAULT_ON[k] || []).map(normV));\n  const hit = vals.filter(v => want.has(normV(v)));\n  OFF[k] = new Set(hit.length ? vals.filter(v => !want.has(normV(v))) : []);\n}\nconst fmt = (v, d) => v == null ? '-' : v.toLocaleString('tr-TR', {minimumFractionDigits: d, maximumFractionDigits: d});\nconst esc = s => String(s ?? '').replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));\nconst search = code => 'https://www.lcw.com/arama?q=' + encodeURIComponent(code);\n\n// Kartta Excel'deki 600x800 görsel (hızlı), olmazsa diğer boyutlar; 🔍 yüksek çözünürlük\nconst CDN = 'https://img-lcwaikiki.mncdn.com';\nconst CDN_RE = /^https?:\\/\\/img-lcwaikiki\\.mncdn\\.com\\/(?:mn\\w+\\/\\d+\\/\\d+\\/(?:[0-9a-fA-F]{6}\\/)?)?(pim\\/productimages\\/[^\\s\"'<>?]+?\\.(?:jpe?g|png|webp))/i;\nfunction imgUrls(u) {\n  if (!u || !u.startsWith('http')) return {card: [], big: ''};\n  const m = CDN_RE.exec(u);\n  if (!m) return {card: [u], big: u};\n  const big = `${CDN}/mnpadding/1200/1600/ffffff/${m[1]}`;\n  return {card: [...new Set([u, `${CDN}/mnpadding/600/800/ffffff/${m[1]}`, big, `${CDN}/${m[1]}`])], big};\n}\n// Görsel sırayla denenir; hepsi başarısızsa \"lcw.com'da ara\" gösterilir\nfunction imgFail(el) {\n  const urls = JSON.parse(el.dataset.urls);\n  const i = +(el.dataset.i || 0) + 1;\n  if (i < urls.length) { el.dataset.i = i; el.src = urls[i]; }\n  else el.parentNode.classList.add('err');\n}\n\nconst LABELS = Object.fromEntries(FIELDS);\nfunction rangeLines(it) {\n  // Kumaş ve Bitim İşlemi her üründe; Paça Detayı pantolonda, Yaka Tipi hırkada\n  return RANGE_KEYS.filter(k => (k === 'kumas' || k === 'bitim' || (it.range_need || []).includes(k)) && !HIDDEN.has(k))\n    .map(k => (it.range_eksik || []).includes(k)\n      ? `<div class=\"kv miss\"><span>${LABELS[k]}<\/span><b>EKSİK<\/b><\/div>`\n      : `<div class=\"kv\"><span>${LABELS[k]}<\/span><b>${esc(it[k] || '-')}<\/b><\/div>`).join('');\n}\n\nfunction card(it) {\n  const h = HIDDEN;\n  const col = DURUM_COLORS[it.durum] || '#555';\n  const badge = h.has('durum') ? '' : `<span class=\"badge\" style=\"background:${col}\">${esc(it.durum)}<\/span>`;\n  // Görsele tıklayınca lcw.com'da ürün aranır (kumaş vb. detaylar ürün sayfasında)\n  const link = search(it.option_kod);\n  const u = imgUrls(it.img);\n  const img = h.has('resim') ? '' : `<a class=\"img${u.card.length ? '' : ' err'}\" href=\"${esc(link)}\" target=\"_blank\" rel=\"noopener\">\n      ${u.card.length ? `<img loading=\"lazy\" decoding=\"async\" src=\"${esc(u.card[0])}\" data-urls='${esc(JSON.stringify(u.card))}' onerror=\"imgFail(this)\" alt=\"${esc(it.option_kod)}\">` : ''}\n      <span class=\"ph\">Görsel yüklenemedi<br>lcw.com'da açmak için tıklayın<\/span>${badge}<\/a>`;\n  const kv = (k, label, v) => h.has(k) ? '' : `<div class=\"kv\"><span>${label}<\/span><b>${v}<\/b><\/div>`;\n  return `<div class=\"card\">${img}<div class=\"body\">\n    ${h.has('resim') ? badge : ''}\n    ${h.has('option_kod') ? '' : `<a class=\"code\" href=\"${esc(search(it.option_kod))}\" target=\"_blank\" rel=\"noopener\" title=\"lcw.com'da aç\">${esc(it.option_kod)}<\/a>`}\n    ${u.big ? `<a class=\"zoom\" href=\"${esc(u.big)}\" target=\"_blank\" rel=\"noopener\" title=\"Görseli büyük aç\">🔍<\/a>` : ''}\n    ${h.has('urun_ad') ? '' : `<div class=\"name\">${esc(it.urun_ad)}<\/div>`}\n    ${h.has('renk') ? '' : `<div class=\"color\">${esc(it.renk)}<\/div>`}\n    ${kv('stok', 'Gün Sonu Reyon Stok Ort.', fmt(it.stok, 0))}\n    ${kv('satis', 'Satış Adet', fmt(it.satis, 0))}\n    ${kv('devir', 'Devir Hızı', fmt(it.devir, 2))}\n    ${kv('cluster', 'Cluster', esc(it.cluster || '-'))}\n    ${HAS_RANGE ? rangeLines(it) : ''}\n  <\/div><\/div>`;\n}\n\nfunction render() {\n  document.body.classList.toggle('noimg', HIDDEN.has('resim'));\n  document.getElementById('warn').style.display = HIDDEN.has('uyari') ? 'none' : '';\n  const keys = ['merch_alt_grup', 'klasman'].filter(k => !HIDDEN.has(k));\n  const shown = DATA.filter(i => Object.keys(FILTERS).every(k => !OFF[k].has(i[k] || '-')));\n  renderStats(shown);\n  renderWarn(shown);\n  const items = shown.sort((a, b) =>\n    keys.map(k => a[k].localeCompare(b[k], 'tr')).find(x => x) ||\n    (b.stok || 0) - (a.stok || 0));  // grup içinde stok adedi büyükten küçüğe\n  let html = '', main = null, sub = null, buf = [];\n  const flush = () => {\n    if (!buf.length) return;\n    if (keys.includes('klasman')) {\n      const cnt = {}; buf.forEach(i => cnt[i.durum] = (cnt[i.durum] || 0) + 1);\n      html += `<h3>${esc(sub)} <small>${buf.length} opsiyon · ${Object.entries(cnt).map(([d, n]) => `${esc(d)}: ${n}`).join(' · ')}<\/small><\/h3>`;\n    }\n    html += `<div class=\"grid\">${buf.map(card).join('')}<\/div>`; buf = [];\n  };\n  let first = true;\n  for (const it of items) {\n    if (keys.includes('merch_alt_grup') && it.merch_alt_grup !== main) {\n      flush(); main = it.merch_alt_grup; sub = null;\n      html += `<h2 class=\"${first ? 'first' : ''}\">${esc(main)}<\/h2>`; first = false;\n    }\n    if (keys.includes('klasman') && it.klasman !== sub) { flush(); sub = it.klasman; }\n    buf.push(it);\n  }\n  flush();\n  document.getElementById('main').innerHTML = html;\n}\n\nfunction renderStats(rows) {\n  const cnt = {}; rows.forEach(i => cnt[i.durum] = (cnt[i.durum] || 0) + 1);\n  document.getElementById('stats').innerHTML =\n    `<div class=\"stat\"><b>${rows.length}<\/b><span>Toplam Opsiyon<\/span><\/div>` +\n    Object.entries(cnt).sort((a, b) => (DURUM_ORDER[a[0]] ?? 99) - (DURUM_ORDER[b[0]] ?? 99)).map(([d, n]) =>\n      `<div class=\"stat\" style=\"border-color:${DURUM_COLORS[d] || '#555'}\"><b>${n}<\/b><span>${esc(d)}<\/span><\/div>`).join('') +\n    `<div class=\"stat\"><b>${fmt(rows.reduce((s, i) => s + (i.satis || 0), 0), 0)}<\/b><span>Toplam Satış Adet<\/span><\/div>`;\n}\n// Her grubun başında \"Tümü\": hepsini seçer / kaldırır. Çok değerli gruplar (Klasman) açılır listede\nconst ddLabel = k => `${FILTERS[k][0]} (${FILTERS[k][1].length - OFF[k].size}/${FILTERS[k][1].length})`;\ndocument.getElementById('filters').innerHTML = Object.entries(FILTERS).map(([k, [label, vals]]) => {\n  const boxes = `<label><input type=\"checkbox\" data-all=\"${k}\" ${OFF[k].size ? '' : 'checked'}><b>Tümü<\/b><\/label>` + vals.map(v =>\n    `<label><input type=\"checkbox\" data-f=\"${k}\" value=\"${esc(v)}\" ${OFF[k].has(v) ? '' : 'checked'}>${esc(v)}<\/label>`).join('');\n  return vals.length > 8\n    ? `<details class=\"dd\"><summary id=\"dd-${k}\">${esc(ddLabel(k))}<\/summary><div class=\"ddl\">${boxes}<\/div><\/details>`\n    : `<span>${esc(label)}:<\/span>${boxes}`;\n}).join('<i>|<\/i>');\ndocument.getElementById('filters').addEventListener('change', e => {\n  const {f, all} = e.target.dataset;\n  const box = document.getElementById('filters');\n  if (all) {\n    box.querySelectorAll(`input[data-f=\"${all}\"]`).forEach(cb => {\n      cb.checked = e.target.checked;\n      e.target.checked ? OFF[all].delete(cb.value) : OFF[all].add(cb.value);\n    });\n  } else {\n    e.target.checked ? OFF[f].delete(e.target.value) : OFF[f].add(e.target.value);\n    box.querySelector(`input[data-all=\"${f}\"]`).checked = OFF[f].size === 0;\n  }\n  const k = all || f, dd = document.getElementById('dd-' + k);\n  if (dd) dd.textContent = ddLabel(k);\n  render();\n});\n// Uyarı listesi sadece filtrede görünen opsiyonları kapsar; ilk 10 satır, gerisi \"Tümünü göster\"\nlet warnAll = false;\nfunction renderWarn(shown) {\n  const codes = new Set(shown.map(i => i.option_kod));\n  const ws = WARNINGS.filter(w => codes.has(w.option_kod));\n  const el = document.getElementById('warn');\n  if (!ws.length) { el.innerHTML = ''; return; }\n  const rows = warnAll ? ws : ws.slice(0, 10);\n  el.innerHTML =\n    `<div class=\"warn\"><h4><span>⚠ UYARI: ${ws.length} opsiyonda RANGE bilgisi eksik<\/span>\n     <button type=\"button\" onclick=\"hideWarn()\">✕ Gizle<\/button><\/h4>\n     <p>Kumaş ve Bitim İşlemi tüm ürünlerde, Paça Detayı pantolonlarda, Yaka Tipi hırkalarda RANGE kontrol dosyasında doldurulmalı.<\/p>\n     <table><tr><th>Option Kod<\/th><th>Ürün Ad<\/th><th>Klasman<\/th><th>Sorun<\/th><\/tr>` +\n    rows.map(w => `<tr><td><b>${esc(w.option_kod)}<\/b><\/td><td>${esc(w.urun_ad)}<\/td><td>${esc(w.klasman)}<\/td><td class=\"s\">${esc(w.sorun)}<\/td><\/tr>`).join('') +\n    '<\/table>' + (ws.length > 10 ? `<p class=\"more\"><button type=\"button\" onclick=\"warnAll=!warnAll;render()\">${\n      warnAll ? 'İlk 10 satırı göster' : `Tümünü göster (${ws.length})`}<\/button><\/p>` : '') + '<\/div>';\n}\nfunction hideWarn() {\n  HIDDEN.add('uyari');\n  const cb = document.querySelector('#toggles input[value=uyari]');\n  if (cb) cb.checked = true;\n  render();\n}\ndocument.getElementById('toggles').innerHTML = (WARNINGS.length ? [['uyari', 'RANGE Uyarıları']] : [])\n  .concat(FIELDS.filter(([k]) => HAS_RANGE || !RANGE_KEYS.includes(k))).map(([k, label]) =>\n  `<label><input type=\"checkbox\" value=\"${k}\" ${HIDDEN.has(k) ? 'checked' : ''}>${esc(label)}<\/label>`).join('');\ndocument.getElementById('toggles').addEventListener('change', e => {\n  e.target.checked ? HIDDEN.add(e.target.value) : HIDDEN.delete(e.target.value); render();\n});\nrender();\n<\/script>\n<\/body>\n<\/html>\n";
+const DEFAULTS = {"rapor_varsayilan": {"buyer": ["ÖRME BASIC", "ÖRME", "ÖRME SET"], "durum": ["Çok İyi", "İyi"], "cluster": ["K"], "merch_alt_grup": ["BUC"], "klasman": []}};
 const DURUM_COLORS = {"Çok İyi": "#0f7b3f", "İyi": "#5aa832", "Orta": "#d9a400", "Kötü": "#e07020", "Çok Kötü": "#c62828", "Minimum Mağaza Kısıtına Takıldı": "#7a7f8c"};
 const DURUM_ORDER = {"Çok İyi": 0, "İyi": 1, "Orta": 2, "Kötü": 3, "Çok Kötü": 4, "Minimum Mağaza Kısıtına Takıldı": 5};
 const $ = id => document.getElementById(id);
-const list = s => s.split(',').map(x => x.trim()).filter(Boolean);
 const status = (msg, cls = '') => { $('status').textContent = msg; $('status').className = cls; };
+const escHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const js = v => JSON.stringify(v).replace(/<\//g, '<\\/');
+const normV = v => String(v ?? '').trim().toLocaleLowerCase('tr');
 
-// ── Ayarlar (bu bilgisayarda hatırlanır) ──
-let S = {...DEFAULTS};
-try { Object.assign(S, JSON.parse(localStorage.getItem('merchToolSettings_v4') || '{}')); } catch (e) {}
-$('durumlar').innerHTML = ALL_DURUM.map(d =>
-  `<label><input type="checkbox" value="${d}" ${S.durumlar.includes(d) ? 'checked' : ''}>${d}</label>`).join('');
-$('buyer').value = S.buyer_gruplar.join(', ');
-$('klasman').value = S.klasman_kelimeler.join(', ');
-$('cluster').value = (S.clusterlar || []).join(', ');
-const V = S.rapor_varsayilan || {};
-$('v_merch').value = (V.merch_alt_grup || []).join(', ');
-$('v_cluster').value = (V.cluster || []).join(', ');
-$('v_durum').value = (V.durum || []).join(', ');
-function readSettings() {
-  S.durumlar = [...$('durumlar').querySelectorAll('input:checked')].map(i => i.value);
-  S.buyer_gruplar = list($('buyer').value);
-  S.klasman_kelimeler = list($('klasman').value);
-  S.clusterlar = list($('cluster').value);
-  S.rapor_varsayilan = {merch_alt_grup: list($('v_merch').value), cluster: list($('v_cluster').value),
-                        durum: list($('v_durum').value)};
-  try { localStorage.setItem('merchToolSettings_v4', JSON.stringify(S)); } catch (e) {}
-  return S;
+// Seçim boyutları (rapordaki filtrelerle aynı)
+const DIMS = [
+  ['buyer', 'Buyer Grup'], ['merch_alt_grup', 'Merch Alt Grup'], ['klasman', 'Klasman'],
+  ['cluster', 'Cluster'], ['durum', 'Durum'],
+];
+
+// ── Seçimler (bu bilgisayarda hatırlanır) ──
+let SAVED = {...(DEFAULTS.rapor_varsayilan || {})};
+try { Object.assign(SAVED, JSON.parse(localStorage.getItem('merchToolSecim_v1') || '{}')); } catch (e) {}
+let onlySel = false;
+try { onlySel = localStorage.getItem('merchToolSadeceSecili') === '1'; } catch (e) {}
+$('onlySel').checked = onlySel;
+
+let RESULT = null;        // {data, warnings, hasRange}
+const SEL = {};           // boyut → seçili değerler (Set)
+
+function valuesOf(k) {
+  const cnt = new Map();
+  for (const it of RESULT.data) { const v = it[k] || '-'; cnt.set(v, (cnt.get(v) || 0) + 1); }
+  const vals = [...cnt.keys()];
+  vals.sort(k === 'durum' ? (a, b) => (DURUM_ORDER[a] ?? 99) - (DURUM_ORDER[b] ?? 99) : (a, b) => a.localeCompare(b, 'tr'));
+  return vals.map(v => [v, cnt.get(v)]);
 }
 
-// ── Dosya seçimi ──
-const files = {W: null, R: null};
-function setupDrop(id, key) {
+function renderDims() {
+  $('dims').innerHTML = DIMS.map(([k, label]) => {
+    const vals = valuesOf(k);
+    // Kayıtlı seçim bu dosyada yoksa o boyutta hepsi seçili
+    const want = new Set((SAVED[k] || []).map(normV));
+    const hit = vals.filter(([v]) => want.has(normV(v))).map(([v]) => v);
+    SEL[k] = new Set(hit.length ? hit : vals.map(([v]) => v));
+    const all = SEL[k].size === vals.length;
+    return `<div class="dim"><h3>${escHtml(label)} <small id="c-${k}">${SEL[k].size}/${vals.length}</small></h3><div class="opts">
+      <label class="all"><input type="checkbox" data-all="${k}" ${all ? 'checked' : ''}>Tümü</label>` +
+      vals.map(([v, n]) => `<label><input type="checkbox" data-d="${k}" value="${escHtml(v)}" ${SEL[k].has(v) ? 'checked' : ''}>${escHtml(v)}<span class="n">${n}</span></label>`).join('') +
+      '</div></div>';
+  }).join('');
+  updateCount();
+}
+
+$('dims').addEventListener('change', e => {
+  const {d, all} = e.target.dataset;
+  const k = d || all;
+  if (all) {
+    $('dims').querySelectorAll(`input[data-d="${k}"]`).forEach(cb => {
+      cb.checked = e.target.checked;
+      e.target.checked ? SEL[k].add(cb.value) : SEL[k].delete(cb.value);
+    });
+  } else {
+    e.target.checked ? SEL[k].add(e.target.value) : SEL[k].delete(e.target.value);
+    $('dims').querySelector(`input[data-all="${k}"]`).checked =
+      SEL[k].size === $('dims').querySelectorAll(`input[data-d="${k}"]`).length;
+  }
+  $('c-' + k).textContent = `${SEL[k].size}/${$('dims').querySelectorAll(`input[data-d="${k}"]`).length}`;
+  SAVED[k] = [...SEL[k]];
+  try { localStorage.setItem('merchToolSecim_v1', JSON.stringify(SAVED)); } catch (e2) {}
+  updateCount();
+});
+$('onlySel').onchange = e => {
+  onlySel = e.target.checked;
+  try { localStorage.setItem('merchToolSadeceSecili', onlySel ? '1' : '0'); } catch (e2) {}
+};
+
+const selected = () => RESULT.data.filter(it => DIMS.every(([k]) => SEL[k].has(it[k] || '-')));
+function updateCount() {
+  if (!RESULT) return;
+  const n = selected().length;
+  $('count').textContent = `Seçili görünüm: ${n.toLocaleString('tr-TR')} / ${RESULT.data.length.toLocaleString('tr-TR')} ürün`;
+  $('go').disabled = $('save').disabled = n === 0;
+}
+
+// ── Arka plan okuma (Web Worker); işçi açılamazsa sayfada ──
+let worker = null, busy = 0;
+function getWorker() {
+  if (worker !== null) return worker;
+  try {
+    const src = $('xlsxlib').textContent + '\n' + $('core').textContent +
+      '\nonmessage = e => { try { postMessage(handle(e.data)); } catch (err) { postMessage({kind: e.data.type, error: err.message}); } };';
+    worker = new Worker(URL.createObjectURL(new Blob([src], {type: 'text/javascript'})));
+    worker.onmessage = e => onResult(e.data);
+  } catch (e) { worker = false; }
+  return worker;
+}
+function onResult(r) {
+  busy--;
+  const el = $(r.kind === 'weekly' ? 'dropW' : 'dropR');
+  el.classList.remove('busy');
+  if (r.error) {
+    el.classList.remove('done');
+    el.querySelector('small').textContent = '✗ ' + r.error;
+    status('Hata: ' + r.error, 'err');
+    return;
+  }
+  el.classList.add('done');
+  el.querySelector('small').textContent = `✓ ${el.dataset.info} · okundu (${r.sure.toFixed(1)} sn)`;
+  if (r.pending) { status('RANGE okundu; haftalık Excel bekleniyor.'); return; }
+  RESULT = r;
+  renderDims();
+  if (!busy) status(`Hazır: ${r.data.length.toLocaleString('tr-TR')} satır` +
+    (r.hasRange ? ` · ${r.warnings.length} RANGE uyarısı` : ' · RANGE dosyası eklenmedi') +
+    '. Seçimleri yapıp "Raporu Oluştur"a basın.', 'ok');
+  if (pendingOpen) { const w = pendingOpen; pendingOpen = null; openReport(w); }
+}
+async function load(kind, file) {
+  const el = $(kind === 'weekly' ? 'dropW' : 'dropR');
+  el.classList.remove('done'); el.classList.add('busy');
+  el.dataset.info = `${file.name} · ${(file.size / 1e6).toFixed(1)} MB`;
+  el.querySelector('small').textContent = el.dataset.info + ' · okunuyor…';
+  if (kind === 'weekly') fileName = file.name; else rangeName = file.name;
+  status('Dosya arka planda okunuyor…');
+  busy++;
+  const buf = await file.arrayBuffer();
+  const wk = getWorker();
+  if (wk) wk.postMessage({type: kind, buf}, [buf]);
+  else setTimeout(() => { try { onResult(handle({type: kind, buf})); } catch (err) { onResult({kind, error: err.message}); } }, 20);
+}
+
+let fileName = '', rangeName = '';
+function setupDrop(id, kind) {
   const el = $(id), input = el.querySelector('input');
-  const set = f => {
-    if (!f) return;
-    files[key] = f;
-    el.classList.add('done');
-    el.querySelector('small').textContent = `✓ ${f.name} · ${(f.size / 1e6).toFixed(1)} MB`;
-    $('go').disabled = !files.W;
-    if (files.W) build();  // dosya bırakılınca otomatik oluştur
-  };
-  input.onchange = e => set(e.target.files[0]);
+  input.onchange = e => e.target.files[0] && load(kind, e.target.files[0]);
   ['dragover', 'dragleave', 'drop'].forEach(ev => el.addEventListener(ev, e => {
     e.preventDefault();
     el.classList.toggle('over', ev === 'dragover');
-    if (ev === 'drop') set(e.dataTransfer.files[0]);
+    if (ev === 'drop' && e.dataTransfer.files[0]) load(kind, e.dataTransfer.files[0]);
   }));
 }
-setupDrop('dropW', 'W');
-setupDrop('dropR', 'R');
+setupDrop('dropW', 'weekly');
+setupDrop('dropR', 'range');
 
-// Excel'i arka planda (Web Worker) işle: sayfa donmaz. İşçi açılamazsa sayfada çalışır.
-let worker = null;
-function getWorker() {
-  if (worker) return worker;
-  try {
-    const src = document.getElementById('xlsxlib').textContent + '\n' + document.getElementById('core').textContent +
-      '\nonmessage = e => { try { postMessage(processFiles(e.data.w, e.data.r, e.data.s)); }' +
-      ' catch (err) { postMessage({error: err.message}); } };';
-    worker = new Worker(URL.createObjectURL(new Blob([src], {type: 'text/javascript'})));
-  } catch (e) { worker = null; }
-  return worker;
-}
-async function runProcess(s) {
-  const w = await files.W.arrayBuffer(), r = files.R ? await files.R.arrayBuffer() : null;
-  const wk = getWorker();
-  if (!wk) return processFiles(w, r, s);
-  return new Promise((resolve, reject) => {
-    wk.onmessage = e => e.data.error ? reject(new Error(e.data.error)) : resolve(e.data);
-    wk.onerror = e => { e.preventDefault(); worker = null; resolve(processFiles(w, r, s)); };
-    wk.postMessage({w, r, s}, [w, ...(r ? [r] : [])]);
-  });
-}
-
-const escHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const js = v => JSON.stringify(v).replace(/<\//g, '<\\/');
-
-let reportHtml = null, reportName = 'merch_raporu.html';
-async function build() {
-  if (!files.W) return;
-  const s = readSettings();
-  if (!s.durumlar.length) { status('En az bir Durum seçin', 'err'); return; }
-  $('go').disabled = $('save').disabled = $('open').disabled = true;
-  try {
-    status(files.R ? 'Dosyalar arka planda okunuyor…' : 'Haftalık Excel arka planda okunuyor…');
-    const t0 = performance.now();
-    const {data, warnings} = await runProcess(s);
-    const m = /(\d{1,2})\s*\.?\s*hafta/i.exec(files.W.name);
-    const week = m ? `${m[1]}. Hafta` : '';
-    const title = `LCW Opsiyon Performans Raporu${week ? ' — ' + week : ''}`;
-    const subtitle = [`Durum: ${s.durumlar.join(', ')}`,
-      `Buyer Grup: ${s.buyer_gruplar.join(', ') || 'Tümü'}`,
-      `Klasman: ${s.klasman_kelimeler.join(', ') || 'Tümü'}`,
-      `Cluster: ${s.clusterlar.join(', ') || 'Tümü'}`,
-      'Kırılım: Merch Alt Grup › Gelecek Dönem Ürün Klasman',
-      `Kaynak: ${files.W.name}` + (files.R ? ` + ${files.R.name}` : '')].join(' · ');
-    reportHtml = REPORT_TEMPLATE
-      .replace(/__TITLE__/g, escHtml(title))
-      .replace('__SUBTITLE__', escHtml(subtitle))
-      .replace('__DATA__', () => js(data))
-      .replace('__FIELDS__', () => js(FIELDS.map(([k, l]) => [k, l])))
-      .replace('__HIDDEN__', '[]')
-      .replace('__WARNINGS__', () => js(warnings))
-      .replace('__DEFAULT_ON__', () => js(s.rapor_varsayilan || {}))
-      .replace('__COLORS__', () => js(DURUM_COLORS))
-      .replace('__ORDER__', () => js(DURUM_ORDER));
-    reportName = `${week ? week.replace('. Hafta', '_hafta') : 'merch'}_raporu.html`;
-    $('preview').srcdoc = reportHtml;
-    $('preview').style.display = 'block';
-    status(`Hazır: ${data.length} opsiyon` + (files.R ? ` · ${warnings.length} RANGE uyarısı` : ' · RANGE dosyası eklenmedi') +
-           ` · ${((performance.now() - t0) / 1000).toFixed(1)} sn`,
-           warnings.length ? 'err' : 'ok');
-    $('save').disabled = $('open').disabled = false;
-  } catch (e) {
-    console.error(e);
-    status('Hata: ' + e.message, 'err');
-  }
-  $('go').disabled = !files.W;
+// ── Rapor ──
+function buildReport() {
+  const data = onlySel ? selected() : RESULT.data;
+  const codes = onlySel ? new Set(data.map(i => i.option_kod)) : null;
+  const warnings = codes ? RESULT.warnings.filter(w => codes.has(w.option_kod)) : RESULT.warnings;
+  // Açılış seçimi: bir boyutta hepsi seçiliyse filtre yok
+  const defaultOn = Object.fromEntries(DIMS.map(([k]) => {
+    const n = new Set(RESULT.data.map(i => i[k] || '-')).size;
+    return [k, SEL[k].size === n ? [] : [...SEL[k]]];
+  }));
+  const m = /(\d{1,2})\s*\.?\s*hafta/i.exec(fileName);
+  const week = m ? `${m[1]}. Hafta` : '';
+  const title = `LCW Opsiyon Performans Raporu${week ? ' — ' + week : ''}`;
+  const sel = DIMS.filter(([k]) => defaultOn[k].length).map(([k, l]) => `${l}: ${defaultOn[k].join(', ')}`);
+  const subtitle = ['Kırılım: Merch Alt Grup › Gelecek Dönem Ürün Klasman',
+    sel.length ? `Seçim: ${sel.join(' · ')}` : 'Seçim: Tümü',
+    onlySel ? 'Sadece seçili ürünler' : 'Tüm ürünler (rapor içinden filtrelenebilir)',
+    `Kaynak: ${fileName}` + (rangeName && RESULT.hasRange ? ` + ${rangeName}` : '')].join(' · ');
+  const name = `${week ? week.replace('. Hafta', '_hafta') : 'merch'}_raporu.html`;
+  const html = REPORT_TEMPLATE
+    .replace(/__TITLE__/g, escHtml(title))
+    .replace('__SUBTITLE__', escHtml(subtitle))
+    .replace('__DATA__', () => js(data))
+    .replace('__FIELDS__', () => js(FIELDS.map(([k, l]) => [k, l])))
+    .replace('__HIDDEN__', '[]')
+    .replace('__WARNINGS__', () => js(warnings))
+    .replace('__DEFAULT_ON__', () => js(defaultOn))
+    .replace('__COLORS__', () => js(DURUM_COLORS))
+    .replace('__ORDER__', () => js(DURUM_ORDER));
+  return {html, name};
 }
 
-$('go').onclick = build;
+let pendingOpen = null;
+function openReport(win) {
+  const {html} = buildReport();
+  const url = URL.createObjectURL(new Blob([html], {type: 'text/html'}));
+  if (win && !win.closed) win.location.href = url;
+  else if (!window.open(url, '_blank')) status('Tarayıcı yeni sekmeyi engelledi; "Raporu kaydet" ile indirebilirsiniz.', 'err');
+}
+$('go').onclick = () => {
+  // Sekme tıklama anında açılır (açılır pencere engelleyicisine takılmasın), rapor hazır olunca dolar
+  const win = window.open('', '_blank');
+  if (win) win.document.write('<p style="font:16px sans-serif;padding:20px">Rapor hazırlanıyor…</p>');
+  if (busy) { pendingOpen = win; status('Dosya okunuyor; bitince rapor açılacak…'); return; }
+  openReport(win);
+};
 $('save').onclick = () => {
+  const {html, name} = buildReport();
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([reportHtml], {type: 'text/html'}));
-  a.download = reportName;
+  a.href = URL.createObjectURL(new Blob([html], {type: 'text/html'}));
+  a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-};
-$('open').onclick = () => {
-  const url = URL.createObjectURL(new Blob([reportHtml], {type: 'text/html'}));
-  window.open(url, '_blank');
 };
 </script>
 </body>
