@@ -961,6 +961,25 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
   .kv b { color:var(--text); }
   .noimg .img { display:none; }
   .kv.miss b { color:var(--accent); }
+  [hidden] { display:none !important; }
+  .tabs { display:flex; gap:6px; padding:12px 20px 0; }
+  .tabs button { background:#fff; color:var(--brand); border:1px solid var(--line); border-radius:7px 7px 0 0;
+                 padding:7px 18px; font-weight:600; cursor:pointer; font-size:13px; }
+  .tabs button.on { background:var(--brand); color:#fff; border-color:var(--brand); }
+  #ozet { padding:0 20px 30px; }
+  #ozet .stats { padding-left:0; padding-right:0; }
+  #ozet .note { font-size:12px; color:var(--muted); margin:4px 0 6px; }
+  .tblw { overflow-x:auto; }
+  table.sum { border-collapse:collapse; width:100%; font-size:12px; }
+  table.sum th { background:var(--brand); color:#fff; font-weight:600; padding:7px 8px; text-align:left; position:sticky; top:0; }
+  table.sum td { padding:5px 8px; border-bottom:1px solid var(--line); }
+  table.sum .num { text-align:right; white-space:nowrap; }
+  table.sum td.num small { display:block; color:var(--muted); font-size:10px; }
+  table.sum td.ex { color:var(--muted); font-size:11px; }
+  table.sum td.good { color:var(--ok, #0f7b3f); }
+  table.sum tr.tot td { background:var(--soft); font-weight:700; border-top:2px solid var(--brand); }
+  table.sum .z { color:var(--line); }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:4px; vertical-align:middle; }
   .warn { margin:16px 20px 0; border:2px solid var(--accent); border-radius:8px; overflow:hidden; }
   .warn h4 { background:var(--accent); color:#fff; padding:9px 12px; font-size:15px;
              display:flex; justify-content:space-between; align-items:center; }
@@ -978,7 +997,8 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
   .noimg .badge { position:static; display:inline-block; margin-bottom:3px; }
   @media print {
     @page { size:A4 landscape; margin:9mm; }
-    .bar { display:none; }
+    .bar, .tabs { display:none; }
+    table.sum th, table.sum td, .dot { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
     .card { content-visibility:visible; }
     header { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
     h2, h3, .badge, .stat { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
@@ -999,9 +1019,11 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
   <b>Gizle:</b>
   <span id="toggles" class="chk"></span>
 </div>
+<nav class="tabs" id="tabs"><button type="button" data-v="urun" class="on">Ürünler</button><button type="button" data-v="ozet">Özet</button></nav>
 <div id="warn"></div>
 <div class="stats" id="stats"></div>
 <main id="main"></main>
+<section id="ozet" hidden></section>
 <script>
 const DATA = __DATA__;
 const FIELDS = __FIELDS__;
@@ -1088,7 +1110,21 @@ function card(it) {
   </div></div>`;
 }
 
+// Sekmeler: Ürünler (kartlar) / Özet (Buyer Grup ve Klasman × Durum tabloları)
+let VIEW = 'urun';
+document.getElementById('tabs').addEventListener('click', e => {
+  const v = e.target.dataset.v;
+  if (!v || v === VIEW) return;
+  VIEW = v;
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  render();
+});
+
 function render() {
+  const ozet = VIEW === 'ozet';
+  ['warn', 'stats', 'main'].forEach(id => document.getElementById(id).hidden = ozet);
+  document.getElementById('ozet').hidden = !ozet;
+  if (ozet) { renderSummary(); return; }
   document.body.classList.toggle('noimg', HIDDEN.has('resim'));
   document.getElementById('warn').style.display = HIDDEN.has('uyari') ? 'none' : '';
   const keys = ['merch_alt_grup', 'klasman'].filter(k => !HIDDEN.has(k));
@@ -1118,6 +1154,49 @@ function render() {
   }
   flush();
   document.getElementById('main').innerHTML = html;
+}
+
+// ── Özet: Durum filtresi hariç diğer filtrelere uyan satırlar; durumlar sütunlarda ──
+const pct = (n, t) => t ? (n / t * 100).toLocaleString('tr-TR', {maximumFractionDigits: 1}) + '%' : '-';
+function summaryTable(base, key, title, extra) {
+  const durums = FILTERS.durum[1];
+  const groups = new Map();
+  for (const i of base) {
+    const g = i[key] || '-';
+    if (!groups.has(g)) groups.set(g, {n: 0, d: {}, ex: new Set()});
+    const r = groups.get(g);
+    r.n++; r.d[i.durum] = (r.d[i.durum] || 0) + 1;
+    if (extra) r.ex.add(i[extra[0]] || '-');
+  }
+  const rows = [...groups.entries()].sort((a, b) => b[1].n - a[1].n);
+  const tot = {n: base.length, d: {}};
+  base.forEach(i => tot.d[i.durum] = (tot.d[i.durum] || 0) + 1);
+  const good = r => (r.d['Çok İyi'] || 0) + (r.d['İyi'] || 0);
+  const cell = (r, d) => {
+    const n = r.d[d] || 0, p = r.n ? n / r.n : 0;
+    const bg = n ? `background:${DURUM_COLORS[d] || '#7a7f8c'}${Math.round(18 + p * 150).toString(16).padStart(2, '0')}` : '';
+    return `<td class="num" style="${bg}">${n ? `<b>${n}</b><small>${pct(n, r.n)}</small>` : '<span class="z">–</span>'}</td>`;
+  };
+  const line = (name, r, cls = '') => `<tr class="${cls}"><td class="g">${esc(name)}</td>` +
+    (extra ? `<td class="ex">${esc([...(r.ex || [])].sort().join(', '))}</td>` : '') +
+    `<td class="num"><b>${r.n}</b></td>${durums.map(d => cell(r, d)).join('')}<td class="num good"><b>${pct(good(r), r.n)}</b></td></tr>`;
+  return `<h3>${esc(title)} <small>${rows.length} satır</small></h3><div class="tblw"><table class="sum"><thead><tr><th>${esc(FILTERS[key][0])}</th>` +
+    (extra ? `<th>${esc(extra[1])}</th>` : '') + `<th class="num">Option Adet</th>` +
+    durums.map(d => `<th class="num"><span class="dot" style="background:${DURUM_COLORS[d] || '#7a7f8c'}"></span>${esc(d)}</th>`).join('') +
+    `<th class="num">Çok İyi + İyi Oranı</th></tr></thead><tbody>` +
+    rows.map(([g, r]) => line(g, r)).join('') + line('Toplam', tot, 'tot') + '</tbody></table></div>';
+}
+function renderSummary() {
+  const base = DATA.filter(i => Object.keys(FILTERS).every(k => k === 'durum' || !OFF[k].has(i[k] || '-')));
+  const good = base.filter(i => i.durum === 'Çok İyi' || i.durum === 'İyi').length;
+  document.getElementById('ozet').innerHTML =
+    `<div class="stats"><div class="stat"><b>${base.length}</b><span>Option Adet</span></div>
+      <div class="stat" style="border-color:${DURUM_COLORS['Çok İyi']}"><b>${good}</b><span>Çok İyi + İyi</span></div>
+      <div class="stat" style="border-color:${DURUM_COLORS['İyi']}"><b>${pct(good, base.length)}</b><span>Çok İyi + İyi Oranı</span></div></div>
+     <p class="note">Buyer Grup / Merch Alt Grup / Klasman / Cluster filtrelerine göre hesaplanır; Durum filtresi bu sayfada uygulanmaz (tüm durumlar sütunlarda).
+      Oranlar satır toplamına göredir. G ve K birlikte seçiliyse bir option her cluster için ayrı sayılır.</p>` +
+    summaryTable(base, 'buyer', 'Buyer Grup › Durum') +
+    summaryTable(base, 'klasman', 'Klasman › Durum', ['buyer', 'Buyer Grup']);
 }
 
 function renderStats(rows) {
