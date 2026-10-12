@@ -426,10 +426,8 @@ function buildReport() {
   const m = /(\d{1,2})\s*\.?\s*hafta/i.exec(fileName);
   const week = m ? `${m[1]}. Hafta` : '';
   const title = `LCW Opsiyon Performans Raporu${week ? ' — ' + week : ''}`;
-  const sel = DIMS.filter(([k]) => defaultOn[k].length).map(([k, l]) => `${l}: ${defaultOn[k].join(', ')}`);
+  // Seçimler başlıkta listelenmez (uzun olabiliyor); rapordaki filtre satırında görünür
   const subtitle = ['Kırılım: Merch Alt Grup › Gelecek Dönem Ürün Klasman',
-    sel.length ? `Seçim: ${sel.join(' · ')}` : 'Seçim: Tümü',
-    onlySel ? 'Sadece seçili ürünler' : 'Tüm ürünler (rapor içinden filtrelenebilir)',
     `Kaynak: ${fileName}` + (rangeName && RESULT.hasRange ? ` + ${rangeName}` : '')].join(' · ');
   const name = `${week ? week.replace('. Hafta', '_hafta') : 'merch'}_raporu.html`;
   const html = REPORT_TEMPLATE
