@@ -86,78 +86,30 @@
   <iframe id="preview" title="Rapor önizleme"></iframe>
 </div>
 
-<script>@@TOOL_XLSX_JS@@</script>
-<script>
-const REPORT_TEMPLATE = @@TOOL_REPORT_TEMPLATE@@;
+<script id="xlsxlib">@@TOOL_XLSX_JS@@</script>
+<script id="core">
+// ── Çekirdek: hem arka plan işçisinde (Web Worker) hem yedek olarak sayfada çalışır ──
 const FIELDS = @@TOOL_FIELDS@@;            // [key, etiket, Excel başlığı]
-const ALL_DURUM = @@TOOL_DURUM@@;
-const DEFAULTS = @@TOOL_DEFAULTS@@;
-const DURUM_COLORS = @@TOOL_COLORS@@;
-const DURUM_ORDER = @@TOOL_ORDER@@;
 const BUYER_COL = @@TOOL_BUYER_COL@@;
 const RANGE_KEYS = ['kumas', 'bitim', 'paca', 'yaka'];
-const $ = id => document.getElementById(id);
 const COL = Object.fromEntries(FIELDS.map(([k, , c]) => [k, c]));
 const LABEL = Object.fromEntries(FIELDS.map(([k, l]) => [k, l]));
 
 // Türkçe harf duyarsız karşılaştırma (Python tarafındaki _norm ile aynı)
-const norm = s => String(s ?? '').trim().replace(/İ/g, 'i').replace(/I/g, 'ı').toLowerCase().replace(/\s+/g, ' ');
-const optKey = s => String(s ?? '').toUpperCase().replace(/[^0-9A-Z]/g, '');
-const num = v => (v === null || v === '' || isNaN(+v)) ? null : +v;
-const str = v => (v === null || v === undefined) ? '' : String(v).trim();
-const list = s => s.split(',').map(x => x.trim()).filter(Boolean);
-const status = (msg, cls = '') => { $('status').textContent = msg; $('status').className = cls; };
+function norm(s) { return String(s ?? '').trim().replace(/İ/g, 'i').replace(/I/g, 'ı').toLowerCase().replace(/\s+/g, ' '); }
+function optKey(s) { return String(s ?? '').toUpperCase().replace(/[^0-9A-Z]/g, ''); }
+function num(v) { return (v === null || v === '' || isNaN(+v)) ? null : +v; }
+function str(v) { return (v === null || v === undefined) ? '' : String(v).trim(); }
 
-// ── Ayarlar (bu bilgisayarda hatırlanır) ──
-let S = {...DEFAULTS};
-try { Object.assign(S, JSON.parse(localStorage.getItem('merchToolSettings_v3') || '{}')); } catch (e) {}
-$('durumlar').innerHTML = ALL_DURUM.map(d =>
-  `<label><input type="checkbox" value="${d}" ${S.durumlar.includes(d) ? 'checked' : ''}>${d}</label>`).join('');
-$('buyer').value = S.buyer_gruplar.join(', ');
-$('klasman').value = S.klasman_kelimeler.join(', ');
-$('cluster').value = (S.clusterlar || []).join(', ');
-const V = S.rapor_varsayilan || {};
-$('v_merch').value = (V.merch_alt_grup || []).join(', ');
-$('v_cluster').value = (V.cluster || []).join(', ');
-$('v_durum').value = (V.durum || []).join(', ');
-function readSettings() {
-  S.durumlar = [...$('durumlar').querySelectorAll('input:checked')].map(i => i.value);
-  S.buyer_gruplar = list($('buyer').value);
-  S.klasman_kelimeler = list($('klasman').value);
-  S.clusterlar = list($('cluster').value);
-  S.rapor_varsayilan = {merch_alt_grup: list($('v_merch').value), cluster: list($('v_cluster').value),
-                        durum: list($('v_durum').value)};
-  try { localStorage.setItem('merchToolSettings_v3', JSON.stringify(S)); } catch (e) {}
-  return S;
+// Hızlı okuma: formül/biçim/stil bilgisi atlanır, sadece ilk sayfa (haftalık dosyada)
+function readBook(buf, firstOnly) {
+  return XLSX.read(buf, {type: 'array', dense: true, cellFormula: false, cellHTML: false, cellText: false,
+                         cellStyles: false, cellNF: false, cellDates: false, sheetStubs: false,
+                         ...(firstOnly ? {sheets: 0} : {})});
 }
-
-// ── Dosya seçimi ──
-const files = {W: null, R: null};
-function setupDrop(id, key) {
-  const el = $(id), input = el.querySelector('input');
-  const set = f => {
-    if (!f) return;
-    files[key] = f;
-    el.classList.add('done');
-    el.querySelector('small').textContent = `✓ ${f.name} · ${(f.size / 1e6).toFixed(1)} MB`;
-    $('go').disabled = !files.W;
-    if (files.W) build();  // dosya bırakılınca otomatik oluştur
-  };
-  input.onchange = e => set(e.target.files[0]);
-  ['dragover', 'dragleave', 'drop'].forEach(ev => el.addEventListener(ev, e => {
-    e.preventDefault();
-    el.classList.toggle('over', ev === 'dragover');
-    if (ev === 'drop') set(e.dataTransfer.files[0]);
-  }));
+function sheetRows(ws) {
+  return XLSX.utils.sheet_to_json(ws, {header: 1, raw: true, defval: null, blankrows: false});
 }
-setupDrop('dropW', 'W');
-setupDrop('dropR', 'R');
-
-async function readBook(file) {
-  const buf = await file.arrayBuffer();
-  return XLSX.read(buf, {type: 'array', cellFormula: false, cellHTML: false, cellText: false});
-}
-const sheetRows = ws => XLSX.utils.sheet_to_json(ws, {header: 1, raw: true, defval: null, blankrows: false});
 
 // ── Haftalık Excel ──
 function readWeekly(wb, s) {
@@ -241,14 +193,98 @@ function applyRange(items, rng) {
   return warnings;
 }
 
-// Excel'deki 600x800 görsel linkinden yüksek çözünürlüklü adaylar
-const CDN = 'https://img-lcwaikiki.mncdn.com';
-const CDN_RE = /^https?:\/\/img-lcwaikiki\.mncdn\.com\/(?:mn\w+\/\d+\/\d+\/(?:[0-9a-fA-F]{6}\/)?)?(pim\/productimages\/[^\s"'<>?]+?\.(?:jpe?g|png|webp))/i;
-function hires(url) {
-  const out = [], m = CDN_RE.exec(url || '');
-  if (m) out.push(`${CDN}/mnpadding/1200/1600/ffffff/${m[1]}`, `${CDN}/${m[1]}`);
-  if (url && url.startsWith('http')) out.push(url);
-  return [...new Set(out)];
+
+// Haftalık + RANGE dosyalarını işler; rapora girecek satırlar ve uyarılar
+function processFiles(wbuf, rbuf, s) {
+  const items = readWeekly(readBook(wbuf, true), s);
+  if (!items.length) throw new Error('Seçilen filtrelerde opsiyon bulunamadı');
+  const warnings = rbuf ? applyRange(items, readRange(readBook(rbuf, false))) : [];
+  // Boş alanlar yazılmaz; görsel tek link (adaylar raporda türetilir) → küçük rapor dosyası
+  const data = items.map(it => {
+    const d = {...it, img: it.resim};
+    delete d.resim;
+    for (const k of Object.keys(d)) if (d[k] === null || d[k] === '' || (Array.isArray(d[k]) && !d[k].length)) delete d[k];
+    return d;
+  });
+  return {data, warnings};
+}
+</script>
+<script>
+const REPORT_TEMPLATE = @@TOOL_REPORT_TEMPLATE@@;
+const ALL_DURUM = @@TOOL_DURUM@@;
+const DEFAULTS = @@TOOL_DEFAULTS@@;
+const DURUM_COLORS = @@TOOL_COLORS@@;
+const DURUM_ORDER = @@TOOL_ORDER@@;
+const $ = id => document.getElementById(id);
+const list = s => s.split(',').map(x => x.trim()).filter(Boolean);
+const status = (msg, cls = '') => { $('status').textContent = msg; $('status').className = cls; };
+
+// ── Ayarlar (bu bilgisayarda hatırlanır) ──
+let S = {...DEFAULTS};
+try { Object.assign(S, JSON.parse(localStorage.getItem('merchToolSettings_v4') || '{}')); } catch (e) {}
+$('durumlar').innerHTML = ALL_DURUM.map(d =>
+  `<label><input type="checkbox" value="${d}" ${S.durumlar.includes(d) ? 'checked' : ''}>${d}</label>`).join('');
+$('buyer').value = S.buyer_gruplar.join(', ');
+$('klasman').value = S.klasman_kelimeler.join(', ');
+$('cluster').value = (S.clusterlar || []).join(', ');
+const V = S.rapor_varsayilan || {};
+$('v_merch').value = (V.merch_alt_grup || []).join(', ');
+$('v_cluster').value = (V.cluster || []).join(', ');
+$('v_durum').value = (V.durum || []).join(', ');
+function readSettings() {
+  S.durumlar = [...$('durumlar').querySelectorAll('input:checked')].map(i => i.value);
+  S.buyer_gruplar = list($('buyer').value);
+  S.klasman_kelimeler = list($('klasman').value);
+  S.clusterlar = list($('cluster').value);
+  S.rapor_varsayilan = {merch_alt_grup: list($('v_merch').value), cluster: list($('v_cluster').value),
+                        durum: list($('v_durum').value)};
+  try { localStorage.setItem('merchToolSettings_v4', JSON.stringify(S)); } catch (e) {}
+  return S;
+}
+
+// ── Dosya seçimi ──
+const files = {W: null, R: null};
+function setupDrop(id, key) {
+  const el = $(id), input = el.querySelector('input');
+  const set = f => {
+    if (!f) return;
+    files[key] = f;
+    el.classList.add('done');
+    el.querySelector('small').textContent = `✓ ${f.name} · ${(f.size / 1e6).toFixed(1)} MB`;
+    $('go').disabled = !files.W;
+    if (files.W) build();  // dosya bırakılınca otomatik oluştur
+  };
+  input.onchange = e => set(e.target.files[0]);
+  ['dragover', 'dragleave', 'drop'].forEach(ev => el.addEventListener(ev, e => {
+    e.preventDefault();
+    el.classList.toggle('over', ev === 'dragover');
+    if (ev === 'drop') set(e.dataTransfer.files[0]);
+  }));
+}
+setupDrop('dropW', 'W');
+setupDrop('dropR', 'R');
+
+// Excel'i arka planda (Web Worker) işle: sayfa donmaz. İşçi açılamazsa sayfada çalışır.
+let worker = null;
+function getWorker() {
+  if (worker) return worker;
+  try {
+    const src = document.getElementById('xlsxlib').textContent + '\n' + document.getElementById('core').textContent +
+      '\nonmessage = e => { try { postMessage(processFiles(e.data.w, e.data.r, e.data.s)); }' +
+      ' catch (err) { postMessage({error: err.message}); } };';
+    worker = new Worker(URL.createObjectURL(new Blob([src], {type: 'text/javascript'})));
+  } catch (e) { worker = null; }
+  return worker;
+}
+async function runProcess(s) {
+  const w = await files.W.arrayBuffer(), r = files.R ? await files.R.arrayBuffer() : null;
+  const wk = getWorker();
+  if (!wk) return processFiles(w, r, s);
+  return new Promise((resolve, reject) => {
+    wk.onmessage = e => e.data.error ? reject(new Error(e.data.error)) : resolve(e.data);
+    wk.onerror = e => { e.preventDefault(); worker = null; resolve(processFiles(w, r, s)); };
+    wk.postMessage({w, r, s}, [w, ...(r ? [r] : [])]);
+  });
 }
 
 const escHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -261,16 +297,9 @@ async function build() {
   if (!s.durumlar.length) { status('En az bir Durum seçin', 'err'); return; }
   $('go').disabled = $('save').disabled = $('open').disabled = true;
   try {
-    status('Haftalık Excel okunuyor…');
-    await new Promise(r => setTimeout(r, 30));
-    const items = readWeekly(await readBook(files.W), s);
-    if (!items.length) throw new Error('Seçilen filtrelerde opsiyon bulunamadı');
-    let warnings = [];
-    if (files.R) {
-      status('RANGE dosyası eşleştiriliyor…');
-      await new Promise(r => setTimeout(r, 30));
-      warnings = applyRange(items, readRange(await readBook(files.R)));
-    }
+    status(files.R ? 'Dosyalar arka planda okunuyor…' : 'Haftalık Excel arka planda okunuyor…');
+    const t0 = performance.now();
+    const {data, warnings} = await runProcess(s);
     const m = /(\d{1,2})\s*\.?\s*hafta/i.exec(files.W.name);
     const week = m ? `${m[1]}. Hafta` : '';
     const title = `LCW Opsiyon Performans Raporu${week ? ' — ' + week : ''}`;
@@ -280,7 +309,6 @@ async function build() {
       `Cluster: ${s.clusterlar.join(', ') || 'Tümü'}`,
       'Kırılım: Merch Alt Grup › Gelecek Dönem Ürün Klasman',
       `Kaynak: ${files.W.name}` + (files.R ? ` + ${files.R.name}` : '')].join(' · ');
-    const data = items.map(it => ({...it, urls: hires(it.resim), resim: undefined}));
     reportHtml = REPORT_TEMPLATE
       .replace(/__TITLE__/g, escHtml(title))
       .replace('__SUBTITLE__', escHtml(subtitle))
@@ -294,7 +322,8 @@ async function build() {
     reportName = `${week ? week.replace('. Hafta', '_hafta') : 'merch'}_raporu.html`;
     $('preview').srcdoc = reportHtml;
     $('preview').style.display = 'block';
-    status(`Hazır: ${items.length} opsiyon` + (files.R ? ` · ${warnings.length} RANGE uyarısı` : ' · RANGE dosyası eklenmedi'),
+    status(`Hazır: ${data.length} opsiyon` + (files.R ? ` · ${warnings.length} RANGE uyarısı` : ' · RANGE dosyası eklenmedi') +
+           ` · ${((performance.now() - t0) / 1000).toFixed(1)} sn`,
            warnings.length ? 'err' : 'ok');
     $('save').disabled = $('open').disabled = false;
   } catch (e) {

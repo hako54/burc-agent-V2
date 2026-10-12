@@ -244,9 +244,8 @@ Kişisel kullanım için. API anahtarları sana ait, sorumluluğu da sana ait.
 
 ## 📊 Haftalık Merch Raporu (Excel → PDF)
 
-Haftalık opsiyon Excel'inden (ör. `41.hafta_1210_.xlsx`) DURUM'u **Çok İyi** ve **İyi**,
-Gelecek Dönem Buyer Grup'u **ÖRME BASIC / ÖRME / ÖRME SET** olan ve klasman adında
-**HIRKA** veya **PANTOLON** geçen opsiyonları alır (filtreler `data/merch_settings.json`'dan değiştirilebilir); lcw.com ürün görselleriyle (Excel'deki "Resim Gör" linki =
+Haftalık opsiyon Excel'inden (ör. `41.hafta_1210_.xlsx`) Gelecek Dönem Buyer Grup'u **ÖRME BASIC / ÖRME / ÖRME SET** olan tüm opsiyonları alır
+(rapor içinde Merch Alt Grup / Klasman / Cluster / Durum filtreleri var; açılışta Çok İyi+İyi, K, BUC seçili) (filtreler `data/merch_settings.json`'dan değiştirilebilir); lcw.com ürün görselleriyle (Excel'deki "Resim Gör" linki =
 `Ürün Resim Linki`) birlikte **Merch Alt Grup › Gelecek Dönem Ürün Klasman**
 kırılımında kart görünümlü bir PDF hazırlar.
 

@@ -76,7 +76,7 @@ HIDEABLE = list(HIDE_EXTRA) + list(FIELDS)
 RANGE_KEYS = ("kumas", "bitim", "paca", "yaka")
 
 
-VIEW_KEYS = ("merch_alt_grup", "cluster", "durum")
+VIEW_KEYS = ("merch_alt_grup", "klasman", "cluster", "durum")
 
 
 def default_view(items, varsayilan) -> list:
@@ -112,7 +112,7 @@ DEFAULT_SETTINGS = {
     # Boş liste = tüm buyer gruplar
     "buyer_gruplar": ["ÖRME BASIC", "ÖRME", "ÖRME SET"],
     # Klasman adında geçen kelimeler (ör. HIRKA → "KEY ORME HIRKA SET"); boş = tümü
-    "klasman_kelimeler": ["HIRKA", "PANTOLON"],
+    "klasman_kelimeler": [],
     # Boş liste = tüm clusterlar (ör. ["K"] sadece K cluster)
     "clusterlar": [],
     # Rapor açılışında seçili gelen filtreler (rapor yine tüm ürünleri içerir;
@@ -121,6 +121,7 @@ DEFAULT_SETTINGS = {
         "durum": ["Çok İyi", "İyi"],
         "cluster": ["K"],
         "merch_alt_grup": ["BUC"],
+        "klasman": [],
     },
     # Büyük, detaylı görselli kartlar (sayfada 4 ürün) / normal (12 ürün)
     "buyuk_gorsel": True,
@@ -933,7 +934,13 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
        padding:7px 10px; border-radius:4px; margin:14px 0 8px; display:flex; justify-content:space-between; }
   h3 small { color:var(--muted); font-weight:400; }
   .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:10px; }
-  .card { border:1px solid var(--line); border-radius:8px; overflow:hidden; break-inside:avoid; page-break-inside:avoid; background:#fff; }
+  .card { border:1px solid var(--line); border-radius:8px; overflow:hidden; break-inside:avoid; page-break-inside:avoid; background:#fff;
+          content-visibility:auto; contain-intrinsic-size:auto 440px; }
+  .dd { position:relative; font-size:12px; }
+  .dd summary { cursor:pointer; padding:2px 8px; border:1px solid var(--line); border-radius:6px; }
+  .dd .ddl { position:absolute; z-index:10; background:#fff; border:1px solid var(--line); border-radius:8px;
+             box-shadow:0 6px 18px rgba(0,0,0,.12); padding:8px 10px; max-height:340px; overflow:auto;
+             min-width:280px; display:flex; flex-direction:column; gap:3px; }
   .img { position:relative; aspect-ratio:3/4; background:var(--soft); display:block; }
   .img img { width:100%; height:100%; object-fit:contain; display:block; }
   .img .ph { position:absolute; inset:0; display:none; align-items:center; justify-content:center;
@@ -968,6 +975,7 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
   @media print {
     @page { size:A4 landscape; margin:9mm; }
     .bar { display:none; }
+    .card { content-visibility:visible; }
     header { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
     h2, h3, .badge, .stat { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
     .grid { grid-template-columns:repeat(5,1fr); gap:6px; }
@@ -1004,6 +1012,7 @@ const RANGE_KEYS = ['kumas', 'bitim', 'paca', 'yaka'];
 // Sayfa içi filtreler: işaretli olmayan değerler gizlenir
 const FILTERS = {
   merch_alt_grup: ['Merch Alt Grup', [...new Set(DATA.map(i => i.merch_alt_grup || '-'))].sort()],
+  klasman: ['Klasman', [...new Set(DATA.map(i => i.klasman || '-'))].sort((a, b) => a.localeCompare(b, 'tr'))],
   cluster: ['Cluster', [...new Set(DATA.map(i => i.cluster || '-'))].sort()],
   durum: ['Durum', [...new Set(DATA.map(i => i.durum))].sort((a, b) => (DURUM_ORDER[a] ?? 99) - (DURUM_ORDER[b] ?? 99))],
 };
@@ -1020,6 +1029,16 @@ const fmt = (v, d) => v == null ? '-' : v.toLocaleString('tr-TR', {minimumFracti
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const search = code => 'https://www.lcw.com/arama?q=' + encodeURIComponent(code);
 
+// Kartta Excel'deki 600x800 görsel (hızlı), olmazsa diğer boyutlar; 🔍 yüksek çözünürlük
+const CDN = 'https://img-lcwaikiki.mncdn.com';
+const CDN_RE = /^https?:\/\/img-lcwaikiki\.mncdn\.com\/(?:mn\w+\/\d+\/\d+\/(?:[0-9a-fA-F]{6}\/)?)?(pim\/productimages\/[^\s"'<>?]+?\.(?:jpe?g|png|webp))/i;
+function imgUrls(u) {
+  if (!u || !u.startsWith('http')) return {card: [], big: ''};
+  const m = CDN_RE.exec(u);
+  if (!m) return {card: [u], big: u};
+  const big = `${CDN}/mnpadding/1200/1600/ffffff/${m[1]}`;
+  return {card: [...new Set([u, `${CDN}/mnpadding/600/800/ffffff/${m[1]}`, big, `${CDN}/${m[1]}`])], big};
+}
 // Görsel sırayla denenir; hepsi başarısızsa "lcw.com'da ara" gösterilir
 function imgFail(el) {
   const urls = JSON.parse(el.dataset.urls);
@@ -1043,14 +1062,15 @@ function card(it) {
   const badge = h.has('durum') ? '' : `<span class="badge" style="background:${col}">${esc(it.durum)}</span>`;
   // Görsele tıklayınca lcw.com'da ürün aranır (kumaş vb. detaylar ürün sayfasında)
   const link = search(it.option_kod);
-  const img = h.has('resim') ? '' : `<a class="img${it.urls.length ? '' : ' err'}" href="${esc(link)}" target="_blank" rel="noopener">
-      ${it.urls.length ? `<img loading="lazy" src="${esc(it.urls[0])}" data-urls='${esc(JSON.stringify(it.urls))}' onerror="imgFail(this)" alt="${esc(it.option_kod)}">` : ''}
+  const u = imgUrls(it.img);
+  const img = h.has('resim') ? '' : `<a class="img${u.card.length ? '' : ' err'}" href="${esc(link)}" target="_blank" rel="noopener">
+      ${u.card.length ? `<img loading="lazy" decoding="async" src="${esc(u.card[0])}" data-urls='${esc(JSON.stringify(u.card))}' onerror="imgFail(this)" alt="${esc(it.option_kod)}">` : ''}
       <span class="ph">Görsel yüklenemedi<br>lcw.com'da açmak için tıklayın</span>${badge}</a>`;
   const kv = (k, label, v) => h.has(k) ? '' : `<div class="kv"><span>${label}</span><b>${v}</b></div>`;
   return `<div class="card">${img}<div class="body">
     ${h.has('resim') ? badge : ''}
     ${h.has('option_kod') ? '' : `<a class="code" href="${esc(search(it.option_kod))}" target="_blank" rel="noopener" title="lcw.com'da aç">${esc(it.option_kod)}</a>`}
-    ${it.urls.length ? `<a class="zoom" href="${esc(it.urls[0])}" target="_blank" rel="noopener" title="Görseli büyük aç">🔍</a>` : ''}
+    ${u.big ? `<a class="zoom" href="${esc(u.big)}" target="_blank" rel="noopener" title="Görseli büyük aç">🔍</a>` : ''}
     ${h.has('urun_ad') ? '' : `<div class="name">${esc(it.urun_ad)}</div>`}
     ${h.has('renk') ? '' : `<div class="color">${esc(it.renk)}</div>`}
     ${kv('stok', 'Gün Sonu Reyon Stok Ort.', fmt(it.stok, 0))}
@@ -1101,10 +1121,15 @@ function renderStats(rows) {
       `<div class="stat" style="border-color:${DURUM_COLORS[d] || '#555'}"><b>${n}</b><span>${esc(d)}</span></div>`).join('') +
     `<div class="stat"><b>${fmt(rows.reduce((s, i) => s + (i.satis || 0), 0), 0)}</b><span>Toplam Satış Adet</span></div>`;
 }
-// Her grubun başında "Tümü": hepsini seçer / kaldırır
-document.getElementById('filters').innerHTML = Object.entries(FILTERS).map(([k, [label, vals]]) =>
-  `<span>${esc(label)}:</span><label><input type="checkbox" data-all="${k}" ${OFF[k].size ? '' : 'checked'}><b>Tümü</b></label>` + vals.map(v =>
-    `<label><input type="checkbox" data-f="${k}" value="${esc(v)}" ${OFF[k].has(v) ? '' : 'checked'}>${esc(v)}</label>`).join('')).join('<i>|</i>');
+// Her grubun başında "Tümü": hepsini seçer / kaldırır. Çok değerli gruplar (Klasman) açılır listede
+const ddLabel = k => `${FILTERS[k][0]} (${FILTERS[k][1].length - OFF[k].size}/${FILTERS[k][1].length})`;
+document.getElementById('filters').innerHTML = Object.entries(FILTERS).map(([k, [label, vals]]) => {
+  const boxes = `<label><input type="checkbox" data-all="${k}" ${OFF[k].size ? '' : 'checked'}><b>Tümü</b></label>` + vals.map(v =>
+    `<label><input type="checkbox" data-f="${k}" value="${esc(v)}" ${OFF[k].has(v) ? '' : 'checked'}>${esc(v)}</label>`).join('');
+  return vals.length > 8
+    ? `<details class="dd"><summary id="dd-${k}">${esc(ddLabel(k))}</summary><div class="ddl">${boxes}</div></details>`
+    : `<span>${esc(label)}:</span>${boxes}`;
+}).join('<i>|</i>');
 document.getElementById('filters').addEventListener('change', e => {
   const {f, all} = e.target.dataset;
   const box = document.getElementById('filters');
@@ -1117,6 +1142,8 @@ document.getElementById('filters').addEventListener('change', e => {
     e.target.checked ? OFF[f].delete(e.target.value) : OFF[f].add(e.target.value);
     box.querySelector(`input[data-all="${f}"]`).checked = OFF[f].size === 0;
   }
+  const k = all || f, dd = document.getElementById('dd-' + k);
+  if (dd) dd.textContent = ddLabel(k);
   render();
 });
 // Uyarı listesi sadece filtrede görünen opsiyonları kapsar; ilk 10 satır, gerisi "Tümünü göster"
@@ -1165,8 +1192,9 @@ def render_html(items, hidden, title, subtitle, out_path, warnings=None, varsayi
                                      "satis", "devir", "cluster", "kumas", "bitim",
                                      "paca", "yaka", "range_need", "range_eksik",
                                      "merch_alt_grup", "klasman")}
-        d["urls"] = _hires_candidates(it["resim"])
-        data.append(d)
+        d["img"] = it["resim"]
+        # Boş alanları yazma: binlerce satırda dosyayı belirgin küçültür
+        data.append({k: v for k, v in d.items() if v not in (None, "", [])})
 
     def js(v):
         return json.dumps(v, ensure_ascii=False).replace("</", "<\\/")
@@ -1226,15 +1254,19 @@ def build_report(xlsx_path, source_name=None, durumlar=None, gizli_alanlar=None,
             progress("RANGE dosyası eşleştiriliyor…")
         warnings = apply_range(items, load_range(range_path))
 
+    # PDF statik olduğu için açılış görünümü (ör. Çok İyi+İyi, K, BUC) basılır;
+    # HTML tüm ürünleri içerir ve aynı görünümle açılır
+    varsayilan = s.get("rapor_varsayilan") or {}
+    pdf_items = default_view(items, varsayilan)
+
     img_ok = 0
+    for it in items:
+        it["img_path"] = None
     if download_images and "resim" not in gizli:
         if progress:
-            progress(f"{len(items)} opsiyon bulundu, görseller indiriliyor…")
-        img_ok = fetch_images(items, progress=progress,
+            progress(f"{len(pdf_items)} opsiyonun görselleri indiriliyor…")
+        img_ok = fetch_images(pdf_items, progress=progress,
                               size=(600, 800) if big else (300, 400))
-    else:
-        for it in items:
-            it["img_path"] = None
 
     week = week_label(source_name)
     title = f"LCW Opsiyon Performans Raporu{' — ' + week if week else ''}"
@@ -1252,14 +1284,11 @@ def build_report(xlsx_path, source_name=None, durumlar=None, gizli_alanlar=None,
 
     if progress:
         progress("PDF oluşturuluyor…")
-    # PDF statik olduğu için açılış görünümü (ör. Çok İyi+İyi, K, BUC) basılır;
-    # HTML tüm ürünleri içerir ve aynı görünümle açılır
-    varsayilan = s.get("rapor_varsayilan") or {}
-    pdf_items = default_view(items, varsayilan)
     pdf_codes = {it["option_kod"] for it in pdf_items}
     pdf_warn = None if warnings is None else [w for w in warnings if w["option_kod"] in pdf_codes]
     view_txt = " · ".join(f"{lab}: {', '.join(varsayilan[k])}" for k, lab in
-                          (("merch_alt_grup", "Merch Alt Grup"), ("cluster", "Cluster"),
+                          (("merch_alt_grup", "Merch Alt Grup"), ("klasman", "Klasman"),
+                           ("cluster", "Cluster"),
                            ("durum", "Durum")) if varsayilan.get(k))
     pdf_subtitle = subtitle + (f"   ·   Görünüm: {view_txt}" if view_txt else "")
     pages = _Report(pdf_items, gizli, title, pdf_subtitle, out_path, big=big,
