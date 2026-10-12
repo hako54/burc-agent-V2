@@ -102,7 +102,7 @@ const status = (msg, cls = '') => { $('status').textContent = msg; $('status').c
 
 // ── Ayarlar (bu bilgisayarda hatırlanır) ──
 let S = {...DEFAULTS};
-try { Object.assign(S, JSON.parse(localStorage.getItem('merchToolSettings') || '{}')); } catch (e) {}
+try { Object.assign(S, JSON.parse(localStorage.getItem('merchToolSettings_v2') || '{}')); } catch (e) {}
 $('durumlar').innerHTML = ALL_DURUM.map(d =>
   `<label><input type="checkbox" value="${d}" ${S.durumlar.includes(d) ? 'checked' : ''}>${d}</label>`).join('');
 $('buyer').value = S.buyer_gruplar.join(', ');
@@ -113,7 +113,7 @@ function readSettings() {
   S.buyer_gruplar = list($('buyer').value);
   S.klasman_kelimeler = list($('klasman').value);
   S.clusterlar = list($('cluster').value);
-  try { localStorage.setItem('merchToolSettings', JSON.stringify(S)); } catch (e) {}
+  try { localStorage.setItem('merchToolSettings_v2', JSON.stringify(S)); } catch (e) {}
   return S;
 }
 

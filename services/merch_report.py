@@ -91,7 +91,8 @@ ALL_DURUM = ["Çok İyi", "İyi", "Orta", "Kötü", "Çok Kötü",
              "Minimum Mağaza Kısıtına Takıldı"]
 
 DEFAULT_SETTINGS = {
-    "durumlar": ["Çok İyi", "İyi"],
+    # Tüm durumlar alınır; rapor içinden filtrelenir
+    "durumlar": list(ALL_DURUM),
     "gizli_alanlar": [],
     # Boş liste = tüm buyer gruplar
     "buyer_gruplar": ["ÖRME BASIC", "ÖRME", "ÖRME SET"],
@@ -109,6 +110,7 @@ DURUM_COLORS = {
     "Orta": "#d9a400",
     "Kötü": "#e07020",
     "Çok Kötü": "#c62828",
+    "Minimum Mağaza Kısıtına Takıldı": "#7a7f8c",
 }
 DURUM_ORDER = {d: i for i, d in enumerate(ALL_DURUM)}
 
@@ -931,7 +933,10 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
              display:flex; justify-content:space-between; align-items:center; }
   .warn h4 button { background:#fff; color:var(--accent); border:0; border-radius:5px;
                     padding:3px 10px; font-weight:700; cursor:pointer; font-size:12px; }
-  @media print { .warn h4 button { display:none; } }
+  .warn .more { padding:6px 12px 10px; }
+  .warn .more button { background:#fff; color:var(--accent); border:1px solid var(--accent); border-radius:5px;
+                       padding:4px 12px; font-weight:600; cursor:pointer; }
+  @media print { .warn h4 button, .warn .more { display:none; } }
   .warn p { padding:6px 12px 0; font-size:12px; color:var(--muted); }
   .warn table { width:100%; border-collapse:collapse; font-size:12px; margin:6px 0 4px; }
   .warn th, .warn td { text-align:left; padding:4px 12px; border-bottom:1px solid var(--line); }
@@ -1031,6 +1036,7 @@ function render() {
   const keys = ['merch_alt_grup', 'klasman'].filter(k => !HIDDEN.has(k));
   const shown = DATA.filter(i => !OFF.cluster.has(i.cluster || '-') && !OFF.durum.has(i.durum));
   renderStats(shown);
+  renderWarn(shown);
   const items = shown.sort((a, b) =>
     keys.map(k => a[k].localeCompare(b[k], 'tr')).find(x => x) ||
     (b.stok || 0) - (a.stok || 0));  // grup içinde stok adedi büyükten küçüğe
@@ -1064,19 +1070,41 @@ function renderStats(rows) {
       `<div class="stat" style="border-color:${DURUM_COLORS[d] || '#555'}"><b>${n}</b><span>${esc(d)}</span></div>`).join('') +
     `<div class="stat"><b>${fmt(rows.reduce((s, i) => s + (i.satis || 0), 0), 0)}</b><span>Toplam Satış Adet</span></div>`;
 }
+// Her grubun başında "Tümü": hepsini seçer / kaldırır
 document.getElementById('filters').innerHTML = Object.entries(FILTERS).map(([k, [label, vals]]) =>
-  `<span>${esc(label)}:</span>` + vals.map(v =>
+  `<span>${esc(label)}:</span><label><input type="checkbox" data-all="${k}" checked><b>Tümü</b></label>` + vals.map(v =>
     `<label><input type="checkbox" data-f="${k}" value="${esc(v)}" checked>${esc(v)}</label>`).join('')).join('<i>|</i>');
 document.getElementById('filters').addEventListener('change', e => {
-  const {f} = e.target.dataset; e.target.checked ? OFF[f].delete(e.target.value) : OFF[f].add(e.target.value); render();
+  const {f, all} = e.target.dataset;
+  const box = document.getElementById('filters');
+  if (all) {
+    box.querySelectorAll(`input[data-f="${all}"]`).forEach(cb => {
+      cb.checked = e.target.checked;
+      e.target.checked ? OFF[all].delete(cb.value) : OFF[all].add(cb.value);
+    });
+  } else {
+    e.target.checked ? OFF[f].delete(e.target.value) : OFF[f].add(e.target.value);
+    box.querySelector(`input[data-all="${f}"]`).checked = OFF[f].size === 0;
+  }
+  render();
 });
-if (WARNINGS.length) document.getElementById('warn').innerHTML =
-  `<div class="warn"><h4><span>⚠ UYARI: ${WARNINGS.length} opsiyonda RANGE bilgisi eksik</span>
-   <button type="button" onclick="hideWarn()">✕ Gizle</button></h4>
-   <p>Kumaş ve Bitim İşlemi tüm ürünlerde, Paça Detayı pantolonlarda, Yaka Tipi hırkalarda RANGE kontrol dosyasında doldurulmalı.</p>
-   <table><tr><th>Option Kod</th><th>Ürün Ad</th><th>Klasman</th><th>Sorun</th></tr>` +
-  WARNINGS.map(w => `<tr><td><b>${esc(w.option_kod)}</b></td><td>${esc(w.urun_ad)}</td><td>${esc(w.klasman)}</td><td class="s">${esc(w.sorun)}</td></tr>`).join('') +
-  '</table></div>';
+// Uyarı listesi sadece filtrede görünen opsiyonları kapsar; ilk 10 satır, gerisi "Tümünü göster"
+let warnAll = false;
+function renderWarn(shown) {
+  const codes = new Set(shown.map(i => i.option_kod));
+  const ws = WARNINGS.filter(w => codes.has(w.option_kod));
+  const el = document.getElementById('warn');
+  if (!ws.length) { el.innerHTML = ''; return; }
+  const rows = warnAll ? ws : ws.slice(0, 10);
+  el.innerHTML =
+    `<div class="warn"><h4><span>⚠ UYARI: ${ws.length} opsiyonda RANGE bilgisi eksik</span>
+     <button type="button" onclick="hideWarn()">✕ Gizle</button></h4>
+     <p>Kumaş ve Bitim İşlemi tüm ürünlerde, Paça Detayı pantolonlarda, Yaka Tipi hırkalarda RANGE kontrol dosyasında doldurulmalı.</p>
+     <table><tr><th>Option Kod</th><th>Ürün Ad</th><th>Klasman</th><th>Sorun</th></tr>` +
+    rows.map(w => `<tr><td><b>${esc(w.option_kod)}</b></td><td>${esc(w.urun_ad)}</td><td>${esc(w.klasman)}</td><td class="s">${esc(w.sorun)}</td></tr>`).join('') +
+    '</table>' + (ws.length > 10 ? `<p class="more"><button type="button" onclick="warnAll=!warnAll;render()">${
+      warnAll ? 'İlk 10 satırı göster' : `Tümünü göster (${ws.length})`}</button></p>` : '') + '</div>';
+}
 function hideWarn() {
   HIDDEN.add('uyari');
   const cb = document.querySelector('#toggles input[value=uyari]');
