@@ -159,14 +159,26 @@ def handle_merch_excel(chat_id: str, document: dict):
         send(f"❌ Dosya indirilemedi: {e}", chat_id)
         return
 
-    path = merch_report.save_upload(r.content, name)
+    kind, path = merch_report.accept_upload(r.content, name)
     s = merch_report.load_settings()
+    if kind == "range":
+        last = merch_report.last_weekly()
+        if not last:
+            send("✅ RANGE kontrol dosyası kaydedildi. Haftalık Excel gönderildiğinde "
+                 "Kumaş / Bitim İşlemi / Paça / Yaka bilgileri eklenecek.", chat_id)
+            return
+        send(f"✅ RANGE kontrol dosyası güncellendi, son rapor ({last[1]}) "
+             f"yeni bilgilerle yeniden hazırlanıyor…", chat_id)
+        path, name = last
 
     def on_done(pdf, summ, err):
         if err:
             send(f"❌ Merch raporu hazırlanamadı:\n{err}", chat_id)
             return
         dag = " · ".join(f"{d}: {n}" for d, n in summ["durum_dagilimi"].items())
+        if summ.get("range_uyari"):
+            send(f"🔴 <b>UYARI:</b> {summ['range_uyari']} opsiyonda RANGE bilgisi eksik "
+                 f"(liste raporun ilk sayfasında).", chat_id)
         send_document(str(pdf), (
             f"📊 <b>{summ['hafta'] or 'Merch'} raporu</b>\n"
             f"{summ['opsiyon']} opsiyon ({dag})\n"

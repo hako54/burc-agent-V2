@@ -150,10 +150,18 @@ def api_merch_upload():
     gizli = request.form.getlist("gizli_alanlar")
     # Seçimler sonraki haftalık otomatik çalışmalarda da kullanılsın
     merch_report.save_settings(durumlar, gizli)
-    path = merch_report.save_upload(f.read(), f.filename)
-    if not merch_report.start_job(path, f.filename):
+    kind, path = merch_report.accept_upload(f.read(), f.filename)
+    name = f.filename
+    if kind == "range":
+        # RANGE güncellendi → son haftalık rapor yeni bilgilerle yeniden hazırlanır
+        last = merch_report.last_weekly()
+        if not last:
+            return jsonify({"ok": True, "range": True,
+                            "mesaj": "RANGE dosyası kaydedildi; haftalık dosya yüklenince kullanılacak"})
+        path, name = last
+    if not merch_report.start_job(path, name):
         return jsonify({"error": "Şu an başka bir rapor hazırlanıyor"}), 409
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "range": kind == "range"})
 
 
 @app.route("/api/merch/status")

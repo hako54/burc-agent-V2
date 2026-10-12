@@ -55,8 +55,10 @@ FIELDS = OrderedDict([
     ("renk",           ("Renk Tanım",                      "Renk Tanım")),
     ("durum",          ("Durum",                           "DURUM")),
     ("cluster",        ("Cluster",                         "Cluster")),
-    ("kumas",          ("Kumaş",                           "Kumaş")),
-    ("ana_kumas",      ("Ana Kumaş",                       "Ana Kumaş")),
+    ("kumas",          ("Kumaş",                           "KUMAŞ-MALZEME TİPİ")),
+    ("bitim",          ("Bitim İşlemi",                    "KUMAŞ-ÜRÜN BİTİM İŞLEMİ")),
+    ("paca",           ("Paça Detayı",                     "PAÇA DETAYI")),
+    ("yaka",           ("Yaka Tipi",                       "YAKA TİPİ")),
     ("stok",           ("Gün Sonu Reyon Stok Ort.",        "Gün Sonu Reyon Stok Ortalaması")),
     ("satis",          ("Satış Adet",                      "Satış Adet")),
     ("devir",          ("Devir Hızı",                      "Devir Hızı")),
@@ -66,14 +68,20 @@ FIELDS = OrderedDict([
 
 BUYER_COL = "Gelecek Dönem Buyer Grup"
 
-# Excel'de farklı yazılabilecek başlıklar (ilk bulunan kullanılır)
-COL_ALIASES = {
-    "kumas": ["Kumaş", "Kumaş Tanım", "Kumaş Adı", "Kumaş Cinsi", "Kumas"],
-    "ana_kumas": ["Ana Kumaş", "Ana Kumaş Tanım", "Ana Kumaş Adı", "Ana Kumas"],
-}
+# RANGE kontrol dosyasından (Option Kod ile) gelen alanlar
+RANGE_KEYS = ("kumas", "bitim", "paca", "yaka")
 
-# Sadece Excel'de varsa gösterilen alanlar
-OPTIONAL_TEXT = ("kumas", "ana_kumas")
+
+def range_required(klasman: str) -> list:
+    """Klasmana göre RANGE'de dolu olması gereken alanlar."""
+    k = _norm(klasman)
+    keys = ["kumas", "bitim"]
+    if "pantolon" in k:
+        keys.append("paca")
+    if "hırka" in k or "hirka" in k:
+        keys.append("yaka")
+    return keys
+
 
 ALL_DURUM = ["Çok İyi", "İyi", "Orta", "Kötü", "Çok Kötü",
              "Minimum Mağaza Kısıtına Takıldı"]
@@ -201,8 +209,7 @@ def read_options(xlsx_path, durumlar, buyer_gruplar=None, klasman_kelimeler=None
 
     idx = {}
     for key, (_, col) in FIELDS.items():
-        idx[key] = next((header.index(_norm(c)) for c in COL_ALIASES.get(key, [col])
-                         if _norm(c) in header), None)
+        idx[key] = header.index(_norm(col)) if _norm(col) in header else None
     missing = [FIELDS[k][1] for k in ("option_kod", "durum") if idx[k] is None]
     if missing:
         wb.close()
@@ -241,8 +248,6 @@ def read_options(xlsx_path, durumlar, buyer_gruplar=None, klasman_kelimeler=None
             "renk": str(g("renk") or "").strip(),
             "durum": durum,
             "cluster": str(g("cluster") or "").strip(),
-            "kumas": str(g("kumas") or "").strip(),
-            "ana_kumas": str(g("ana_kumas") or "").strip(),
             "buyer": buyer,
             "stok": _num(g("stok")),
             "satis": _num(g("satis")),
@@ -252,6 +257,89 @@ def read_options(xlsx_path, durumlar, buyer_gruplar=None, klasman_kelimeler=None
         })
     wb.close()
     return items
+
+
+# ── RANGE kontrol dosyası ────────────────────────────────────────
+
+RANGE_FILE = Path(os.environ.get("DATA_DIR", "data")) / "merch_range.xlsx"
+
+
+def _opt_key(code) -> str:
+    """'W6AT82Z8-CVL' ile 'W6AT82Z8CVL' aynı kabul edilir."""
+    return re.sub(r"[^0-9A-Z]", "", str(code or "").upper())
+
+
+def _range_header(ws, max_scan=40):
+    """Başlık satırını (Option Kod + KUMAŞ-MALZEME TİPİ) bulur."""
+    for i, row in enumerate(ws.iter_rows(max_row=max_scan, values_only=True)):
+        h = [_norm(c) for c in row]
+        if _norm("Option Kod") in h and _norm(FIELDS["kumas"][1]) in h:
+            return i, h
+    return None, None
+
+
+def is_range_file(path) -> bool:
+    try:
+        wb = load_workbook(path, read_only=True, data_only=True)
+        found = any(_range_header(ws)[0] is not None for ws in wb.worksheets)
+        wb.close()
+        return found
+    except Exception:
+        return False
+
+
+def load_range(path) -> dict:
+    """RANGE dosyasını okur: {option_key: {kumas, bitim, paca, yaka}}"""
+    out = {}
+    wb = load_workbook(path, read_only=True, data_only=True)
+    for ws in wb.worksheets:
+        hi, h = _range_header(ws)
+        if hi is None:
+            continue
+        cols = {k: h.index(_norm(FIELDS[k][1])) if _norm(FIELDS[k][1]) in h else None
+                for k in RANGE_KEYS}
+        oi = h.index(_norm("Option Kod"))
+        for r in ws.iter_rows(min_row=hi + 2, values_only=True):
+            key = _opt_key(r[oi] if oi < len(r) else None)
+            if not key:
+                continue  # pivot ara toplam / boş satır
+            out[key] = {k: (str(r[i]).strip() if i is not None and i < len(r)
+                            and r[i] not in (None, "") else "")
+                        for k, i in cols.items()}
+    wb.close()
+    return out
+
+
+def save_range(data: bytes) -> Path:
+    RANGE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = RANGE_FILE.with_suffix(".tmp")
+    tmp.write_bytes(data)
+    tmp.replace(RANGE_FILE)
+    return RANGE_FILE
+
+
+def apply_range(items, rng) -> list:
+    """Opsiyonlara RANGE bilgilerini ekler; eksikleri döner.
+    Döner: [{option_kod, urun_ad, klasman, sorun}] (option başına bir kez)"""
+    warnings, seen = [], set()
+    for it in items:
+        rec = rng.get(_opt_key(it["option_kod"]))
+        need = range_required(it["klasman"])
+        for k in RANGE_KEYS:
+            it[k] = (rec or {}).get(k, "")
+        it["range_need"] = need
+        if rec is None:
+            it["range_eksik"] = need
+            sorun = "RANGE dosyasında yok"
+        else:
+            it["range_eksik"] = [k for k in need if not it[k]]
+            sorun = ("Boş: " + ", ".join(FIELDS[k][0] for k in it["range_eksik"])
+                     if it["range_eksik"] else "")
+        if sorun and it["option_kod"] not in seen:
+            seen.add(it["option_kod"])
+            warnings.append({"option_kod": it["option_kod"], "urun_ad": it["urun_ad"],
+                             "klasman": it["klasman"], "sorun": sorun})
+    return warnings
 
 
 # ── Görseller ────────────────────────────────────────────────────
@@ -378,12 +466,18 @@ GROUP_H = 22
 
 
 class _Report:
-    def __init__(self, items, hidden, title, subtitle, out_path, big=False):
+    WARN_ROWS = 30  # uyarı sayfası başına satır
+
+    def __init__(self, items, hidden, title, subtitle, out_path, big=False, warnings=None):
         self.items = items
         self.hidden = set(hidden)
         self.title = title
         self.subtitle = subtitle
         self.out_path = out_path
+        self.warnings = warnings or []
+        # En başta uyarı sayfası(ları), sonra kapak
+        self.warn_pages = -(-len(self.warnings) // self.WARN_ROWS)
+        self.pre = self.warn_pages + 1
         self.font, self.bold = _register_fonts()
         self.show_img = "resim" not in self.hidden
         self.big = big and self.show_img
@@ -400,8 +494,8 @@ class _Report:
         else:
             # Sayfaya 2 kart satırı + 2 grup başlığı sığacak yükseklik
             self.img_h = 126
-        # Kumaş / Ana Kumaş Excel'de yoksa kartta boş satır açma
-        self.optional = {k for k in OPTIONAL_TEXT if any(it.get(k) for it in items)}
+        # RANGE bilgisi varsa kartta Kumaş / Bitim / Paça-Yaka satırları
+        self.has_range = any("range_need" in it for it in items)
         self.card_h = self.img_h + 8 + len(self._card_lines(None)) * 10.5 + 6
         # Görünür olan Merch Alt Grup / Klasman alanları gruplama başlığı olur
         self.group_keys = [k for k in ("merch_alt_grup", "klasman")
@@ -423,9 +517,32 @@ class _Report:
                 lines.append(("kv", it and (label, _fmt(it[key], dec))))
         if "cluster" not in self.hidden:
             lines.append(("kv", it and ("Cluster", it["cluster"] or "-")))
-        for key in OPTIONAL_TEXT:
-            if key in self.optional and key not in self.hidden:
-                lines.append(("kv", it and (FIELDS[key][0], it[key] or "-")))
+        if self.has_range:
+            # Kumaş, Bitim İşlemi + klasmana göre Paça Detayı ya da Yaka Tipi
+            # (kart yüksekliği sabit kalsın diye son satır hep ayrılır)
+            for slot in ("kumas", "bitim", "detay"):
+                if slot == "detay":
+                    keys = [k for k in ("paca", "yaka")
+                            if k not in self.hidden and (it is None or k in it["range_need"])]
+                    if it is None:
+                        if keys:
+                            lines.append(("kv", None))
+                        continue
+                    if not keys:
+                        if any(k not in self.hidden for k in ("paca", "yaka")):
+                            lines.append(("kv", ("", "")))
+                        continue
+                    key = keys[0]
+                elif slot in self.hidden:
+                    continue
+                else:
+                    key = slot
+                if it is None:
+                    lines.append(("kv", None))
+                elif key in it["range_eksik"]:
+                    lines.append(("kvr", (FIELDS[key][0], "EKSİK")))
+                else:
+                    lines.append(("kv", (FIELDS[key][0], it[key] or "-")))
         return lines
 
     # ── Sayfalama ────────────────────────────────────────────────
@@ -464,7 +581,7 @@ class _Report:
             if y - GROUP_H - self.card_h < bottom:
                 new_page()
             page.append(("group", (label, gitems), y))
-            toc.append((gkey, len(gitems), len(pages) + 2))  # +1 kapak
+            toc.append((gkey, len(gitems), len(pages) + 1 + self.pre))
             y -= GROUP_H + 4
             for i in range(0, len(gitems), self.cols):
                 if y - self.card_h < bottom:
@@ -587,13 +704,57 @@ class _Report:
                 c.setFillColor(C_MUTED)
                 c.drawString(tx, cy, label)
                 c.setFont(self.bold, 8)
-                c.setFillColor(C_TEXT)
+                c.setFillColor(C_ACCENT if kind == "kvr" else C_TEXT)
                 c.drawRightString(tx + tw_, cy,
                                   self._fit(c, v, self.bold, 8, tw_ * 0.55))
             cy -= 10.5
 
+    def _draw_warnings(self, c, total):
+        """RANGE'de eksik olan opsiyonlar: kırmızı uyarı sayfası."""
+        rows = self.warnings
+        for pno in range(self.warn_pages):
+            chunk = rows[pno * self.WARN_ROWS:(pno + 1) * self.WARN_ROWS]
+            self._header(c, pno + 1, total, "RANGE kontrol uyarısı")
+            y = PAGE_H - 62
+            c.setFillColor(C_ACCENT)
+            c.roundRect(MARGIN, y - 34, PAGE_W - 2 * MARGIN, 34, 4, stroke=0, fill=1)
+            c.setFillColor(HexColor("#ffffff"))
+            c.setFont(self.bold, 13)
+            c.drawString(MARGIN + 12, y - 15,
+                         f"⚠ UYARI: {len(rows)} opsiyonda RANGE bilgisi eksik")
+            c.setFont(self.font, 8.5)
+            c.drawString(MARGIN + 12, y - 28,
+                         "Kumaş / Bitim İşlemi (tümü), Paça Detayı (pantolon), "
+                         "Yaka Tipi (hırka) RANGE kontrol dosyasında doldurulmalı.")
+            y -= 52
+            cols = [(MARGIN, "Option Kod"), (MARGIN + 110, "Ürün Ad"),
+                    (MARGIN + 290, "Klasman"), (MARGIN + 500, "Sorun")]
+            c.setFont(self.bold, 8.5)
+            c.setFillColor(C_MUTED)
+            for x, lab in cols:
+                c.drawString(x, y, lab)
+            y -= 4
+            c.setStrokeColor(C_LINE)
+            c.line(MARGIN, y, PAGE_W - MARGIN, y)
+            for w in chunk:
+                y -= 13.5
+                c.setFont(self.bold, 8.5)
+                c.setFillColor(C_BRAND)
+                c.drawString(cols[0][0], y, w["option_kod"])
+                c.setFont(self.font, 8.5)
+                c.setFillColor(C_TEXT)
+                c.drawString(cols[1][0], y, self._fit(c, w["urun_ad"], self.font, 8.5, 175))
+                c.drawString(cols[2][0], y, self._fit(c, w["klasman"], self.font, 8.5, 205))
+                c.setFillColor(C_ACCENT)
+                c.drawString(cols[3][0], y, self._fit(c, w["sorun"], self.font, 8.5,
+                                                      PAGE_W - MARGIN - cols[3][0]))
+            c.bookmarkPage(f"w{pno}")
+            if pno == 0:
+                c.addOutlineEntry("⚠ RANGE uyarısı", "w0", level=0)
+            c.showPage()
+
     def _draw_cover(self, c, toc, total):
-        self._header(c, 1, total, datetime.now().strftime("%d.%m.%Y"))
+        self._header(c, self.pre, total, datetime.now().strftime("%d.%m.%Y"))
         c.setFillColor(C_BRAND)
         c.setFont(self.bold, 22)
         c.drawString(MARGIN, PAGE_H - 82, self.title)
@@ -623,6 +784,13 @@ class _Report:
             c.setFont(self.font, 8.5)
             c.setFillColor(C_MUTED)
             c.drawString(bx + 14, PAGE_H - 161, lab)
+
+        if self.warnings:
+            c.setFillColor(C_ACCENT)
+            c.setFont(self.bold, 9.5)
+            c.drawString(MARGIN, PAGE_H - 184,
+                         f"⚠ {len(self.warnings)} opsiyonda RANGE bilgisi eksik — "
+                         f"ilk sayfadaki listeye bakın.")
 
         # İçindekiler (2-3 sütun)
         c.setFillColor(C_BRAND)
@@ -663,16 +831,17 @@ class _Report:
 
     def render(self):
         pages, toc = self._paginate()
-        total = len(pages) + 1
+        total = len(pages) + self.pre
         c = canvas.Canvas(str(self.out_path), pagesize=(PAGE_W, PAGE_H))
         c.setTitle(self.title)
         c.setAuthor("Burç Agent · Merch Raporu")
+        self._draw_warnings(c, total)
         self._draw_cover(c, toc, total)
-        c.bookmarkPage("p1")
-        c.addOutlineEntry("Kapak / İçindekiler", "p1", level=0)
+        c.bookmarkPage(f"p{self.pre}")
+        c.addOutlineEntry("Kapak / İçindekiler", f"p{self.pre}", level=0)
         c.showPage()
         last_main = None
-        for pi, page in enumerate(pages, start=2):
+        for pi, page in enumerate(pages, start=self.pre + 1):
             c.bookmarkPage(f"p{pi}")
             right = ""
             for kind, data, y in page:
@@ -752,6 +921,14 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
   .kv { display:flex; justify-content:space-between; font-size:11px; color:var(--muted); }
   .kv b { color:var(--text); }
   .noimg .img { display:none; }
+  .kv.miss b { color:var(--accent); }
+  .warn { margin:16px 20px 0; border:2px solid var(--accent); border-radius:8px; overflow:hidden; }
+  .warn h4 { background:var(--accent); color:#fff; padding:9px 12px; font-size:15px; }
+  .warn p { padding:6px 12px 0; font-size:12px; color:var(--muted); }
+  .warn table { width:100%; border-collapse:collapse; font-size:12px; margin:6px 0 4px; }
+  .warn th, .warn td { text-align:left; padding:4px 12px; border-bottom:1px solid var(--line); }
+  .warn td.s { color:var(--accent); font-weight:600; }
+  .warn th { color:var(--muted); font-weight:500; }
   .noimg .badge { position:static; display:inline-block; margin-bottom:3px; }
   @media print {
     @page { size:A4 landscape; margin:9mm; }
@@ -775,6 +952,7 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
   <b>Gizle:</b>
   <span id="toggles" class="chk"></span>
 </div>
+<div id="warn"></div>
 <div class="stats" id="stats"></div>
 <main id="main"></main>
 <script>
@@ -784,7 +962,10 @@ const HIDDEN = new Set(__HIDDEN__);
 const DURUM_COLORS = __COLORS__;
 const DURUM_ORDER = __ORDER__;
 // Kumaş / Ana Kumaş sadece Excel'de varsa gösterilir
-const HAS = {kumas: DATA.some(i => i.kumas), ana_kumas: DATA.some(i => i.ana_kumas)};
+const WARNINGS = __WARNINGS__;
+// RANGE dosyası yüklüyse Kumaş / Bitim İşlemi / Paça Detayı / Yaka Tipi gösterilir
+const HAS_RANGE = DATA.some(i => i.range_need);
+const RANGE_KEYS = ['kumas', 'bitim', 'paca', 'yaka'];
 // Sayfa içi filtreler: işaretli olmayan değerler gizlenir
 const FILTERS = {
   cluster: ['Cluster', [...new Set(DATA.map(i => i.cluster || '-'))].sort()],
@@ -801,6 +982,15 @@ function imgFail(el) {
   const i = +(el.dataset.i || 0) + 1;
   if (i < urls.length) { el.dataset.i = i; el.src = urls[i]; }
   else el.parentNode.classList.add('err');
+}
+
+const LABELS = Object.fromEntries(FIELDS);
+function rangeLines(it) {
+  // Kumaş ve Bitim İşlemi her üründe; Paça Detayı pantolonda, Yaka Tipi hırkada
+  return RANGE_KEYS.filter(k => (k === 'kumas' || k === 'bitim' || (it.range_need || []).includes(k)) && !HIDDEN.has(k))
+    .map(k => (it.range_eksik || []).includes(k)
+      ? `<div class="kv miss"><span>${LABELS[k]}</span><b>EKSİK</b></div>`
+      : `<div class="kv"><span>${LABELS[k]}</span><b>${esc(it[k] || '-')}</b></div>`).join('');
 }
 
 function card(it) {
@@ -823,8 +1013,7 @@ function card(it) {
     ${kv('satis', 'Satış Adet', fmt(it.satis, 0))}
     ${kv('devir', 'Devir Hızı', fmt(it.devir, 2))}
     ${kv('cluster', 'Cluster', esc(it.cluster || '-'))}
-    ${HAS.kumas ? kv('kumas', 'Kumaş', esc(it.kumas || '-')) : ''}
-    ${HAS.ana_kumas ? kv('ana_kumas', 'Ana Kumaş', esc(it.ana_kumas || '-')) : ''}
+    ${HAS_RANGE ? rangeLines(it) : ''}
   </div></div>`;
 }
 
@@ -872,7 +1061,13 @@ document.getElementById('filters').innerHTML = Object.entries(FILTERS).map(([k, 
 document.getElementById('filters').addEventListener('change', e => {
   const {f} = e.target.dataset; e.target.checked ? OFF[f].delete(e.target.value) : OFF[f].add(e.target.value); render();
 });
-document.getElementById('toggles').innerHTML = FIELDS.filter(([k]) => !(k in HAS) || HAS[k]).map(([k, label]) =>
+if (WARNINGS.length) document.getElementById('warn').innerHTML =
+  `<div class="warn"><h4>⚠ UYARI: ${WARNINGS.length} opsiyonda RANGE bilgisi eksik</h4>
+   <p>Kumaş ve Bitim İşlemi tüm ürünlerde, Paça Detayı pantolonlarda, Yaka Tipi hırkalarda RANGE kontrol dosyasında doldurulmalı.</p>
+   <table><tr><th>Option Kod</th><th>Ürün Ad</th><th>Klasman</th><th>Sorun</th></tr>` +
+  WARNINGS.map(w => `<tr><td><b>${esc(w.option_kod)}</b></td><td>${esc(w.urun_ad)}</td><td>${esc(w.klasman)}</td><td class="s">${esc(w.sorun)}</td></tr>`).join('') +
+  '</table></div>';
+document.getElementById('toggles').innerHTML = FIELDS.filter(([k]) => HAS_RANGE || !RANGE_KEYS.includes(k)).map(([k, label]) =>
   `<label><input type="checkbox" value="${k}" ${HIDDEN.has(k) ? 'checked' : ''}>${esc(label)}</label>`).join('');
 document.getElementById('toggles').addEventListener('change', e => {
   e.target.checked ? HIDDEN.add(e.target.value) : HIDDEN.delete(e.target.value); render();
@@ -884,14 +1079,15 @@ render();
 """
 
 
-def render_html(items, hidden, title, subtitle, out_path):
+def render_html(items, hidden, title, subtitle, out_path, warnings=None):
     """Tek dosyalık HTML rapor. Görseller açan kişinin tarayıcısında
     lcw.com sunucusundan yüklenir; önce yüksek çözünürlük, olmazsa
     Excel'deki link, o da olmazsa lcw.com araması gösterilir."""
     data = []
     for it in items:
         d = {k: it.get(k) for k in ("option_kod", "urun_ad", "renk", "durum", "stok",
-                                     "satis", "devir", "cluster", "kumas", "ana_kumas",
+                                     "satis", "devir", "cluster", "kumas", "bitim",
+                                     "paca", "yaka", "range_need", "range_eksik",
                                      "merch_alt_grup", "klasman")}
         d["urls"] = _hires_candidates(it["resim"])
         data.append(d)
@@ -906,6 +1102,7 @@ def render_html(items, hidden, title, subtitle, out_path):
             .replace("__DATA__", js(data))
             .replace("__FIELDS__", js([[k, v[0]] for k, v in FIELDS.items()]))
             .replace("__HIDDEN__", js(list(hidden)))
+            .replace("__WARNINGS__", js(warnings or []))
             .replace("__COLORS__", js(DURUM_COLORS))
             .replace("__ORDER__", js(DURUM_ORDER)))
     Path(out_path).write_text(html, encoding="utf-8")
@@ -916,7 +1113,7 @@ def render_html(items, hidden, title, subtitle, out_path):
 
 def build_report(xlsx_path, source_name=None, durumlar=None, gizli_alanlar=None,
                  buyer_gruplar=None, buyuk_gorsel=None, klasman_kelimeler=None,
-                 clusterlar=None,
+                 clusterlar=None, range_path=None,
                  out_path=None, download_images=True, progress=None):
     """Excel'den PDF üretir. Ayar verilmezse kayıtlı ayarlar kullanılır.
 
@@ -944,6 +1141,14 @@ def build_report(xlsx_path, source_name=None, durumlar=None, gizli_alanlar=None,
                          f"; Klasman: {', '.join(klasman_w) or 'tümü'}"
                          f"; Cluster: {', '.join(cluster_f) or 'tümü'})")
 
+    # RANGE kontrol dosyası (son yüklenen) varsa Kumaş / Bitim / Paça / Yaka eklenir
+    range_path = Path(range_path) if range_path else RANGE_FILE
+    warnings = None
+    if range_path.exists():
+        if progress:
+            progress("RANGE dosyası eşleştiriliyor…")
+        warnings = apply_range(items, load_range(range_path))
+
     img_ok = 0
     if download_images and "resim" not in gizli:
         if progress:
@@ -970,9 +1175,11 @@ def build_report(xlsx_path, source_name=None, durumlar=None, gizli_alanlar=None,
 
     if progress:
         progress("PDF oluşturuluyor…")
-    pages = _Report(items, gizli, title, subtitle, out_path, big=big).render()
+    pages = _Report(items, gizli, title, subtitle, out_path, big=big,
+                    warnings=warnings).render()
     # Aynı içeriğin HTML sürümü: bilgisayarda açılınca görseller lcw.com'dan yüklenir
-    html_path = render_html(items, gizli, title, subtitle, out_path.with_suffix(".html"))
+    html_path = render_html(items, gizli, title, subtitle, out_path.with_suffix(".html"),
+                            warnings=warnings)
 
     summary = {
         "pdf": out_path.name,
@@ -981,6 +1188,8 @@ def build_report(xlsx_path, source_name=None, durumlar=None, gizli_alanlar=None,
         "hafta": week,
         "opsiyon": len(items),
         "gorsel": img_ok,
+        "range": range_path.name if warnings is not None else None,
+        "range_uyari": len(warnings or []),
         "sayfa": pages,
         "durumlar": durumlar,
         "gizli_alanlar": gizli,
@@ -1058,6 +1267,31 @@ def save_upload(data: bytes, filename: str) -> Path:
     return path
 
 
+def accept_upload(data: bytes, filename: str):
+    """Yüklenen Excel'i türüne göre kaydeder.
+    RANGE kontrol dosyası → data/merch_range.xlsx (her gün güncellenebilir),
+    haftalık dosya → uploads/ + son haftalık dosya olarak hatırlanır.
+    Döner: ("range" | "hafta", path)"""
+    path = save_upload(data, filename)
+    if is_range_file(path):
+        path.unlink(missing_ok=True)
+        return "range", save_range(data)
+    with _settings_lock:
+        st = load_settings()
+        st["son_hafta"] = {"path": str(path), "ad": Path(filename).name}
+        SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        SETTINGS_FILE.write_text(json.dumps(st, ensure_ascii=False, indent=2),
+                                 encoding="utf-8")
+    return "hafta", path
+
+
+def last_weekly():
+    """Son yüklenen haftalık dosya (path, ad) veya None."""
+    son = load_settings().get("son_hafta") or {}
+    p = Path(son.get("path", ""))
+    return (p, son.get("ad") or p.name) if son and p.exists() else None
+
+
 def list_reports(limit=30) -> list:
     if not OUTPUT_DIR.exists():
         return []
@@ -1082,6 +1316,7 @@ if __name__ == "__main__":
     ap.add_argument("--gizle", help=f"Gizlenecek alanlar: {','.join(FIELDS)}")
     ap.add_argument("--buyer", help="Virgüllü buyer grup listesi ('hepsi' = filtre yok)")
     ap.add_argument("--cluster", help="Virgüllü cluster listesi, ör. K veya G,K ('hepsi' = filtre yok)")
+    ap.add_argument("--range", help="RANGE kontrol dosyası (varsayılan: son yüklenen)")
     ap.add_argument("--normal-gorsel", action="store_true", help="Küçük kartlar (sayfada 12)")
     ap.add_argument("--resimsiz", action="store_true", help="Görselleri indirme")
     a = ap.parse_args()
@@ -1094,5 +1329,6 @@ if __name__ == "__main__":
         clusterlar=(([] if a.cluster.strip().lower() == "hepsi" else
                      [c.strip() for c in a.cluster.split(",")]) if a.cluster else None),
         buyuk_gorsel=False if a.normal_gorsel else None,
+        range_path=a.range,
         download_images=not a.resimsiz, progress=print)
     print(json.dumps(summ, ensure_ascii=False, indent=2))

@@ -268,4 +268,11 @@ Alan anahtarları: `resim, option_kod, urun_ad, renk, durum, stok, satis, devir,
 merch_alt_grup, klasman`. Ayarlar `data/merch_settings.json`'da saklanır ve
 sonraki haftalarda da kullanılır.
 
-Komut satırı: `python -m services.merch_report dosya.xlsx --gizle stok`
+**RANGE kontrol dosyası** — her gün güncellenebilir. Web'den veya Telegram'dan yüklenince
+otomatik tanınır (`Option Kod` + `KUMAŞ-MALZEME TİPİ` başlıkları), `data/merch_range.xlsx`
+olarak saklanır ve son haftalık rapor yeniden hazırlanır. Option Kod ile eşleşen
+opsiyonlara **Kumaş**, **Bitim İşlemi**, pantolonlarda **Paça Detayı**, hırkalarda
+**Yaka Tipi** eklenir. RANGE'de olmayan ya da boş alanı olan opsiyonlar raporun en
+başında kırmızı uyarı olarak listelenir.
+
+Komut satırı: `python -m services.merch_report dosya.xlsx --gizle stok [--range RANGE.xlsx]`

@@ -52,6 +52,8 @@
 <main>
   <form id="form" class="card">
     <h2>1 · Haftalık Excel dosyası</h2>
+    <p class="hint">RANGE kontrol dosyasını da buradan yükleyebilirsiniz: otomatik tanınır,
+      kaydedilir ve son haftalık rapor Kumaş / Bitim İşlemi / Paça / Yaka bilgileriyle yenilenir.</p>
     <p class="hint">Dosyayı yükleyince rapor otomatik hazırlanır. Telegram botuna .xlsx
       göndermek de aynı raporu üretir ve PDF'i sohbete geri yollar.</p>
     <label class="drop" id="drop">
@@ -151,6 +153,7 @@ $('form').onsubmit = async e => {
   const r = await fetch('/api/merch/upload', { method: 'POST', body: fd });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) { status(j.error || 'Yükleme başarısız', 'err'); $('go').disabled = false; return; }
+  if (j.mesaj) { status(j.mesaj, 'ok'); $('go').disabled = false; return; }
   polling = setInterval(poll, 1500);
 };
 
