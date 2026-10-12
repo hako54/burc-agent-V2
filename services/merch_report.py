@@ -746,6 +746,8 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
            border-radius:10px; padding:2px 8px; }
   .body { padding:7px 9px 9px; }
   .code { font-weight:700; color:var(--brand); text-decoration:none; }
+  .zoom { float:right; text-decoration:none; font-size:12px; }
+  @media print { .zoom { display:none; } }
   .name { font-size:12px; } .color { font-size:11px; color:var(--muted); }
   .kv { display:flex; justify-content:space-between; font-size:11px; color:var(--muted); }
   .kv b { color:var(--text); }
@@ -805,14 +807,16 @@ function card(it) {
   const h = HIDDEN;
   const col = DURUM_COLORS[it.durum] || '#555';
   const badge = h.has('durum') ? '' : `<span class="badge" style="background:${col}">${esc(it.durum)}</span>`;
-  const link = it.urls[0] ? it.urls[it.urls.length - 1] : search(it.option_kod);
+  // Görsele tıklayınca lcw.com'da ürün aranır (kumaş vb. detaylar ürün sayfasında)
+  const link = search(it.option_kod);
   const img = h.has('resim') ? '' : `<a class="img${it.urls.length ? '' : ' err'}" href="${esc(link)}" target="_blank" rel="noopener">
       ${it.urls.length ? `<img loading="lazy" src="${esc(it.urls[0])}" data-urls='${esc(JSON.stringify(it.urls))}' onerror="imgFail(this)" alt="${esc(it.option_kod)}">` : ''}
-      <span class="ph">Görsel yüklenemedi<br>lcw.com'da aramak için tıklayın</span>${badge}</a>`;
+      <span class="ph">Görsel yüklenemedi<br>lcw.com'da açmak için tıklayın</span>${badge}</a>`;
   const kv = (k, label, v) => h.has(k) ? '' : `<div class="kv"><span>${label}</span><b>${v}</b></div>`;
   return `<div class="card">${img}<div class="body">
     ${h.has('resim') ? badge : ''}
-    ${h.has('option_kod') ? '' : `<a class="code" href="${esc(search(it.option_kod))}" target="_blank" rel="noopener">${esc(it.option_kod)}</a>`}
+    ${h.has('option_kod') ? '' : `<a class="code" href="${esc(search(it.option_kod))}" target="_blank" rel="noopener" title="lcw.com'da aç">${esc(it.option_kod)}</a>`}
+    ${it.urls.length ? `<a class="zoom" href="${esc(it.urls[0])}" target="_blank" rel="noopener" title="Görseli büyük aç">🔍</a>` : ''}
     ${h.has('urun_ad') ? '' : `<div class="name">${esc(it.urun_ad)}</div>`}
     ${h.has('renk') ? '' : `<div class="color">${esc(it.renk)}</div>`}
     ${kv('stok', 'Gün Sonu Reyon Stok Ort.', fmt(it.stok, 0))}
