@@ -942,6 +942,9 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
   .dd .ddl { position:absolute; z-index:10; background:#fff; border:1px solid var(--line); border-radius:8px;
              box-shadow:0 6px 18px rgba(0,0,0,.12); padding:8px 10px; max-height:340px; overflow:auto;
              min-width:280px; display:flex; flex-direction:column; gap:3px; }
+  .dd .dds { padding:5px 8px; border:1px solid var(--line); border-radius:6px; font:inherit; margin-bottom:4px; }
+  .dd label[hidden] { display:none; }
+  .dd .none { color:var(--muted); }
   .img { position:relative; aspect-ratio:3/4; background:var(--soft); display:block; }
   .img img { width:100%; height:100%; object-fit:contain; display:block; }
   .img .ph { position:absolute; inset:0; display:none; align-items:center; justify-content:center;
@@ -1022,6 +1025,8 @@ const FILTERS = {
 const DEFAULT_ON = __DEFAULT_ON__;
 const OFF = {};
 const normV = v => String(v ?? '').trim().toLocaleLowerCase('tr');
+// Arama: Türkçe harf/aksan duyarsız ("hirka" → "HIRKA")
+const fold = v => normV(v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ı/g, 'i');
 for (const [k, [, vals]] of Object.entries(FILTERS)) {
   const want = new Set((DEFAULT_ON[k] || []).map(normV));
   const hit = vals.filter(v => want.has(normV(v)));
@@ -1123,31 +1128,70 @@ function renderStats(rows) {
       `<div class="stat" style="border-color:${DURUM_COLORS[d] || '#555'}"><b>${n}</b><span>${esc(d)}</span></div>`).join('') +
     `<div class="stat"><b>${fmt(rows.reduce((s, i) => s + (i.satis || 0), 0), 0)}</b><span>Toplam Satış Adet</span></div>`;
 }
-// Her grubun başında "Tümü": hepsini seçer / kaldırır. Çok değerli gruplar (Klasman) açılır listede
-const ddLabel = k => `${FILTERS[k][0]} (${FILTERS[k][1].length - OFF[k].size}/${FILTERS[k][1].length})`;
+// Her grubun başında "Tümü". Çok değerli gruplar açılır listede ve aranabilir.
+// Klasman listesinde sadece seçili Buyer Grup + Merch Alt Grup'ta olan klasmanlar görünür.
+function availKlasman() {
+  const av = new Set();
+  for (const i of DATA)
+    if (!OFF.buyer.has(i.buyer || '-') && !OFF.merch_alt_grup.has(i.merch_alt_grup || '-')) av.add(i.klasman || '-');
+  return av;
+}
+function ddLabel(k) {
+  const vals = k === 'klasman' ? [...availKlasman()] : FILTERS[k][1];
+  return `${FILTERS[k][0]} (${vals.filter(v => !OFF[k].has(v)).length}/${vals.length})`;
+}
 document.getElementById('filters').innerHTML = Object.entries(FILTERS).map(([k, [label, vals]]) => {
-  const boxes = `<label><input type="checkbox" data-all="${k}" ${OFF[k].size ? '' : 'checked'}><b>Tümü</b></label>` + vals.map(v =>
-    `<label><input type="checkbox" data-f="${k}" value="${esc(v)}" ${OFF[k].has(v) ? '' : 'checked'}>${esc(v)}</label>`).join('');
+  const boxes = `<label class="all"><input type="checkbox" data-all="${k}" ${OFF[k].size ? '' : 'checked'}><b>Tümü</b></label>` + vals.map(v =>
+    `<label data-t="${esc(fold(v))}"><input type="checkbox" data-f="${k}" value="${esc(v)}" ${OFF[k].has(v) ? '' : 'checked'}>${esc(v)}</label>`).join('');
   return vals.length > 8
-    ? `<details class="dd"><summary id="dd-${k}">${esc(ddLabel(k))}</summary><div class="ddl">${boxes}</div></details>`
+    ? `<details class="dd"><summary id="dd-${k}">${esc(ddLabel(k))}</summary><div class="ddl" id="ddl-${k}">
+         <input type="search" class="dds" data-s="${k}" placeholder="Ara…">${boxes}<span class="none" hidden>Eşleşen yok</span></div></details>`
     : `<span>${esc(label)}:</span>${boxes}`;
 }).join('<i>|</i>');
+
+// Açılır listede arama + klasman daraltma
+function refreshList(k) {
+  const box = document.getElementById('ddl-' + k);
+  if (!box) return;
+  const q = fold(box.querySelector('.dds').value);
+  const av = k === 'klasman' ? availKlasman() : null;
+  let n = 0;
+  box.querySelectorAll('label[data-t]').forEach(l => {
+    const v = l.querySelector('input').value;
+    const ok = (!av || av.has(v)) && (!q || l.dataset.t.includes(q));
+    l.hidden = !ok; n += ok;
+  });
+  box.querySelector('.none').hidden = n > 0;
+  const allCb = box.querySelector('input[data-all]');
+  const vis = [...box.querySelectorAll('label[data-t]')].filter(l => !l.hidden);
+  allCb.checked = vis.length > 0 && vis.every(l => l.querySelector('input').checked);
+  document.getElementById('dd-' + k).textContent = ddLabel(k);
+}
+document.getElementById('filters').addEventListener('input', e => {
+  if (e.target.dataset.s) refreshList(e.target.dataset.s);
+});
 document.getElementById('filters').addEventListener('change', e => {
   const {f, all} = e.target.dataset;
+  const k = all || f;
+  if (!k) return;
   const box = document.getElementById('filters');
   if (all) {
+    // "Tümü" o an görünen (aramaya/daraltmaya uyan) değerlere uygulanır
     box.querySelectorAll(`input[data-f="${all}"]`).forEach(cb => {
+      if (cb.closest('label').hidden) return;
       cb.checked = e.target.checked;
       e.target.checked ? OFF[all].delete(cb.value) : OFF[all].add(cb.value);
     });
   } else {
     e.target.checked ? OFF[f].delete(e.target.value) : OFF[f].add(e.target.value);
-    box.querySelector(`input[data-all="${f}"]`).checked = OFF[f].size === 0;
+    const allCb = box.querySelector(`input[data-all="${f}"]`);
+    if (!document.getElementById('ddl-' + f)) allCb.checked = OFF[f].size === 0;
   }
-  const k = all || f, dd = document.getElementById('dd-' + k);
-  if (dd) dd.textContent = ddLabel(k);
+  refreshList(k);
+  if (k === 'buyer' || k === 'merch_alt_grup') refreshList('klasman');
   render();
 });
+document.querySelectorAll('.ddl').forEach(b => refreshList(b.id.slice(4)));
 // Uyarı listesi sadece filtrede görünen opsiyonları kapsar; ilk 10 satır, gerisi "Tümünü göster"
 let warnAll = false;
 function renderWarn(shown) {

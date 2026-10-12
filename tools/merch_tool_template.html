@@ -30,6 +30,9 @@
   .dim h3 { font-size:13px; background:var(--soft); padding:7px 10px; display:flex; justify-content:space-between; }
   .dim h3 small { color:var(--muted); font-weight:400; }
   .dim .opts { max-height:220px; overflow:auto; padding:6px 10px; font-size:13px; }
+  .dim .srch { margin:6px 10px 0; padding:5px 8px; border:1px solid var(--line); border-radius:6px; font:inherit; font-size:13px; }
+  .dim .none { color:var(--muted); font-size:12px; padding:4px 0; }
+  .dim label[hidden] { display:none; }
   .dim label { display:flex; gap:6px; align-items:center; cursor:pointer; padding:1px 0; }
   .dim label .n { margin-left:auto; color:var(--muted); font-size:11px; }
   .dim label.all { font-weight:600; border-bottom:1px solid var(--line); padding-bottom:4px; margin-bottom:3px; }
@@ -208,6 +211,8 @@ const status = (msg, cls = '') => { $('status').textContent = msg; $('status').c
 const escHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const js = v => JSON.stringify(v).replace(/<\//g, '<\\/');
 const normV = v => String(v ?? '').trim().toLocaleLowerCase('tr');
+// Arama: Türkçe harf/aksan duyarsız ("hirka" → "HIRKA")
+const fold = v => normV(v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ı/g, 'i');
 
 // Seçim boyutları (rapordaki filtrelerle aynı)
 const DIMS = [
@@ -223,48 +228,95 @@ try { onlySel = localStorage.getItem('merchToolSadeceSecili') === '1'; } catch (
 $('onlySel').checked = onlySel;
 
 let RESULT = null;        // {data, warnings, hasRange}
-const SEL = {};           // boyut → seçili değerler (Set)
+const ALLMODE = {};       // boyut → "Tümü" seçili mi
+const SEL = {};           // boyut → elle seçilen değerler (Tümü değilken)
+const SEARCH = {};        // boyut → arama metni
+const isOn = (k, v) => ALLMODE[k] || SEL[k].has(v);
+const sortVals = (k, vals) => vals.sort(k === 'durum'
+  ? (a, b) => (DURUM_ORDER[a] ?? 99) - (DURUM_ORDER[b] ?? 99) : (a, b) => a.localeCompare(b, 'tr'));
 
+// Değerler ve adetleri. Klasman: sadece seçili Buyer Grup + Merch Alt Grup'ta olanlar
 function valuesOf(k) {
   const cnt = new Map();
-  for (const it of RESULT.data) { const v = it[k] || '-'; cnt.set(v, (cnt.get(v) || 0) + 1); }
-  const vals = [...cnt.keys()];
-  vals.sort(k === 'durum' ? (a, b) => (DURUM_ORDER[a] ?? 99) - (DURUM_ORDER[b] ?? 99) : (a, b) => a.localeCompare(b, 'tr'));
-  return vals.map(v => [v, cnt.get(v)]);
+  for (const it of RESULT.data) {
+    if (k === 'klasman' && !(isOn('buyer', it.buyer || '-') && isOn('merch_alt_grup', it.merch_alt_grup || '-'))) continue;
+    const v = it[k] || '-';
+    cnt.set(v, (cnt.get(v) || 0) + 1);
+  }
+  return sortVals(k, [...cnt.keys()]).map(v => [v, cnt.get(v)]);
+}
+
+function initSelections() {
+  for (const [k] of DIMS) {
+    // Kayıtlı seçim bu dosyada yoksa o boyutta "Tümü"
+    const vals = new Set(RESULT.data.map(it => it[k] || '-'));
+    const want = new Set((SAVED[k] || []).map(normV));
+    const hit = [...vals].filter(v => want.has(normV(v)));
+    ALLMODE[k] = !hit.length;
+    SEL[k] = new Set(hit);
+    SEARCH[k] = SEARCH[k] || '';
+  }
 }
 
 function renderDims() {
-  $('dims').innerHTML = DIMS.map(([k, label]) => {
-    const vals = valuesOf(k);
-    // Kayıtlı seçim bu dosyada yoksa o boyutta hepsi seçili
-    const want = new Set((SAVED[k] || []).map(normV));
-    const hit = vals.filter(([v]) => want.has(normV(v))).map(([v]) => v);
-    SEL[k] = new Set(hit.length ? hit : vals.map(([v]) => v));
-    const all = SEL[k].size === vals.length;
-    return `<div class="dim"><h3>${escHtml(label)} <small id="c-${k}">${SEL[k].size}/${vals.length}</small></h3><div class="opts">
-      <label class="all"><input type="checkbox" data-all="${k}" ${all ? 'checked' : ''}>Tümü</label>` +
-      vals.map(([v, n]) => `<label><input type="checkbox" data-d="${k}" value="${escHtml(v)}" ${SEL[k].has(v) ? 'checked' : ''}>${escHtml(v)}<span class="n">${n}</span></label>`).join('') +
-      '</div></div>';
-  }).join('');
+  $('dims').innerHTML = DIMS.map(([k, label]) => `<div class="dim" id="dim-${k}"><h3>${escHtml(label)} <small id="c-${k}"></small></h3>
+    <input type="search" class="srch" data-s="${k}" placeholder="Ara…" value="${escHtml(SEARCH[k])}">
+    <div class="opts" id="o-${k}"></div></div>`).join('');
+  DIMS.forEach(([k]) => renderOpts(k));
   updateCount();
 }
+
+function renderOpts(k) {
+  const vals = valuesOf(k);
+  const on = vals.filter(([v]) => isOn(k, v)).length;
+  $('c-' + k).textContent = `${on}/${vals.length}`;
+  $('o-' + k).innerHTML = `<label class="all"><input type="checkbox" data-all="${k}" ${on === vals.length && vals.length ? 'checked' : ''}><span>Tümü</span></label>` +
+    vals.map(([v, n]) => `<label data-t="${escHtml(fold(v))}"><input type="checkbox" data-d="${k}" value="${escHtml(v)}" ${isOn(k, v) ? 'checked' : ''}>${escHtml(v)}<span class="n">${n}</span></label>`).join('') +
+    `<div class="none" hidden>Eşleşen yok</div>`;
+  applySearch(k);
+}
+
+// Arama: yazdıkça eşleşmeyen satırlar gizlenir; "Tümü" o an görünenlere uygulanır
+function applySearch(k) {
+  const q = fold(SEARCH[k]);
+  let shown = 0;
+  $('o-' + k).querySelectorAll('label[data-t]').forEach(l => {
+    const ok = !q || l.dataset.t.includes(q);
+    l.hidden = !ok; shown += ok;
+  });
+  $('o-' + k).querySelector('.none').hidden = shown > 0;
+  $('o-' + k).querySelector('label.all span').textContent = q ? `Tümü (görünen ${shown})` : 'Tümü';
+}
+
+$('dims').addEventListener('input', e => {
+  const k = e.target.dataset.s;
+  if (!k) return;
+  SEARCH[k] = e.target.value;
+  applySearch(k);
+});
 
 $('dims').addEventListener('change', e => {
   const {d, all} = e.target.dataset;
   const k = d || all;
+  if (!k) return;
+  const avail = valuesOf(k).map(([v]) => v);
+  const visible = [...$('o-' + k).querySelectorAll('label[data-t]')].filter(l => !l.hidden)
+    .map(l => l.querySelector('input').value);
+  const toExplicit = () => { if (ALLMODE[k]) { ALLMODE[k] = false; SEL[k] = new Set(avail); } };
   if (all) {
-    $('dims').querySelectorAll(`input[data-d="${k}"]`).forEach(cb => {
-      cb.checked = e.target.checked;
-      e.target.checked ? SEL[k].add(cb.value) : SEL[k].delete(cb.value);
-    });
+    if (!SEARCH[k].trim()) { ALLMODE[k] = e.target.checked; SEL[k] = new Set(); }
+    else { toExplicit(); visible.forEach(v => e.target.checked ? SEL[k].add(v) : SEL[k].delete(v)); }
   } else {
+    toExplicit();
     e.target.checked ? SEL[k].add(e.target.value) : SEL[k].delete(e.target.value);
-    $('dims').querySelector(`input[data-all="${k}"]`).checked =
-      SEL[k].size === $('dims').querySelectorAll(`input[data-d="${k}"]`).length;
   }
-  $('c-' + k).textContent = `${SEL[k].size}/${$('dims').querySelectorAll(`input[data-d="${k}"]`).length}`;
-  SAVED[k] = [...SEL[k]];
+  // Görünen değerlerin hepsi seçiliyse "Tümü"ne dön (sonradan eklenen değerler de seçili gelir)
+  if (!ALLMODE[k] && avail.every(v => SEL[k].has(v))) { ALLMODE[k] = true; SEL[k] = new Set(); }
+  SAVED[k] = ALLMODE[k] ? [] : [...SEL[k]];
   try { localStorage.setItem('merchToolSecim_v1', JSON.stringify(SAVED)); } catch (e2) {}
+  renderOpts(k);
+  // Buyer Grup / Merch Alt Grup değişince Klasman listesi daralır
+  if (k === 'buyer' || k === 'merch_alt_grup') renderOpts('klasman');
   updateCount();
 });
 $('onlySel').onchange = e => {
@@ -272,7 +324,7 @@ $('onlySel').onchange = e => {
   try { localStorage.setItem('merchToolSadeceSecili', onlySel ? '1' : '0'); } catch (e2) {}
 };
 
-const selected = () => RESULT.data.filter(it => DIMS.every(([k]) => SEL[k].has(it[k] || '-')));
+const selected = () => RESULT.data.filter(it => DIMS.every(([k]) => isOn(k, it[k] || '-')));
 function updateCount() {
   if (!RESULT) return;
   const n = selected().length;
@@ -306,6 +358,7 @@ function onResult(r) {
   el.querySelector('small').textContent = `✓ ${el.dataset.info} · okundu (${r.sure.toFixed(1)} sn)`;
   if (r.pending) { status('RANGE okundu; haftalık Excel bekleniyor.'); return; }
   RESULT = r;
+  initSelections();
   renderDims();
   if (!busy) status(`Hazır: ${r.data.length.toLocaleString('tr-TR')} satır` +
     (r.hasRange ? ` · ${r.warnings.length} RANGE uyarısı` : ' · RANGE dosyası eklenmedi') +
@@ -346,8 +399,7 @@ function buildReport() {
   const warnings = codes ? RESULT.warnings.filter(w => codes.has(w.option_kod)) : RESULT.warnings;
   // Açılış seçimi: bir boyutta hepsi seçiliyse filtre yok
   const defaultOn = Object.fromEntries(DIMS.map(([k]) => {
-    const n = new Set(RESULT.data.map(i => i[k] || '-')).size;
-    return [k, SEL[k].size === n ? [] : [...SEL[k]]];
+    return [k, ALLMODE[k] ? [] : [...SEL[k]]];
   }));
   const m = /(\d{1,2})\s*\.?\s*hafta/i.exec(fileName);
   const week = m ? `${m[1]}. Hafta` : '';
