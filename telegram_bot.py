@@ -172,6 +172,11 @@ def handle_merch_excel(chat_id: str, document: dict):
             f"{summ['opsiyon']} opsiyon ({dag})\n"
             f"{summ['merch_alt_grup']} merch alt grup · {summ['klasman']} klasman · "
             f"{summ['sayfa']} sayfa"), chat_id)
+        html = pdf.with_suffix(".html")
+        if html.exists():
+            send_document(str(html), (
+                "🖼 Görselli sürüm: bilgisayara kaydedip açın, ürün görselleri "
+                "lcw.com'dan yüklenir. İçindeki düğmeyle PDF olarak kaydedebilirsiniz."), chat_id)
 
     if merch_report.start_job(path, name, on_done=on_done):
         gizli = ", ".join(merch_report.FIELDS[k][0] for k in s["gizli_alanlar"]) or "yok"

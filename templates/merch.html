@@ -109,7 +109,8 @@ async function loadReports() {
       <td>${esc(r.hafta || '')} <span class="hint">${esc(r.kaynak || r.pdf)}</span></td>
       <td>${r.opsiyon ?? '-'}</td><td>${r.sayfa ?? '-'}</td>
       <td><a href="/merch/pdf/${encodeURIComponent(r.pdf)}" target="_blank">Aç</a>
-          <a href="/merch/pdf/${encodeURIComponent(r.pdf)}?dl=1">İndir</a></td></tr>`).join('')
+          <a href="/merch/pdf/${encodeURIComponent(r.pdf)}?dl=1">İndir</a>
+          ${r.html ? `<a href="/merch/pdf/${encodeURIComponent(r.html)}" target="_blank">Görselli (HTML)</a>` : ''}</td></tr>`).join('')
     : '<tr><td colspan="5" class="hint">Henüz rapor yok.</td></tr>';
 }
 

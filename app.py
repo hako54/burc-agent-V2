@@ -168,7 +168,7 @@ def api_merch_reports():
 
 @app.route("/merch/pdf/<path:name>")
 def merch_pdf(name):
-    if not name.endswith(".pdf"):
+    if not name.endswith((".pdf", ".html")):
         abort(404)
     return send_from_directory(merch_report.OUTPUT_DIR, name,
                                as_attachment=request.args.get("dl") == "1")

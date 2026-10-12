@@ -677,6 +677,187 @@ class _Report:
         return total
 
 
+# ── HTML rapor (görseller açılırken tarayıcıda yüklenir) ─────────
+
+_HTML_TEMPLATE = r"""<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<style>
+  :root { --brand:#002f6c; --accent:#e30613; --text:#1d2433; --muted:#6b7385;
+          --line:#d9dee8; --soft:#f3f5f9; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font:13px/1.4 -apple-system,"Segoe UI",Roboto,Arial,sans-serif; color:var(--text); background:#fff; }
+  header { background:var(--brand); color:#fff; padding:14px 20px; border-bottom:3px solid var(--accent); }
+  header h1 { font-size:20px; }
+  header p { font-size:12px; color:#cfd8ea; margin-top:2px; }
+  .bar { position:sticky; top:0; z-index:5; background:#fff; border-bottom:1px solid var(--line);
+         padding:10px 20px; display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center; }
+  .bar b { font-size:12px; color:var(--muted); font-weight:600; }
+  #toggles { display:flex; flex-wrap:wrap; gap:4px 12px; flex:1; }
+  .bar label { font-size:12px; display:flex; gap:4px; align-items:center; cursor:pointer; }
+  .bar button { margin-left:auto; background:var(--brand); color:#fff; border:0; border-radius:6px;
+                padding:8px 14px; font-weight:600; cursor:pointer; }
+  .stats { display:flex; flex-wrap:wrap; gap:10px; padding:16px 20px 4px; }
+  .stat { background:var(--soft); border-left:4px solid var(--brand); border-radius:6px; padding:8px 14px; min-width:130px; }
+  .stat b { font-size:20px; display:block; }
+  .stat span { font-size:11px; color:var(--muted); }
+  main { padding:8px 20px 30px; }
+  h2 { font-size:16px; color:#fff; background:var(--brand); padding:8px 12px; border-radius:6px; margin:22px 0 8px; }
+  h3 { font-size:13px; color:var(--brand); background:var(--soft); border-left:4px solid var(--accent);
+       padding:7px 10px; border-radius:4px; margin:14px 0 8px; display:flex; justify-content:space-between; }
+  h3 small { color:var(--muted); font-weight:400; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:10px; }
+  .card { border:1px solid var(--line); border-radius:8px; overflow:hidden; break-inside:avoid; page-break-inside:avoid; background:#fff; }
+  .img { position:relative; aspect-ratio:3/4; background:var(--soft); display:block; }
+  .img img { width:100%; height:100%; object-fit:contain; display:block; }
+  .img .ph { position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+             text-align:center; color:var(--muted); font-size:12px; padding:10px; }
+  .img.err img { display:none; } .img.err .ph { display:flex; }
+  .badge { position:absolute; top:6px; right:6px; color:#fff; font-size:10px; font-weight:700;
+           border-radius:10px; padding:2px 8px; }
+  .body { padding:7px 9px 9px; }
+  .code { font-weight:700; color:var(--brand); text-decoration:none; }
+  .name { font-size:12px; } .color { font-size:11px; color:var(--muted); }
+  .kv { display:flex; justify-content:space-between; font-size:11px; color:var(--muted); }
+  .kv b { color:var(--text); }
+  .noimg .img { display:none; }
+  .noimg .badge { position:static; display:inline-block; margin-bottom:3px; }
+  @media print {
+    @page { size:A4 landscape; margin:9mm; }
+    .bar { display:none; }
+    header { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    h2, h3, .badge, .stat { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .grid { grid-template-columns:repeat(5,1fr); gap:6px; }
+    h2 { break-before:page; } h2.first { break-before:auto; }
+    h3 { break-after:avoid; }
+    body { font-size:11px; }
+  }
+</style>
+</head>
+<body>
+<header><h1>__TITLE__</h1><p>__SUBTITLE__</p></header>
+<div class="bar" id="bar">
+  <b>Gizle:</b>
+  <span id="toggles"></span>
+  <button onclick="window.print()">PDF olarak kaydet / Yazdır</button>
+</div>
+<div class="stats" id="stats"></div>
+<main id="main"></main>
+<script>
+const DATA = __DATA__;
+const FIELDS = __FIELDS__;
+const HIDDEN = new Set(__HIDDEN__);
+const DURUM_COLORS = __COLORS__;
+const DURUM_ORDER = __ORDER__;
+const fmt = (v, d) => v == null ? '-' : v.toLocaleString('tr-TR', {minimumFractionDigits: d, maximumFractionDigits: d});
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const search = code => 'https://www.lcw.com/arama?q=' + encodeURIComponent(code);
+
+// Görsel sırayla denenir; hepsi başarısızsa "lcw.com'da ara" gösterilir
+function imgFail(el) {
+  const urls = JSON.parse(el.dataset.urls);
+  const i = +(el.dataset.i || 0) + 1;
+  if (i < urls.length) { el.dataset.i = i; el.src = urls[i]; }
+  else el.parentNode.classList.add('err');
+}
+
+function card(it) {
+  const h = HIDDEN;
+  const col = DURUM_COLORS[it.durum] || '#555';
+  const badge = h.has('durum') ? '' : `<span class="badge" style="background:${col}">${esc(it.durum)}</span>`;
+  const link = it.urls[0] ? it.urls[it.urls.length - 1] : search(it.option_kod);
+  const img = h.has('resim') ? '' : `<a class="img${it.urls.length ? '' : ' err'}" href="${esc(link)}" target="_blank" rel="noopener">
+      ${it.urls.length ? `<img loading="lazy" src="${esc(it.urls[0])}" data-urls='${esc(JSON.stringify(it.urls))}' onerror="imgFail(this)" alt="${esc(it.option_kod)}">` : ''}
+      <span class="ph">Görsel yüklenemedi<br>lcw.com'da aramak için tıklayın</span>${badge}</a>`;
+  const kv = (k, label, v) => h.has(k) ? '' : `<div class="kv"><span>${label}</span><b>${v}</b></div>`;
+  return `<div class="card">${img}<div class="body">
+    ${h.has('resim') ? badge : ''}
+    ${h.has('option_kod') ? '' : `<a class="code" href="${esc(search(it.option_kod))}" target="_blank" rel="noopener">${esc(it.option_kod)}</a>`}
+    ${h.has('urun_ad') ? '' : `<div class="name">${esc(it.urun_ad)}</div>`}
+    ${h.has('renk') ? '' : `<div class="color">${esc(it.renk)}</div>`}
+    ${kv('stok', 'Gün Sonu Reyon Stok Ort.', fmt(it.stok, 0))}
+    ${kv('satis', 'Satış Adet', fmt(it.satis, 0))}
+    ${kv('devir', 'Devir Hızı', fmt(it.devir, 2))}
+    ${kv('cluster', 'Cluster', esc(it.cluster || '-'))}
+  </div></div>`;
+}
+
+function render() {
+  document.body.classList.toggle('noimg', HIDDEN.has('resim'));
+  const keys = ['merch_alt_grup', 'klasman'].filter(k => !HIDDEN.has(k));
+  const items = [...DATA].sort((a, b) =>
+    keys.map(k => a[k].localeCompare(b[k], 'tr')).find(x => x) ||
+    (DURUM_ORDER[a.durum] ?? 99) - (DURUM_ORDER[b.durum] ?? 99) || (b.devir || 0) - (a.devir || 0));
+  let html = '', main = null, sub = null, buf = [];
+  const flush = () => {
+    if (!buf.length) return;
+    if (keys.includes('klasman')) {
+      const cnt = {}; buf.forEach(i => cnt[i.durum] = (cnt[i.durum] || 0) + 1);
+      html += `<h3>${esc(sub)} <small>${buf.length} opsiyon · ${Object.entries(cnt).map(([d, n]) => `${esc(d)}: ${n}`).join(' · ')}</small></h3>`;
+    }
+    html += `<div class="grid">${buf.map(card).join('')}</div>`; buf = [];
+  };
+  let first = true;
+  for (const it of items) {
+    if (keys.includes('merch_alt_grup') && it.merch_alt_grup !== main) {
+      flush(); main = it.merch_alt_grup; sub = null;
+      html += `<h2 class="${first ? 'first' : ''}">${esc(main)}</h2>`; first = false;
+    }
+    if (keys.includes('klasman') && it.klasman !== sub) { flush(); sub = it.klasman; }
+    buf.push(it);
+  }
+  flush();
+  document.getElementById('main').innerHTML = html;
+}
+
+const cnt = {}; DATA.forEach(i => cnt[i.durum] = (cnt[i.durum] || 0) + 1);
+document.getElementById('stats').innerHTML =
+  `<div class="stat"><b>${DATA.length}</b><span>Toplam Opsiyon</span></div>` +
+  Object.entries(cnt).sort((a, b) => (DURUM_ORDER[a[0]] ?? 99) - (DURUM_ORDER[b[0]] ?? 99)).map(([d, n]) =>
+    `<div class="stat" style="border-color:${DURUM_COLORS[d] || '#555'}"><b>${n}</b><span>${esc(d)}</span></div>`).join('') +
+  `<div class="stat"><b>${fmt(DATA.reduce((s, i) => s + (i.satis || 0), 0), 0)}</b><span>Toplam Satış Adet</span></div>`;
+document.getElementById('toggles').innerHTML = FIELDS.map(([k, label]) =>
+  `<label><input type="checkbox" value="${k}" ${HIDDEN.has(k) ? 'checked' : ''}>${esc(label)}</label>`).join('');
+document.getElementById('toggles').addEventListener('change', e => {
+  e.target.checked ? HIDDEN.add(e.target.value) : HIDDEN.delete(e.target.value); render();
+});
+render();
+</script>
+</body>
+</html>
+"""
+
+
+def render_html(items, hidden, title, subtitle, out_path):
+    """Tek dosyalık HTML rapor. Görseller açan kişinin tarayıcısında
+    lcw.com sunucusundan yüklenir; önce yüksek çözünürlük, olmazsa
+    Excel'deki link, o da olmazsa lcw.com araması gösterilir."""
+    data = []
+    for it in items:
+        d = {k: it.get(k) for k in ("option_kod", "urun_ad", "renk", "durum", "stok",
+                                     "satis", "devir", "cluster", "merch_alt_grup", "klasman")}
+        d["urls"] = _hires_candidates(it["resim"])
+        data.append(d)
+
+    def js(v):
+        return json.dumps(v, ensure_ascii=False).replace("</", "<\\/")
+
+    from html import escape
+    html = (_HTML_TEMPLATE
+            .replace("__TITLE__", escape(title))
+            .replace("__SUBTITLE__", escape(subtitle))
+            .replace("__DATA__", js(data))
+            .replace("__FIELDS__", js([[k, v[0]] for k, v in FIELDS.items()]))
+            .replace("__HIDDEN__", js(list(hidden)))
+            .replace("__COLORS__", js(DURUM_COLORS))
+            .replace("__ORDER__", js(DURUM_ORDER)))
+    Path(out_path).write_text(html, encoding="utf-8")
+    return Path(out_path)
+
+
 # ── Dış API ──────────────────────────────────────────────────────
 
 def build_report(xlsx_path, source_name=None, durumlar=None, gizli_alanlar=None,
@@ -732,9 +913,12 @@ def build_report(xlsx_path, source_name=None, durumlar=None, gizli_alanlar=None,
     if progress:
         progress("PDF oluşturuluyor…")
     pages = _Report(items, gizli, title, subtitle, out_path, big=big).render()
+    # Aynı içeriğin HTML sürümü: bilgisayarda açılınca görseller lcw.com'dan yüklenir
+    html_path = render_html(items, gizli, title, subtitle, out_path.with_suffix(".html"))
 
     summary = {
         "pdf": out_path.name,
+        "html": html_path.name,
         "kaynak": source_name,
         "hafta": week,
         "opsiyon": len(items),
