@@ -241,3 +241,30 @@ burc_v2/
 ## Lisans
 
 Kişisel kullanım için. API anahtarları sana ait, sorumluluğu da sana ait.
+
+## 📊 Haftalık Merch Raporu (Excel → PDF)
+
+Haftalık opsiyon Excel'inden (ör. `41.hafta_1210_.xlsx`) DURUM'u **Çok İyi** ve **İyi**
+olan opsiyonları alır; lcw.com ürün görselleriyle (Excel'deki "Resim Gör" linki =
+`Ürün Resim Linki`) birlikte **Merch Alt Grup › Gelecek Dönem Ürün Klasman**
+kırılımında kart görünümlü bir PDF hazırlar.
+
+Kartta: görsel, Option Kod, Ürün Ad, Renk Tanım, Durum, Gün Sonu Reyon Stok
+Ortalaması, Satış Adet, Devir Hızı. Kapakta özet ve tıklanabilir içindekiler var.
+
+**Otomatik çalışma** — dosyayı yüklemen yeterli:
+- **Web:** `/merch` sayfasından Excel'i yükle → PDF hazırlanır, listede saklanır.
+- **Telegram:** Excel'i bot sohbetine gönder → PDF sohbete geri gelir (bot 20MB'a kadar dosya indirebilir).
+
+**Bilgi gizleme** — web sayfasındaki kutucuklarla ya da Telegram'dan:
+```
+/merch                    → ayarları göster
+/merch gizle stok,satis   → alanları gizle
+/merch goster hepsi       → hepsini geri aç
+/merch durum Çok İyi,İyi  → durum filtresi
+```
+Alan anahtarları: `resim, option_kod, urun_ad, renk, durum, stok, satis, devir,
+merch_alt_grup, klasman`. Ayarlar `data/merch_settings.json`'da saklanır ve
+sonraki haftalarda da kullanılır.
+
+Komut satırı: `python -m services.merch_report dosya.xlsx --gizle stok`

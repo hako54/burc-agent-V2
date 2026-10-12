@@ -39,6 +39,7 @@ import channel_registry as ch_registry
 import channel_modules
 import approval
 from services.tr_locale import tr_date, now_local
+from services import merch_report
 
 log = logging.getLogger(__name__)
 
@@ -119,6 +120,58 @@ def admin_channels():
 @app.route("/health")
 def health():
     return jsonify({"status": "ok", "time": datetime.now().isoformat()})
+
+
+# ── Haftalık Merch Raporu (Excel → PDF) ───────────────────────────
+
+@app.route("/merch")
+def merch_panel():
+    return render_template("merch.html")
+
+
+@app.route("/api/merch/settings", methods=["GET", "POST"])
+def api_merch_settings():
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        merch_report.save_settings(data.get("durumlar"), data.get("gizli_alanlar"))
+    return jsonify({
+        "settings": merch_report.load_settings(),
+        "fields": [{"key": k, "label": v[0]} for k, v in merch_report.FIELDS.items()],
+        "durumlar": merch_report.ALL_DURUM,
+    })
+
+
+@app.route("/api/merch/upload", methods=["POST"])
+def api_merch_upload():
+    f = request.files.get("file")
+    if not f or not f.filename.lower().endswith((".xlsx", ".xlsm")):
+        return jsonify({"error": "Lütfen .xlsx dosyası seçin"}), 400
+    durumlar = request.form.getlist("durumlar")
+    gizli = request.form.getlist("gizli_alanlar")
+    # Seçimler sonraki haftalık otomatik çalışmalarda da kullanılsın
+    merch_report.save_settings(durumlar, gizli)
+    path = merch_report.save_upload(f.read(), f.filename)
+    if not merch_report.start_job(path, f.filename):
+        return jsonify({"error": "Şu an başka bir rapor hazırlanıyor"}), 409
+    return jsonify({"ok": True})
+
+
+@app.route("/api/merch/status")
+def api_merch_status():
+    return jsonify(merch_report.job_status())
+
+
+@app.route("/api/merch/reports")
+def api_merch_reports():
+    return jsonify(merch_report.list_reports())
+
+
+@app.route("/merch/pdf/<path:name>")
+def merch_pdf(name):
+    if not name.endswith(".pdf"):
+        abort(404)
+    return send_from_directory(merch_report.OUTPUT_DIR, name,
+                               as_attachment=request.args.get("dl") == "1")
 
 
 # ── Kanal Yönetimi API ────────────────────────────────────────────

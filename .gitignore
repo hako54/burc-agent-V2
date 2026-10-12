@@ -5,3 +5,4 @@ token_*.json
 credentials_*.json
 output/
 static/preview/
+reports/

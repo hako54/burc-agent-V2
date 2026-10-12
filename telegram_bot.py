@@ -107,6 +107,122 @@ def send_video(video_path: str, caption: str, chat_id: str = None):
         return False
 
 
+def send_document(path: str, caption: str, chat_id: str = None) -> bool:
+    """Dosyayı (PDF vb.) Telegram'a gönderir. 50 MB limit."""
+    token = _bot_token()
+    cid = chat_id or _allowed_chat()
+    if not token or not cid or not os.path.exists(path):
+        return False
+    size_mb = os.path.getsize(path) / (1024 * 1024)
+    if size_mb > 49:
+        send(f"⚠ Dosya çok büyük ({size_mb:.1f}MB), Telegram'a gönderilemedi.\n"
+             f"Web panelindeki /merch sayfasından indirebilirsin.", cid)
+        return False
+    try:
+        with open(path, "rb") as f:
+            r = requests.post(
+                f"https://api.telegram.org/bot{token}/sendDocument",
+                data={"chat_id": cid, "caption": caption, "parse_mode": "HTML"},
+                files={"document": f},
+                timeout=300,
+                verify=False,
+            )
+        if r.status_code == 200:
+            return True
+        log.warning(f"sendDocument HTTP {r.status_code}: {r.text[:200]}")
+    except Exception as e:
+        log.warning(f"Doküman gönderilemedi: {e}")
+    return False
+
+
+# ── Merch raporu (Excel → PDF) ──────────────────────────────────────
+
+def handle_merch_excel(chat_id: str, document: dict):
+    """Sohbete gönderilen haftalık Excel'den PDF raporu üretip geri yollar."""
+    from services import merch_report
+
+    token = _bot_token()
+    name = document.get("file_name") or "rapor.xlsx"
+    if document.get("file_size", 0) > 20 * 1024 * 1024:
+        send("⚠ Telegram botları 20MB üstü dosyaları indiremez. "
+             "Dosyayı web panelindeki /merch sayfasından yükle.", chat_id)
+        return
+    try:
+        r = requests.get(f"https://api.telegram.org/bot{token}/getFile",
+                         params={"file_id": document["file_id"]},
+                         timeout=30, verify=False)
+        file_path = r.json()["result"]["file_path"]
+        r = requests.get(f"https://api.telegram.org/file/bot{token}/{file_path}",
+                         timeout=120, verify=False)
+        r.raise_for_status()
+    except Exception as e:
+        send(f"❌ Dosya indirilemedi: {e}", chat_id)
+        return
+
+    path = merch_report.save_upload(r.content, name)
+    s = merch_report.load_settings()
+
+    def on_done(pdf, summ, err):
+        if err:
+            send(f"❌ Merch raporu hazırlanamadı:\n{err}", chat_id)
+            return
+        dag = " · ".join(f"{d}: {n}" for d, n in summ["durum_dagilimi"].items())
+        send_document(str(pdf), (
+            f"📊 <b>{summ['hafta'] or 'Merch'} raporu</b>\n"
+            f"{summ['opsiyon']} opsiyon ({dag})\n"
+            f"{summ['merch_alt_grup']} merch alt grup · {summ['klasman']} klasman · "
+            f"{summ['sayfa']} sayfa"), chat_id)
+
+    if merch_report.start_job(path, name, on_done=on_done):
+        gizli = ", ".join(merch_report.FIELDS[k][0] for k in s["gizli_alanlar"]) or "yok"
+        send(f"📥 <b>{name}</b> alındı, rapor hazırlanıyor…\n"
+             f"Durum: {', '.join(s['durumlar'])}\nGizli alanlar: {gizli}", chat_id)
+    else:
+        send("⏳ Şu an başka bir rapor hazırlanıyor, biraz sonra tekrar gönder.", chat_id)
+
+
+def cmd_merch(chat_id: str, args: str):
+    """/merch                 → ayarları göster
+    /merch gizle stok,satis   → alanları gizle
+    /merch goster stok        → alanları tekrar göster (goster hepsi)
+    /merch durum Çok İyi,İyi  → durum filtresini ayarla"""
+    from services import merch_report
+
+    s = merch_report.load_settings()
+    parts = args.split(None, 1)
+    sub = parts[0].lower() if parts else ""
+    vals = [v.strip() for v in parts[1].split(",")] if len(parts) > 1 else []
+
+    if sub == "gizle":
+        bad = [v for v in vals if v not in merch_report.FIELDS]
+        if bad:
+            send(f"⚠ Bilinmeyen alan: {', '.join(bad)}", chat_id)
+            return
+        s = merch_report.save_settings(gizli_alanlar=set(s["gizli_alanlar"]) | set(vals))
+    elif sub in ("goster", "göster"):
+        keep = [] if "hepsi" in vals else [k for k in s["gizli_alanlar"] if k not in vals]
+        s = merch_report.save_settings(gizli_alanlar=keep)
+    elif sub == "durum":
+        norm = {merch_report._norm(d): d for d in merch_report.ALL_DURUM}
+        secim = [norm[merch_report._norm(v)] for v in vals if merch_report._norm(v) in norm]
+        if not secim:
+            send("⚠ Geçerli durumlar: " + ", ".join(merch_report.ALL_DURUM), chat_id)
+            return
+        s = merch_report.save_settings(durumlar=secim)
+
+    alanlar = "\n".join(
+        f"{'🙈' if k in s['gizli_alanlar'] else '✅'} <code>{k}</code> — {lab}"
+        for k, (lab, _) in merch_report.FIELDS.items())
+    send(
+        "📊 <b>Merch raporu ayarları</b>\n"
+        "Haftalık Excel'i (.xlsx) bu sohbete gönder, PDF otomatik hazırlanır.\n\n"
+        f"<b>Durum:</b> {', '.join(s['durumlar'])}\n\n<b>Alanlar:</b>\n{alanlar}\n\n"
+        "/merch gizle stok,satis\n/merch goster stok (veya: goster hepsi)\n"
+        "/merch durum Çok İyi,İyi",
+        chat_id,
+    )
+
+
 # ── Aşama takipçisi ─────────────────────────────────────────────────
 
 def _watch_job_stages(sign_key: str, chat_id: str, info: dict):
@@ -493,6 +609,7 @@ def cmd_yardim(chat_id: str):
         "/durdur &lt;konu&gt; — Aktif üretimi iptal et\n"
         "/durdur — Çalışan işleri listele\n\n"
         "📊 <b>Diğer:</b>\n"
+        "/merch — Haftalık merch PDF raporu (Excel gönder → PDF gelir)\n"
         "/durum — Canlı durum\n"
         "/yardim — Bu mesaj",
         chat_id,
@@ -528,6 +645,12 @@ def _handle_update(update: dict):
         send("⛔ Yetkisiz.", chat_id)
         return
 
+    doc = msg.get("document")
+    if doc and (doc.get("file_name") or "").lower().endswith((".xlsx", ".xlsm")):
+        threading.Thread(target=handle_merch_excel, args=(chat_id, doc),
+                         daemon=True).start()
+        return
+
     if not text.startswith("/"):
         return
 
@@ -551,6 +674,8 @@ def _handle_update(update: dict):
         cmd_tumburclar(chat_id)
     elif cmd == "/durum":
         cmd_durum(chat_id)
+    elif cmd == "/merch":
+        cmd_merch(chat_id, args)
     elif cmd in ("/yardim", "/help", "/start"):
         cmd_yardim(chat_id)
     else:
