@@ -57,7 +57,15 @@
 
   <div class="panel">
     <details>
-      <summary>Filtreler</summary>
+      <summary>Filtreler ve açılış seçimleri</summary>
+      <p style="font-size:13px;font-weight:600;margin-top:12px">Raporun açılışında seçili gelenler
+        <span style="font-weight:400;color:var(--muted)">(rapor tüm ürünleri içerir; rapordaki kutucuklarla değiştirilir)</span></p>
+      <div class="grid2" style="margin-top:6px">
+        <div><label class="f">Merch Alt Grup</label><input type="text" id="v_merch"></div>
+        <div><label class="f">Cluster</label><input type="text" id="v_cluster"></div>
+        <div><label class="f">Durum</label><input type="text" id="v_durum"></div>
+      </div>
+      <p style="font-size:13px;font-weight:600;margin-top:14px">Rapora alınacak ürünler</p>
       <div class="grid2" style="margin-top:12px">
         <div><label class="f">Durum</label><div class="chips" id="durumlar"></div></div>
         <div><label class="f">Gelecek Dönem Buyer Grup (virgülle; boş = tümü)</label><input type="text" id="buyer"></div>
@@ -102,18 +110,24 @@ const status = (msg, cls = '') => { $('status').textContent = msg; $('status').c
 
 // ── Ayarlar (bu bilgisayarda hatırlanır) ──
 let S = {...DEFAULTS};
-try { Object.assign(S, JSON.parse(localStorage.getItem('merchToolSettings_v2') || '{}')); } catch (e) {}
+try { Object.assign(S, JSON.parse(localStorage.getItem('merchToolSettings_v3') || '{}')); } catch (e) {}
 $('durumlar').innerHTML = ALL_DURUM.map(d =>
   `<label><input type="checkbox" value="${d}" ${S.durumlar.includes(d) ? 'checked' : ''}>${d}</label>`).join('');
 $('buyer').value = S.buyer_gruplar.join(', ');
 $('klasman').value = S.klasman_kelimeler.join(', ');
 $('cluster').value = (S.clusterlar || []).join(', ');
+const V = S.rapor_varsayilan || {};
+$('v_merch').value = (V.merch_alt_grup || []).join(', ');
+$('v_cluster').value = (V.cluster || []).join(', ');
+$('v_durum').value = (V.durum || []).join(', ');
 function readSettings() {
   S.durumlar = [...$('durumlar').querySelectorAll('input:checked')].map(i => i.value);
   S.buyer_gruplar = list($('buyer').value);
   S.klasman_kelimeler = list($('klasman').value);
   S.clusterlar = list($('cluster').value);
-  try { localStorage.setItem('merchToolSettings_v2', JSON.stringify(S)); } catch (e) {}
+  S.rapor_varsayilan = {merch_alt_grup: list($('v_merch').value), cluster: list($('v_cluster').value),
+                        durum: list($('v_durum').value)};
+  try { localStorage.setItem('merchToolSettings_v3', JSON.stringify(S)); } catch (e) {}
   return S;
 }
 
@@ -274,6 +288,7 @@ async function build() {
       .replace('__FIELDS__', () => js(FIELDS.map(([k, l]) => [k, l])))
       .replace('__HIDDEN__', '[]')
       .replace('__WARNINGS__', () => js(warnings))
+      .replace('__DEFAULT_ON__', () => js(s.rapor_varsayilan || {}))
       .replace('__COLORS__', () => js(DURUM_COLORS))
       .replace('__ORDER__', () => js(DURUM_ORDER));
     reportName = `${week ? week.replace('. Hafta', '_hafta') : 'merch'}_raporu.html`;

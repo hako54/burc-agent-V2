@@ -76,6 +76,21 @@ HIDEABLE = list(HIDE_EXTRA) + list(FIELDS)
 RANGE_KEYS = ("kumas", "bitim", "paca", "yaka")
 
 
+VIEW_KEYS = ("merch_alt_grup", "cluster", "durum")
+
+
+def default_view(items, varsayilan) -> list:
+    """Rapor açılış filtresini uygular (HTML'deki ilk görünümle aynı).
+    Bir gruptaki değerlerin hiçbiri veride yoksa o grup filtrelenmez."""
+    out = items
+    for k in VIEW_KEYS:
+        want = {_norm(v) for v in (varsayilan or {}).get(k) or []}
+        have = {_norm(it[k] or "-") for it in out}
+        if want & have:
+            out = [it for it in out if _norm(it[k] or "-") in want]
+    return out
+
+
 def range_required(klasman: str) -> list:
     """Klasmana göre RANGE'de dolu olması gereken alanlar."""
     k = _norm(klasman)
@@ -100,6 +115,13 @@ DEFAULT_SETTINGS = {
     "klasman_kelimeler": ["HIRKA", "PANTOLON"],
     # Boş liste = tüm clusterlar (ör. ["K"] sadece K cluster)
     "clusterlar": [],
+    # Rapor açılışında seçili gelen filtreler (rapor yine tüm ürünleri içerir;
+    # kutucuklardan değiştirilebilir). Değer veride yoksa o grup "Tümü" açılır.
+    "rapor_varsayilan": {
+        "durum": ["Çok İyi", "İyi"],
+        "cluster": ["K"],
+        "merch_alt_grup": ["BUC"],
+    },
     # Büyük, detaylı görselli kartlar (sayfada 4 ürün) / normal (12 ürün)
     "buyuk_gorsel": True,
 }
@@ -981,10 +1003,19 @@ const HAS_RANGE = DATA.some(i => i.range_need);
 const RANGE_KEYS = ['kumas', 'bitim', 'paca', 'yaka'];
 // Sayfa içi filtreler: işaretli olmayan değerler gizlenir
 const FILTERS = {
+  merch_alt_grup: ['Merch Alt Grup', [...new Set(DATA.map(i => i.merch_alt_grup || '-'))].sort()],
   cluster: ['Cluster', [...new Set(DATA.map(i => i.cluster || '-'))].sort()],
   durum: ['Durum', [...new Set(DATA.map(i => i.durum))].sort((a, b) => (DURUM_ORDER[a] ?? 99) - (DURUM_ORDER[b] ?? 99))],
 };
-const OFF = {cluster: new Set(), durum: new Set()};
+// Açılışta seçili gelenler; değerlerin hiçbiri veride yoksa o grup "Tümü"
+const DEFAULT_ON = __DEFAULT_ON__;
+const OFF = {};
+const normV = v => String(v ?? '').trim().toLocaleLowerCase('tr');
+for (const [k, [, vals]] of Object.entries(FILTERS)) {
+  const want = new Set((DEFAULT_ON[k] || []).map(normV));
+  const hit = vals.filter(v => want.has(normV(v)));
+  OFF[k] = new Set(hit.length ? vals.filter(v => !want.has(normV(v))) : []);
+}
 const fmt = (v, d) => v == null ? '-' : v.toLocaleString('tr-TR', {minimumFractionDigits: d, maximumFractionDigits: d});
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const search = code => 'https://www.lcw.com/arama?q=' + encodeURIComponent(code);
@@ -1034,7 +1065,7 @@ function render() {
   document.body.classList.toggle('noimg', HIDDEN.has('resim'));
   document.getElementById('warn').style.display = HIDDEN.has('uyari') ? 'none' : '';
   const keys = ['merch_alt_grup', 'klasman'].filter(k => !HIDDEN.has(k));
-  const shown = DATA.filter(i => !OFF.cluster.has(i.cluster || '-') && !OFF.durum.has(i.durum));
+  const shown = DATA.filter(i => Object.keys(FILTERS).every(k => !OFF[k].has(i[k] || '-')));
   renderStats(shown);
   renderWarn(shown);
   const items = shown.sort((a, b) =>
@@ -1072,8 +1103,8 @@ function renderStats(rows) {
 }
 // Her grubun başında "Tümü": hepsini seçer / kaldırır
 document.getElementById('filters').innerHTML = Object.entries(FILTERS).map(([k, [label, vals]]) =>
-  `<span>${esc(label)}:</span><label><input type="checkbox" data-all="${k}" checked><b>Tümü</b></label>` + vals.map(v =>
-    `<label><input type="checkbox" data-f="${k}" value="${esc(v)}" checked>${esc(v)}</label>`).join('')).join('<i>|</i>');
+  `<span>${esc(label)}:</span><label><input type="checkbox" data-all="${k}" ${OFF[k].size ? '' : 'checked'}><b>Tümü</b></label>` + vals.map(v =>
+    `<label><input type="checkbox" data-f="${k}" value="${esc(v)}" ${OFF[k].has(v) ? '' : 'checked'}>${esc(v)}</label>`).join('')).join('<i>|</i>');
 document.getElementById('filters').addEventListener('change', e => {
   const {f, all} = e.target.dataset;
   const box = document.getElementById('filters');
@@ -1124,7 +1155,7 @@ render();
 """
 
 
-def render_html(items, hidden, title, subtitle, out_path, warnings=None):
+def render_html(items, hidden, title, subtitle, out_path, warnings=None, varsayilan=None):
     """Tek dosyalık HTML rapor. Görseller açan kişinin tarayıcısında
     lcw.com sunucusundan yüklenir; önce yüksek çözünürlük, olmazsa
     Excel'deki link, o da olmazsa lcw.com araması gösterilir."""
@@ -1148,6 +1179,7 @@ def render_html(items, hidden, title, subtitle, out_path, warnings=None):
             .replace("__FIELDS__", js([[k, v[0]] for k, v in FIELDS.items()]))
             .replace("__HIDDEN__", js(list(hidden)))
             .replace("__WARNINGS__", js(warnings or []))
+            .replace("__DEFAULT_ON__", js(varsayilan or {}))
             .replace("__COLORS__", js(DURUM_COLORS))
             .replace("__ORDER__", js(DURUM_ORDER)))
     Path(out_path).write_text(html, encoding="utf-8")
@@ -1220,11 +1252,21 @@ def build_report(xlsx_path, source_name=None, durumlar=None, gizli_alanlar=None,
 
     if progress:
         progress("PDF oluşturuluyor…")
-    pages = _Report(items, gizli, title, subtitle, out_path, big=big,
-                    warnings=warnings).render()
+    # PDF statik olduğu için açılış görünümü (ör. Çok İyi+İyi, K, BUC) basılır;
+    # HTML tüm ürünleri içerir ve aynı görünümle açılır
+    varsayilan = s.get("rapor_varsayilan") or {}
+    pdf_items = default_view(items, varsayilan)
+    pdf_codes = {it["option_kod"] for it in pdf_items}
+    pdf_warn = None if warnings is None else [w for w in warnings if w["option_kod"] in pdf_codes]
+    view_txt = " · ".join(f"{lab}: {', '.join(varsayilan[k])}" for k, lab in
+                          (("merch_alt_grup", "Merch Alt Grup"), ("cluster", "Cluster"),
+                           ("durum", "Durum")) if varsayilan.get(k))
+    pdf_subtitle = subtitle + (f"   ·   Görünüm: {view_txt}" if view_txt else "")
+    pages = _Report(pdf_items, gizli, title, pdf_subtitle, out_path, big=big,
+                    warnings=pdf_warn).render()
     # Aynı içeriğin HTML sürümü: bilgisayarda açılınca görseller lcw.com'dan yüklenir
     html_path = render_html(items, gizli, title, subtitle, out_path.with_suffix(".html"),
-                            warnings=warnings)
+                            warnings=warnings, varsayilan=varsayilan)
 
     summary = {
         "pdf": out_path.name,
@@ -1232,6 +1274,7 @@ def build_report(xlsx_path, source_name=None, durumlar=None, gizli_alanlar=None,
         "kaynak": source_name,
         "hafta": week,
         "opsiyon": len(items),
+        "pdf_opsiyon": len(pdf_items),
         "gorsel": img_ok,
         "range": range_path.name if warnings is not None else None,
         "range_uyari": len(warnings or []),

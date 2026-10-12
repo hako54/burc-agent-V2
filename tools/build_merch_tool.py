@@ -29,7 +29,8 @@ def build(out_path=TOOLS / "Merch_Rapor_Olusturucu.html"):
     tpl = (TOOLS / "merch_tool_template.html").read_text(encoding="utf-8")
     xlsx_js = (TOOLS / "vendor" / "xlsx.full.min.js").read_text(encoding="utf-8")
     defaults = {k: m.DEFAULT_SETTINGS[k] for k in
-                ("durumlar", "buyer_gruplar", "klasman_kelimeler", "clusterlar")}
+                ("durumlar", "buyer_gruplar", "klasman_kelimeler", "clusterlar",
+                 "rapor_varsayilan")}
     parts = {
         "@@TOOL_FIELDS@@": js([[k, lab, col] for k, (lab, col) in m.FIELDS.items()]),
         "@@TOOL_DURUM@@": js(m.ALL_DURUM),
