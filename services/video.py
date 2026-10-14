@@ -806,11 +806,17 @@ def _start_presenter(content: dict, tmp_prefix: str, intro_tts_path: str,
     from services import presenter
     jobs = {}
     title = content.get("sign_name") or content.get("title", "burc")
+    if presenter.blocked():
+        log.warning("🎭 HeyGen kredisi yakın zamanda bitti — sunucu atlanıyor")
+        return jobs
     try:
         jobs["intro"] = presenter.start_clip(intro_tts_path,
                                              f"{title} açılış")
     except Exception as e:
         log.warning(f"🎭 Sunucu açılışı başlatılamadı: {e}")
+        presenter.report_failure("açılış", title, e)
+        if presenter.blocked():
+            return jobs
     outro_text = content.get("presenter_outro_text")
     if outro_text:
         outro_tts = f"{tmp_prefix}_outro_tts.mp3"
@@ -821,6 +827,7 @@ def _start_presenter(content: dict, tmp_prefix: str, intro_tts_path: str,
                                                  f"{title} kapanış")
         except Exception as e:
             log.warning(f"🎭 Sunucu kapanışı başlatılamadı: {e}")
+            presenter.report_failure("kapanış", title, e)
     return jobs
 
 
@@ -839,6 +846,8 @@ def _fetch_presenter(jobs: dict, tmp_prefix: str, key: str, title: str,
         return clip
     except Exception as e:
         log.warning(f"🎭 Sunucu {key} kullanılamadı, klasik sürüm: {e}")
+        presenter.report_failure("açılış" if key == "intro" else "kapanış",
+                                 title, e)
         return None
 
 
