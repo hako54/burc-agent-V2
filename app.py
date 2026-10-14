@@ -134,6 +134,9 @@ def presenter_status():
         "avatar_id": presenter.avatar_id() or None,
         "switch_on": presenter._flag("ZODIAC_PRESENTER"),
         "avatar_iv": presenter._flag("HEYGEN_PRESENTER_AVATAR_IV"),
+        "outro": presenter.outro_enabled(),
+        "cached_clips": sorted(p.name for p in presenter._cache_dir().glob("*.mp4"))
+        if presenter._cache_dir().exists() else [],
     }
     if info["has_api_key"]:
         try:

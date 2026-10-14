@@ -18,15 +18,28 @@ Ayarlar (Railway değişkenleri):
   PRESENTER_TIMEOUT          — HeyGen bekleme süresi, sn (varsayılan 900)
   PRESENTER_OUTRO            — "0" ise sunucu sadece açılışta konuşur
                                (kredi tasarrufu; varsayılan açık)
+  PRESENTER_CACHE            — "0" ise klipler saklanmaz (varsayılan açık)
+
+Klip önbelleği: açılış/kapanış cümlelerinde tarih ya da yorum yok
+(açılış sadece burç adına göre değişir). Bu yüzden HeyGen'in ürettiği her
+klip DATA_DIR/presenter_cache altına (Railway volume) kaydedilir ve aynı
+cümle tekrar gerektiğinde HeyGen'e gidilmez. Cümleler tarihe göre sırayla
+seçildiği için birkaç günde tüm çeşitler birikir; sonrasında günlük HeyGen
+harcaması sıfıra iner. Anahtar metin + avatar + motor + ses ayarından
+türetilir; bunlardan biri değişirse yeni klip üretilir.
 
 Herhangi bir adım başarısız olursa video eski açılış/kapanışla üretilir.
 """
 
 import os
+import json
 import time
-import random
+import shutil
+import hashlib
 import logging
 import threading
+from datetime import date
+from pathlib import Path
 
 import requests
 
@@ -132,14 +145,62 @@ def report_failure(part: str, sign: str, err) -> None:
         log.warning(f"Sunucu hata bildirimi gönderilemedi: {e}")
 
 
-def intro_line(sign_name: str) -> str:
+def _variant(n: int, day: date = None, every: int = 1) -> int:
+    """Tarihe göre sıradaki çeşit (rastgele değil: önbellek tekrar
+    kullanılabilsin ve aynı cümle arka arkaya gelmesin)."""
+    return ((day or date.today()).toordinal() // every) % n
+
+
+def intro_line(sign_name: str, day: date = None) -> str:
     name = os.environ.get("PRESENTER_NAME", "").strip()
     me = f"Ben astrolog {name}. " if name else ""
-    return random.choice(_INTROS).format(sign=sign_name, me=me)
+    # Her burç 2 günde bir çıkar → her çıkışında bir sonraki çeşit
+    tpl = _INTROS[_variant(len(_INTROS), day, every=2)]
+    return tpl.format(sign=sign_name, me=me)
 
 
-def outro_line() -> str:
-    return random.choice(_OUTROS)
+def outro_line(day: date = None) -> str:
+    return _OUTROS[_variant(len(_OUTROS), day)]
+
+
+# ── Klip önbelleği ──────────────────────────────────────────────────
+
+def _cache_dir() -> Path:
+    return Path(os.environ.get("DATA_DIR", "data")) / "presenter_cache"
+
+
+def cache_key(part: str, text: str, voice_config: dict = None) -> str:
+    raw = json.dumps([avatar_id(), _flag("HEYGEN_PRESENTER_AVATAR_IV"),
+                      text, voice_config or {}],
+                     sort_keys=True, ensure_ascii=False, default=str)
+    return f"{part}_{hashlib.sha1(raw.encode('utf-8')).hexdigest()[:12]}"
+
+
+def cached_clip(key: str):
+    """Önbellekte geçerli bir klip varsa yolunu döner."""
+    if not _flag("PRESENTER_CACHE"):
+        return None
+    path = _cache_dir() / f"{key}.mp4"
+    try:
+        if path.stat().st_size > 10_000:
+            return str(path)
+    except OSError:
+        pass
+    return None
+
+
+def save_clip(key: str, src_path: str) -> None:
+    if not _flag("PRESENTER_CACHE"):
+        return
+    try:
+        d = _cache_dir()
+        d.mkdir(parents=True, exist_ok=True)
+        tmp = d / f".{key}.tmp"
+        shutil.copyfile(src_path, tmp)
+        os.replace(tmp, d / f"{key}.mp4")
+        log.info(f"🎭 Sunucu klibi önbelleğe alındı: {key}")
+    except Exception as e:
+        log.warning(f"Sunucu klibi önbelleğe alınamadı: {e}")
 
 
 def _upload_audio(audio_path: str) -> str:
