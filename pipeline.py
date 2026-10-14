@@ -235,7 +235,8 @@ def produce_content(
             if sign and presenter.enabled():
                 content["presenter"] = True
                 content["intro_text"] = presenter.intro_line(sign["name"])
-                content["presenter_outro_text"] = presenter.outro_line()
+                if presenter.outro_enabled():
+                    content["presenter_outro_text"] = presenter.outro_line()
         elif type_id == "motivation":
             # Motivasyon için topic meta bilgilerini intro'ya yerleştir
             topics = module.get_topics()

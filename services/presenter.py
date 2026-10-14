@@ -16,13 +16,17 @@ Ayarlar (Railway değişkenleri):
   HEYGEN_PRESENTER_AVATAR_IV — "0" ise ucuz motor (varsayılan Avatar IV)
   PRESENTER_NAME             — opsiyonel; "Ben astrolog <ad>" der
   PRESENTER_TIMEOUT          — HeyGen bekleme süresi, sn (varsayılan 900)
+  PRESENTER_OUTRO            — "0" ise sunucu sadece açılışta konuşur
+                               (kredi tasarrufu; varsayılan açık)
 
 Herhangi bir adım başarısız olursa video eski açılış/kapanışla üretilir.
 """
 
 import os
+import time
 import random
 import logging
+import threading
 
 import requests
 
@@ -73,6 +77,59 @@ def enabled() -> bool:
     return (_flag("ZODIAC_PRESENTER")
             and bool(os.environ.get("HEYGEN_API_KEY"))
             and bool(avatar_id()))
+
+
+def outro_enabled() -> bool:
+    """Kapanışta da sunucu konuşsun mu? (PRESENTER_OUTRO=0 → sadece açılış)"""
+    return _flag("PRESENTER_OUTRO")
+
+
+# ── Hata bildirimi ───────────────────────────────────────────────────
+# Kredi bittiğinde 6 burç × 2 klip = 12 aynı hata olur; Telegram'a tek
+# mesaj gitsin ve o turdaki diğer burçlar HeyGen'i boşuna denemesin.
+_ALERT_WINDOW = 6 * 3600
+_CREDIT_BLOCK = 2 * 3600
+_lock = threading.Lock()
+_last_alert = {}
+_blocked_until = 0.0
+
+
+def _is_credit_error(err) -> bool:
+    msg = str(err).lower()
+    return "insufficient credit" in msg or "quota" in msg
+
+
+def blocked() -> bool:
+    """Kredi bittiği yakın zamanda görüldüyse True (HeyGen'i deneme)."""
+    return time.time() < _blocked_until
+
+
+def report_failure(part: str, sign: str, err) -> None:
+    """Sunucu üretilemediğinde Telegram'a (kısıtlı sıklıkta) haber verir."""
+    global _blocked_until
+    credit = _is_credit_error(err)
+    kind = "credit" if credit else "other"
+    now = time.time()
+    with _lock:
+        if credit:
+            _blocked_until = now + _CREDIT_BLOCK
+        if now - _last_alert.get(kind, 0) < _ALERT_WINDOW:
+            return
+        _last_alert[kind] = now
+    if credit:
+        text = ("⚠️ <b>HeyGen API kredisi bitti</b>\n"
+                "Burç videoları astrolog sunucu olmadan (klasik açılışla) "
+                "üretiliyor. HeyGen hesabına <b>API kredisi</b> yükleyince "
+                "sunucu bir sonraki üretimde kendiliğinden geri gelir.")
+    else:
+        text = (f"⚠️ <b>Astrolog sunucu üretilemedi</b> ({sign}, {part})\n"
+                f"Video klasik sürümle üretildi.\nHata: "
+                f"{str(err)[:300]}")
+    try:
+        from telegram_bot import send as tg_send
+        tg_send(text)
+    except Exception as e:
+        log.warning(f"Sunucu hata bildirimi gönderilemedi: {e}")
 
 
 def intro_line(sign_name: str) -> str:
