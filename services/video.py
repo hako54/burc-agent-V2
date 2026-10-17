@@ -801,46 +801,56 @@ def _make_presenter_clip(video_path: str, title: str, subtitle: str,
 
 def _start_presenter(content: dict, tmp_prefix: str, intro_tts_path: str,
                      voice_config: dict = None) -> dict:
-    """Açılış/kapanış sunucu videolarını HeyGen'de başlatır. Hata olursa
-    o parça atlanır (video eski açılış/kapanışla devam eder)."""
+    """Açılış/kapanış sunucu kliplerini hazırlar: önbellekte varsa onu
+    kullanır, yoksa HeyGen'de başlatır. Hata olursa o parça atlanır
+    (video eski açılış/kapanışla devam eder)."""
     from services import presenter
     jobs = {}
     title = content.get("sign_name") or content.get("title", "burc")
-    if presenter.blocked():
-        log.warning("🎭 HeyGen kredisi yakın zamanda bitti — sunucu atlanıyor")
-        return jobs
-    try:
-        jobs["intro"] = presenter.start_clip(intro_tts_path,
-                                             f"{title} açılış")
-    except Exception as e:
-        log.warning(f"🎭 Sunucu açılışı başlatılamadı: {e}")
-        presenter.report_failure("açılış", title, e)
+    parts = [("intro", "açılış", content.get("intro_text"))]
+    if content.get("presenter_outro_text"):
+        parts.append(("outro", "kapanış", content["presenter_outro_text"]))
+
+    for part, label, text in parts:
+        key = presenter.cache_key(part, text or "", voice_config)
+        hit = presenter.cached_clip(key)
+        if hit:
+            jobs[f"{part}_cached"] = hit
+            log.info(f"🎭 Sunucu {label} önbellekten ({key})")
+            continue
         if presenter.blocked():
-            return jobs
-    outro_text = content.get("presenter_outro_text")
-    if outro_text:
-        outro_tts = f"{tmp_prefix}_outro_tts.mp3"
+            log.warning(f"🎭 HeyGen kredisi yakın zamanda bitti — "
+                        f"sunucu {label} atlanıyor")
+            continue
         try:
-            generate_tts(outro_text, outro_tts, voice_config=voice_config)
-            jobs["outro_tts"] = outro_tts
-            jobs["outro"] = presenter.start_clip(outro_tts,
-                                                 f"{title} kapanış")
+            if part == "intro":
+                audio = intro_tts_path
+            else:
+                audio = f"{tmp_prefix}_outro_tts.mp3"
+                generate_tts(text, audio, voice_config=voice_config)
+                jobs["outro_tts"] = audio
+            jobs[part] = presenter.start_clip(audio, f"{title} {label}")
+            jobs[f"{part}_key"] = key
         except Exception as e:
-            log.warning(f"🎭 Sunucu kapanışı başlatılamadı: {e}")
-            presenter.report_failure("kapanış", title, e)
+            log.warning(f"🎭 Sunucu {label} başlatılamadı: {e}")
+            presenter.report_failure(label, title, e)
     return jobs
 
 
 def _fetch_presenter(jobs: dict, tmp_prefix: str, key: str, title: str,
                      subtitle: str, accent_hex: str, top: bool):
-    """Başlatılan sunucu videosunu bekler/indirir; hata olursa None."""
-    if not jobs.get(key):
-        return None
+    """Sunucu klibini (önbellekten ya da HeyGen'den) hazırlar; hata
+    olursa None."""
     from services import presenter
-    path = f"{tmp_prefix}_presenter_{key}.mp4"
+    path = jobs.get(f"{key}_cached")
+    if not path and not jobs.get(key):
+        return None
     try:
-        presenter.fetch_clip(jobs[key], path)
-        jobs.setdefault("files", []).append(path)
+        if not path:
+            path = f"{tmp_prefix}_presenter_{key}.mp4"
+            presenter.fetch_clip(jobs[key], path)
+            jobs.setdefault("files", []).append(path)
+            presenter.save_clip(jobs[f"{key}_key"], path)
         clip = _make_presenter_clip(path, title, subtitle, accent_hex, top)
         log.info(f"🎭 Sunucu {key} hazır ({clip.duration:.1f}s)")
         return clip
