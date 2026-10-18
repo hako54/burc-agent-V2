@@ -746,9 +746,24 @@ def _content_box(frame: np.ndarray, tol: float = 6.0):
             max(x1 - m, x0), max(y1 - m, y0))
 
 
+def _wrap_lines(draw, text: str, font, max_w: int) -> list:
+    lines, cur = [], ""
+    for word in text.split():
+        trial = f"{cur} {word}".strip()
+        if cur and text_width(draw, trial, font) > max_w:
+            lines.append(cur)
+            cur = word
+        else:
+            cur = trial
+    if cur:
+        lines.append(cur)
+    return lines
+
+
 def _presenter_label_layer(title: str, subtitle: str, accent_hex: str,
-                           top: bool) -> np.ndarray:
-    """Sunucu videosunun üstüne konan etiket (burç adı / abone çağrısı).
+                           top: bool, hook: str = "") -> np.ndarray:
+    """Sunucu videosunun üstüne konan etiket (burç adı / abone çağrısı) ve
+    açılışta ekranın alt yarısında dev harfli merak cümlesi (hook).
     float32 (H, W, 4) döner; alfa 0..1."""
     ac = _hex_to_rgb(accent_hex)
     layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
@@ -768,29 +783,75 @@ def _presenter_label_layer(title: str, subtitle: str, accent_hex: str,
     if subtitle:
         draw_text(layer, draw, ((W - sw) // 2, y0 + 112), subtitle, sf,
                   ac + (255,))
+
+    if hook:
+        size, max_w = 104, W - 120
+        while True:
+            hf = _get_font(size)
+            lines = _wrap_lines(draw, hook, hf, max_w)
+            if (len(lines) <= 3 and all(text_width(draw, ln, hf) <= max_w
+                                        for ln in lines)) or size <= 60:
+                break
+            size -= 8
+        line_h = int(size * 1.12)
+        y = int(H * 0.60)
+        # Okunurluk için arkaya yumuşak koyu bant
+        band = Image.new("RGBA", (W, line_h * len(lines) + 80),
+                         (0, 0, 0, 120))
+        layer.alpha_composite(band, (0, y - 40))
+        ow = max(3, size // 22)
+        for ln in lines:
+            lw = text_width(draw, ln, hf)
+            x = (W - lw) // 2
+            for ox in range(-ow, ow + 1, 2):
+                for oy in range(-ow, ow + 1, 2):
+                    if ox or oy:
+                        draw_text(layer, draw, (x + ox, y + oy), ln, hf,
+                                  (0, 0, 0, 255), emoji=False)
+            draw_text(layer, draw, (x, y), ln, hf, (255, 250, 230, 255))
+            y += line_h
+        draw.rectangle([(W - 260) // 2, y + 6, (W + 260) // 2, y + 16],
+                       fill=ac + (255,))
+
     arr = np.asarray(layer).astype(np.float32)
     arr[..., 3] /= 255.0
     return arr
 
 
 def _make_presenter_clip(video_path: str, title: str, subtitle: str,
-                         accent_hex: str, top: bool) -> VideoClip:
-    """HeyGen videosunu W×H'ye oturtur, etiketi ekler (sesi korunur)."""
+                         accent_hex: str, top: bool, hook: str = "",
+                         still_path: str = None) -> VideoClip:
+    """HeyGen videosunu W×H'ye oturtur, etiketi ekler (sesi korunur).
+    hook verilirse yazılar ilk karede tam görünür (Shorts akışında
+    izleyicinin gördüğü ilk an). still_path verilirse kapak için yazısız
+    bir sunucu karesi kaydedilir."""
     src = VideoFileClip(video_path)
-    layer = _presenter_label_layer(title, subtitle, accent_hex, top)
+    layer = _presenter_label_layer(title, subtitle, accent_hex, top, hook)
     rgb, alpha = layer[..., :3], layer[..., 3:4]
     last_t = max(0.0, src.duration - 0.05)
     box = _content_box(src.get_frame(min(src.duration / 2, last_t)))
     if box:
         log.info(f"🎭 Sunucu videosundaki boşluk kırpılıyor: {box}")
 
-    def make_frame(t):
+    def raw_frame(t):
         fr = src.get_frame(min(t, last_t))
         if box:
             x0, y0, x1, y1 = box
             fr = fr[y0:y1, x0:x1]
-        fr = _fit_cover(np.ascontiguousarray(fr)).astype(np.float32)
-        k = alpha * _ease_out(t / 0.5)
+        return _fit_cover(np.ascontiguousarray(fr))
+
+    if still_path:
+        try:
+            # Her gün farklı bir an → kapaklarda farklı mimik
+            frac = (0.3, 0.5, 0.7)[datetime.now().toordinal() % 3]
+            Image.fromarray(raw_frame(src.duration * frac)).save(
+                still_path, "JPEG", quality=92)
+        except Exception as e:
+            log.warning(f"Sunucu karesi kaydedilemedi: {e}")
+
+    def make_frame(t):
+        fr = raw_frame(t).astype(np.float32)
+        k = alpha if hook else alpha * _ease_out(t / 0.5)
         return (fr * (1 - k) + rgb * k).astype(np.uint8)
 
     clip = VideoClip(make_frame, duration=src.duration)
@@ -838,7 +899,8 @@ def _start_presenter(content: dict, tmp_prefix: str, intro_tts_path: str,
 
 
 def _fetch_presenter(jobs: dict, tmp_prefix: str, key: str, title: str,
-                     subtitle: str, accent_hex: str, top: bool):
+                     subtitle: str, accent_hex: str, top: bool,
+                     hook: str = "", still_path: str = None):
     """Sunucu klibini (önbellekten ya da HeyGen'den) hazırlar; hata
     olursa None."""
     from services import presenter
@@ -851,7 +913,8 @@ def _fetch_presenter(jobs: dict, tmp_prefix: str, key: str, title: str,
             presenter.fetch_clip(jobs[key], path)
             jobs.setdefault("files", []).append(path)
             presenter.save_clip(jobs[f"{key}_key"], path)
-        clip = _make_presenter_clip(path, title, subtitle, accent_hex, top)
+        clip = _make_presenter_clip(path, title, subtitle, accent_hex, top,
+                                    hook=hook, still_path=still_path)
         log.info(f"🎭 Sunucu {key} hazır ({clip.duration:.1f}s)")
         return clip
     except Exception as e:
@@ -1050,8 +1113,14 @@ def render_video(content: dict, output_path: str,
             jt.update_stage(sign_key, jt.STAGE_RENDER,
                             detail="AI sunucu videosu bekleniyor")
         label = f"{sign_symbol} {tr_upper(sign_name)}".strip()
+        still = f"{tmp_prefix}_presenter.jpg"
         p_intro = _fetch_presenter(presenter_jobs, tmp_prefix, "intro",
-                                   label, tr_date(), accent, top=True)
+                                   label, tr_date(), accent, top=True,
+                                   hook=tr_upper(content.get("hook_text")
+                                                 or "").strip(),
+                                   still_path=still)
+        if p_intro is not None and os.path.exists(still):
+            content["presenter_frame"] = still
         p_outro = _fetch_presenter(presenter_jobs, tmp_prefix, "outro",
                                    "Abone ol 🔔", outro_sub, accent,
                                    top=False)

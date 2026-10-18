@@ -515,6 +515,80 @@ def _draw_dramatic_text(img: Image.Image, text: str,
     return result.convert("RGB")
 
 
+def _presenter_thumbnail(content: dict, title: str, accent_hex: str,
+                         tw: int, th: int) -> Image.Image:
+    """Yatay kapak: sağda astrolog sunucu, solda dev başlık ve burç
+    etiketi. Kare videodaki sunucu klibinden alınır (ek maliyet yok)."""
+    try:
+        ac = _hex_to_rgb(accent_hex)
+    except Exception:
+        ac = (212, 175, 55)
+    frame = Image.open(content["presenter_frame"]).convert("RGB")
+    fw, fh = frame.size
+
+    # Arka plan: aynı karenin bulanık, koyu hâli
+    bg = _crop_to_aspect(frame.copy(), tw, th)
+    bg = bg.filter(ImageFilter.GaussianBlur(28))
+    bg = ImageEnhance.Brightness(bg).enhance(0.45)
+    bg = Image.blend(bg, Image.new("RGB", bg.size, ac), 0.15)
+
+    # Sunucu: baştan bele 3:4 kesit, sağa yaslı, sol kenarı yumuşak
+    top = int(fh * 0.04)
+    crop_h = min(fh - top, int(fw * 4 / 3))
+    portrait = frame.crop((0, top, fw, top + crop_h))
+    pw = int(portrait.width * th / portrait.height)
+    portrait = portrait.resize((pw, th), Image.LANCZOS)
+    mask = Image.new("L", (pw, th), 255)
+    md = ImageDraw.Draw(mask)
+    fade = int(pw * 0.25)
+    for x in range(fade):
+        md.line([(x, 0), (x, th)], fill=int(255 * x / fade))
+    canvas = bg.convert("RGBA")
+    canvas.paste(portrait, (tw - pw, 0), mask)
+
+    draw = ImageDraw.Draw(canvas)
+    text_w = tw - pw + int(fade * 0.6) - 90
+    x0 = 60
+
+    # Burç etiketi (sol üst)
+    sign = f"{content.get('sign_symbol', '')} " \
+           f"{tr_upper(content.get('sign_name', ''))}".strip()
+    if sign:
+        lf = _get_font(54)
+        lw = text_width(draw, sign, lf)
+        draw.rounded_rectangle([x0 - 10, 46, x0 + lw + 34, 128], radius=24,
+                               fill=(0, 0, 0, 190), outline=ac + (255,),
+                               width=4)
+        draw_text(canvas, draw, (x0 + 12, 54), sign, lf, ac + (255,))
+
+    # Başlık: soldaki alana sığacak en büyük boy, en fazla 3 satır
+    text = tr_upper(title.strip())
+    size = 128
+    while size > 56:
+        font = _get_font(size)
+        lines = _wrap_text(draw, text, font, text_w)
+        fits = all(draw.textbbox((0, 0), ln, font=font)[2] <= text_w
+                   for ln in lines)
+        if len(lines) <= 3 and fits:
+            break
+        size -= 8
+    font = _get_font(size)
+    lines = _wrap_text(draw, text, font, text_w)
+    line_h = int(size * 1.08)
+    y = max(160, (th - line_h * len(lines)) // 2 + 30)
+    ow = max(4, size // 22)
+    for ln in lines:
+        for ox in range(-ow, ow + 1, 2):
+            for oy in range(-ow, ow + 1, 2):
+                if ox or oy:
+                    draw.text((x0 + ox, y + oy), ln, font=font,
+                              fill=(0, 0, 0, 235))
+        draw.text((x0, y), ln, font=font, fill=(255, 250, 230, 255))
+        y += line_h
+    draw.rectangle([x0, y + 8, x0 + 220, y + 20], fill=ac + (255,))
+    return canvas.convert("RGB")
+
+
 def generate_thumbnail(content: dict, output_path: str,
                        channel_type: str = "zodiac",
                        vertical: bool = False) -> Optional[str]:
@@ -523,7 +597,11 @@ def generate_thumbnail(content: dict, output_path: str,
     vertical=True ise 1080x1920 (Shorts/portre) thumbnail üretir.
     """
     try:
-        title = generate_thumbnail_title(content, channel_type)
+        # Başlık bir kez üretilir; sunucu karesiyle kapak yeniden
+        # yapıldığında aynı başlık kullanılır (ikinci LLM çağrısı yok)
+        title = content.get("thumb_title") or \
+            generate_thumbnail_title(content, channel_type)
+        content["thumb_title"] = title
         log.info(f"🎨 Thumbnail başlığı: {title} "
                  f"({'dikey' if vertical else 'yatay'})")
 
@@ -534,6 +612,14 @@ def generate_thumbnail(content: dict, output_path: str,
             tw, th = SHORTS_THUMB_W, SHORTS_THUMB_H
         else:
             tw, th = THUMB_W, THUMB_H
+
+        if (not vertical and content.get("presenter_frame")
+                and os.path.exists(content["presenter_frame"])):
+            thumb_img = _presenter_thumbnail(content, title, accent, tw, th)
+            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+            thumb_img.save(output_path, "JPEG", quality=88, optimize=True)
+            log.info(f"✅ Astrologlu kapak: {output_path}")
+            return output_path
 
         # Motivasyon kanalı için kadın yüzü öne çıksın
         if channel_type == "motivation":
