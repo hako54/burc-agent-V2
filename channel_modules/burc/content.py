@@ -31,10 +31,12 @@ def build_prompt(topic_key: str, custom_topic: str = None,
     """12 burç için günlük yorum prompt'u."""
     info = get_sign(topic_key)
     today = tr_date()
+    short_date = " ".join(today.split()[:2])  # "18 Ekim"
     used = ", ".join(used_themes[-10:]) if used_themes else "yok"
 
-    return f"""Sen profesyonel bir Türk astroloğusun. YouTube Shorts için 60 saniyelik
-günlük burç yorumu hazırlıyorsun.
+    return f"""Sen profesyonel bir Türk astroloğusun. YouTube Shorts için 45 saniyelik
+günlük burç yorumu hazırlıyorsun. İzleyici ilk iki saniyede kaydırıp
+geçmesin diye yorum merak uyandıran bir vaatle başlar ve kısa tutulur.
 
 Tarih: {today}
 Burç: {info['name']} {info['symbol']} ({info['dates']})
@@ -57,17 +59,20 @@ TÜRKÇE İMLA — UY
 5. Rakamları yazıyla (3→üç)
 ══════════════════════════════════════════════════════════════════
 
+UZUNLUK (KRİTİK): Tüm "narration" alanlarının toplamı EN FAZLA 100 KELİME.
+Her segment 1-2 kısa cümle. Gereksiz giriş, tekrar ve dolgu yok.
+
 Sadece JSON döndür:
 {{
-  "title": "Başlık (max 90 karakter, burç adı + tarih + emoji)",
-  "hook": "İlk 3 sn - giriş cümlesi (burç adı geçsin)",
+  "title": "YouTube başlığı (max 80 karakter). Biçim: '{info['name']} {info['symbol']} <merak uyandıran vaat> <emoji> | {short_date}'. Vaat somut ve kişisel olsun (örn. 'Bugün Biri Sana İçini Açacak'). Tarih EN SONDA.",
+  "hook": "İlk cümle - izleyiciyi durduran somut vaat (burç adı geçsin)",
+  "hook_text": "Ekranda dev harflerle çıkacak 3-5 kelimelik merak cümlesi (burç adı YOK, örn. 'BUGÜN BİRİ SANA AÇILACAK')",
   "segments": [
-    {{"time": "0-4s", "section": "giris", "text": "Kısa altyazı", "narration": "TTS metni"}},
-    {{"time": "4-15s", "section": "genel", "text": "Kısa altyazı", "narration": "Genel yorum"}},
-    {{"time": "15-28s", "section": "ask", "text": "💕 Aşk", "narration": "Aşk yorumu"}},
-    {{"time": "28-40s", "section": "kariyer", "text": "💼 Kariyer", "narration": "Kariyer yorumu"}},
-    {{"time": "40-50s", "section": "saglik", "text": "🌿 Sağlık", "narration": "Sağlık yorumu"}},
-    {{"time": "50-60s", "section": "sans", "text": "✨ Şanslı", "narration": "Şanslı sayı, renk, uyumlu burç"}}
+    {{"section": "giris", "text": "Kısa altyazı", "narration": "Hook cümlesi (en fazla 12 kelime)"}},
+    {{"section": "genel", "text": "Kısa altyazı", "narration": "Genel enerji (en fazla 25 kelime)"}},
+    {{"section": "ask", "text": "💕 Aşk", "narration": "Aşk (en fazla 22 kelime)"}},
+    {{"section": "kariyer", "text": "💼 Kariyer", "narration": "Kariyer/para (en fazla 22 kelime)"}},
+    {{"section": "sans", "text": "✨ Şanslı", "narration": "Şanslı sayı, renk, uyumlu burç (en fazla 18 kelime)"}}
   ],
   "full_narration": "Tüm anlatım (TTS yedek)",
   "lucky_number": "1-99 arası",
@@ -116,8 +121,13 @@ def get_lucky_card(topic_key: str, content: dict) -> Optional[dict]:
 
 
 def format_title(topic_key: str, content: dict) -> str:
-    """YouTube başlığı (max 100)."""
-    return content.get("title", "")[:100]
+    """YouTube başlığı (max 100). Burç adı yoksa başa eklenir — arama
+    ("koç burcu") başlıktaki burç adına göre eşleşir."""
+    title = (content.get("title") or "").strip()
+    info = get_sign(topic_key)
+    if info["name"] not in title:
+        title = f"{info['name']} {info['symbol']} {title}".strip()
+    return title[:100]
 
 
 def format_description(topic_key: str, content: dict) -> str:

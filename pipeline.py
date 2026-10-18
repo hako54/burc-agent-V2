@@ -322,6 +322,17 @@ def produce_content(
         render_video(content, video_path, sign_key=jkey,
                      voice_config=voice_config)
 
+        # Sunucu klibinden alınan kareyle astrologlu kapak (burç)
+        if content.get("presenter_frame"):
+            try:
+                from services.thumbnail import generate_thumbnail
+                thumbnail_path = (generate_thumbnail(
+                    content, video_path.replace(".mp4", "_thumb.jpg"),
+                    channel_type=type_id, vertical=False)
+                    or thumbnail_path)
+            except Exception as e:
+                log.warning(f"Astrologlu kapak üretilemedi: {e}")
+
         result = {
             "channel_id": channel_id,
             "channel_name": channel["name"],
