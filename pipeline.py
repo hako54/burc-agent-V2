@@ -58,6 +58,25 @@ def _public_url(file_path: str) -> str:
     return f"https://{domain}/output/{filename}"
 
 
+def _queue_instagram(channel_id: str, topic_key: str, video_path: str,
+                     content: dict, title: str, publish_after: str = None):
+    """YouTube'dan sonra Reels olarak Instagram kuyruğuna ekler. Hata
+    olursa YouTube yayınını etkilemez."""
+    try:
+        from services import instagram
+        if not instagram.channel_enabled(channel_id):
+            return
+        caption = instagram.build_caption(
+            title, content.get("description", ""),
+            content.get("hashtags", []))
+        instagram.enqueue(channel_id, topic_key, video_path, caption,
+                          publish_after=publish_after)
+    except Exception as e:
+        log.warning(f"Instagram kuyruğuna eklenemedi: {e}")
+        _tg_notify(f"⚠️ Instagram kuyruğuna eklenemedi ({topic_key}): "
+                   f"{str(e)[:200]}")
+
+
 DATA_DIR = Path(os.environ.get("DATA_DIR", "data"))
 OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", "output"))
 
@@ -402,6 +421,8 @@ def produce_content(
             )
             result["youtube_id"] = upload_result["id"]
             result["youtube_url"] = upload_result["url"]
+            _queue_instagram(channel_id, topic_key, video_path, content,
+                             title, publish_after=scheduled_publish_at)
 
             if source == "web":
                 _tg_notify(
@@ -524,6 +545,8 @@ def approve_and_upload(topic_key: str, channel_id: str = "burc",
             "sign_key": topic_key,
         }
 
+        _queue_instagram(channel_id, topic_key, video_path, fake_content,
+                         title)
         approval.remove_pending(topic_key, delete_file=False,
                                 channel_id=channel_id)
         _save_to_history(result, channel_id=channel_id)
