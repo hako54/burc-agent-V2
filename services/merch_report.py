@@ -548,31 +548,19 @@ class _Report:
         if "cluster" not in self.hidden:
             lines.append(("kv", it and ("Cluster", it["cluster"] or "-")))
         if self.has_range:
-            # Kumaş, Bitim İşlemi + klasmana göre Paça Detayı ya da Yaka Tipi
-            # (kart yüksekliği sabit kalsın diye son satır hep ayrılır)
-            for slot in ("kumas", "bitim", "detay"):
-                if slot == "detay":
-                    keys = [k for k in ("paca", "yaka")
-                            if k not in self.hidden and (it is None or k in it["range_need"])]
-                    if it is None:
-                        if keys:
-                            lines.append(("kv", None))
-                        continue
-                    if not keys:
-                        if any(k not in self.hidden for k in ("paca", "yaka")):
-                            lines.append(("kv", ("", "")))
-                        continue
-                    key = keys[0]
-                elif slot in self.hidden:
+            # Tüm klasmanlarda RANGE'deki 4 alan (kart yüksekliği sabit kalsın diye
+            # her alan için satır ayrılır; değeri olmayan opsiyonel alan boş kalır)
+            for key in RANGE_KEYS:
+                if key in self.hidden:
                     continue
-                else:
-                    key = slot
                 if it is None:
                     lines.append(("kv", None))
                 elif key in it["range_eksik"]:
                     lines.append(("kvr", (FIELDS[key][0], "EKSİK")))
-                else:
+                elif it[key] or key in it["range_need"]:
                     lines.append(("kv", (FIELDS[key][0], it[key] or "-")))
+                else:
+                    lines.append(("kv", ("", "")))
         return lines
 
     # ── Sayfalama ────────────────────────────────────────────────
@@ -1078,8 +1066,9 @@ function imgFail(el) {
 
 const LABELS = Object.fromEntries(FIELDS);
 function rangeLines(it) {
-  // Kumaş ve Bitim İşlemi her üründe; Paça Detayı pantolonda, Yaka Tipi hırkada
-  return RANGE_KEYS.filter(k => (k === 'kumas' || k === 'bitim' || (it.range_need || []).includes(k)) && !HIDDEN.has(k))
+  // Tüm klasmanlarda: RANGE'de (option kod ile) değeri olan her alan gösterilir.
+  // Kumaş ve Bitim İşlemi her üründe; zorunlu alan boşsa EKSİK.
+  return RANGE_KEYS.filter(k => (k === 'kumas' || k === 'bitim' || it[k] || (it.range_need || []).includes(k)) && !HIDDEN.has(k))
     .map(k => (it.range_eksik || []).includes(k)
       ? `<div class="kv miss"><span>${LABELS[k]}</span><b>EKSİK</b></div>`
       : `<div class="kv"><span>${LABELS[k]}</span><b>${esc(it[k] || '-')}</b></div>`).join('');
