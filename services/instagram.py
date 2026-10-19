@@ -272,6 +272,7 @@ def build_caption(title: str, description: str, hashtags: list,
     if description:
         parts.append(description.strip())
     parts.append("Burcunu yorumlara yaz, sana özel mesajı kaçırma! 💬✨")
+    parts.append("🤖 Bu video yapay zekâ ile üretilmiştir.")
     parts.append(" ".join(t if t.startswith("#") else f"#{t}" for t in tags))
     return "\n\n".join(p for p in parts if p)
 
