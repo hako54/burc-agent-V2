@@ -74,7 +74,10 @@ def _admin_key_ok() -> bool:
 
 @app.before_request
 def require_panel_auth():
-    if request.path in _PUBLIC_PATHS or _panel_auth_ok():
+    # /pub/<imza>/<dosya>: Instagram'ın videoyu indirebilmesi için
+    # şifresiz ama imzalı bağlantı (imza route'ta doğrulanır)
+    if (request.path in _PUBLIC_PATHS or request.path.startswith("/pub/")
+            or _panel_auth_ok()):
         return None
     return Response(
         "Giriş gerekli", 401,
@@ -796,6 +799,36 @@ def api_channel_youtube_recent(channel_id):
 
 
 # ── Videoları sun ──────────────────────────────────────────────────
+
+@app.route("/pub/<sig>/<filename>")
+def serve_public(sig, filename):
+    """Instagram'ın Reels videosunu/kapağını indirdiği imzalı bağlantı."""
+    from services import instagram
+    if not instagram.verify(sig, filename):
+        abort(404)
+    path = instagram.public_file_path(filename)
+    if not path:
+        abort(404)
+    return send_from_directory(path.parent, path.name, conditional=True)
+
+
+@app.route("/api/instagram")
+def instagram_status():
+    """Instagram bağlantı durumu ve yayın kuyruğu."""
+    from services import instagram
+    info = {"enabled": instagram.enabled(),
+            "channels": os.environ.get("INSTAGRAM_CHANNELS", "burc"),
+            "queue": [{k: i.get(k) for k in ("id", "topic_key",
+                                             "publish_after", "attempts",
+                                             "last_error")}
+                      for i in instagram.queue_status()]}
+    if info["enabled"]:
+        try:
+            info["account"] = instagram.account_info()
+        except Exception as e:
+            info["account_error"] = str(e)[:300]
+    return jsonify(info)
+
 
 @app.route("/output/<path:filename>")
 def serve_output(filename):

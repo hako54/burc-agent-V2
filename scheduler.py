@@ -281,6 +281,19 @@ def start_scheduler():
             log.info(f"📅 Cron registered: {ch_id} @ {time_str} "
                      f"({ch_type})")
 
+    # Instagram Reels kuyruğu: zamanı gelen videoları 5 dk arayla yayınlar
+    from apscheduler.triggers.interval import IntervalTrigger
+    from services import instagram
+    scheduler.add_job(
+        instagram.process_queue,
+        IntervalTrigger(minutes=5, timezone=tz),
+        id="instagram_queue",
+        name="Instagram kuyruğu",
+        max_instances=1,
+        coalesce=True,
+        replace_existing=True,
+    )
+
     scheduler.start()
     log.info(f"📅 Scheduler başladı: {job_count} cron job aktif "
              f"({TIMEZONE})")
