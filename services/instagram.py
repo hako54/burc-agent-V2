@@ -292,13 +292,24 @@ def _first_frame(video_path: str, out_path: str) -> bool:
 
 
 def enqueue(channel_id: str, topic_key: str, video_path: str,
-            caption: str, publish_after: str = None) -> dict:
-    """Videoyu (ve kapağını) volume'e kopyalayıp kuyruğa ekler."""
+            caption: str, publish_after: str = None,
+            cut_at: float = None) -> dict:
+    """Videoyu (ve kapağını) volume'e kopyalayıp kuyruğa ekler. cut_at
+    verilirse Instagram'a videonun kısa (vurucu) kesiti gider."""
     qd = _queue_dir()
     qd.mkdir(parents=True, exist_ok=True)
     stem = f"{channel_id}_{topic_key}_{int(time.time())}"
     vname = f"{stem}.mp4"
-    shutil.copyfile(video_path, qd / vname)
+    done = False
+    if cut_at:
+        try:
+            from services.ig_reels import make_short_cut
+            make_short_cut(video_path, str(qd / vname), cut_at)
+            done = True
+        except Exception as e:
+            log.warning(f"Kısa kesit üretilemedi, tam video gidecek: {e}")
+    if not done:
+        shutil.copyfile(video_path, qd / vname)
     cname = f"{stem}_cover.jpg"
     if not _first_frame(str(qd / vname), str(qd / cname)):
         cname = ""

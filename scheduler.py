@@ -294,6 +294,23 @@ def start_scheduler():
         replace_existing=True,
     )
 
+    # Instagram'a özel içerik (manifest, numeroloji…)
+    from services import ig_content
+    for kind, hhmm in ig_content.schedule():
+        try:
+            h, m = map(int, hhmm.split(":"))
+        except Exception:
+            log.warning(f"Geçersiz IG saat: {kind}@{hhmm}")
+            continue
+        scheduler.add_job(
+            ig_content.scheduled_job,
+            CronTrigger(hour=h, minute=m, timezone=tz),
+            args=[kind], id=f"ig_{kind}_{hhmm}",
+            name=f"Instagram {kind} {hhmm}",
+            misfire_grace_time=1800, replace_existing=True,
+        )
+        log.info(f"📅 Instagram {kind} @ {hhmm}")
+
     scheduler.start()
     log.info(f"📅 Scheduler başladı: {job_count} cron job aktif "
              f"({TIMEZONE})")
