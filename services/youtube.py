@@ -107,16 +107,6 @@ def get_youtube_service(channel_id: str = "burc",
                  cache_discovery=False)
 
 
-AI_DISCLOSURE = "🤖 Bu video yapay zekâ ile üretilmiştir."
-
-
-def add_ai_disclosure(text: str) -> str:
-    """Açıklamaya (yoksa) yapay zekâ bilgisini ekler."""
-    if "yapay zekâ" in text.lower() or "yapay zeka" in text.lower():
-        return text
-    return f"{text.rstrip()}\n\n{AI_DISCLOSURE}".strip()
-
-
 def upload_video(video_path: str, title: str, description: str,
                  tags: list = None, category_id: str = "22",
                  privacy: str = "public",
@@ -131,12 +121,9 @@ def upload_video(video_path: str, title: str, description: str,
 
     title = (title or "Günlük Yorum")[:100]
 
-    # Şeffaflık: videolar yapay zekâ ile üretiliyor (metin, ses, sunucu)
-    description = add_ai_disclosure(description or "")
-
     snippet = {
         "title": title,
-        "description": description[:5000],
+        "description": description or "",
         "tags": (tags or [])[:15],
         "categoryId": category_id,
     }
@@ -144,8 +131,6 @@ def upload_video(video_path: str, title: str, description: str,
     status = {
         "privacyStatus": privacy,
         "selfDeclaredMadeForKids": False,
-        # YouTube'un "değiştirilmiş veya yapay içerik" etiketi
-        "containsSyntheticMedia": True,
     }
     if scheduled_time:
         status["privacyStatus"] = "private"

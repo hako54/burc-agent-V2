@@ -813,16 +813,6 @@ def _presenter_label_layer(title: str, subtitle: str, accent_hex: str,
         draw.rectangle([(W - 260) // 2, y + 6, (W + 260) // 2, y + 16],
                        fill=ac + (255,))
 
-        # Şeffaflık: açılışta küçük "yapay zekâ" notu
-        nf = _get_font(34)
-        note = "🤖 Yapay zekâ ile üretilmiştir"
-        nw = text_width(draw, note, nf)
-        draw.rounded_rectangle([(W - nw) // 2 - 24, H - 170,
-                                (W + nw) // 2 + 24, H - 110], radius=26,
-                               fill=(0, 0, 0, 150))
-        draw_text(layer, draw, ((W - nw) // 2, H - 162), note, nf,
-                  (255, 255, 255, 230))
-
     arr = np.asarray(layer).astype(np.float32)
     arr[..., 3] /= 255.0
     return arr
