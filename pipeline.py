@@ -69,8 +69,14 @@ def _queue_instagram(channel_id: str, topic_key: str, video_path: str,
         caption = instagram.build_caption(
             title, content.get("description", ""),
             content.get("hashtags", []))
+        caption = caption.replace(
+            "Burcunu yorumlara yaz",
+            "Tam yorum YouTube'da, link profilde 👆\n\nBurcunu yorumlara yaz",
+            1)
+        short = os.environ.get("IG_BURC_SHORT", "1") not in ("0", "false")
         instagram.enqueue(channel_id, topic_key, video_path, caption,
-                          publish_after=publish_after)
+                          publish_after=publish_after,
+                          cut_at=content.get("ig_cut_at") if short else None)
     except Exception as e:
         log.warning(f"Instagram kuyruğuna eklenemedi: {e}")
         _tg_notify(f"⚠️ Instagram kuyruğuna eklenemedi ({topic_key}): "

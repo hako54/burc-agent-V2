@@ -830,6 +830,32 @@ def instagram_status():
     return jsonify(info)
 
 
+@app.route("/api/instagram/produce/<kind>", methods=["POST"])
+def instagram_produce(kind):
+    """Instagram'a özel Reels üretip hemen paylaşır (manifest/numeroloji).
+    Gövde: {"theme": "bolluk ve bereket"} (opsiyonel)."""
+    from services import instagram, ig_content
+    if kind not in ("manifest", "numeroloji"):
+        return jsonify({"error": "kind: manifest | numeroloji"}), 400
+    if not instagram.enabled():
+        return jsonify({"error": "Instagram bağlı değil"}), 400
+    theme = (request.get_json(silent=True) or {}).get("theme")
+
+    def run():
+        try:
+            ig_content.produce(kind, theme=theme)
+        except Exception as e:
+            log.exception("Instagram üretim hatası")
+            try:
+                from telegram_bot import send as tg_send
+                tg_send(f"⚠️ Instagram {kind} üretilemedi: {str(e)[:200]}")
+            except Exception:
+                pass
+
+    threading.Thread(target=run, daemon=True).start()
+    return jsonify({"status": "running", "kind": kind, "theme": theme})
+
+
 @app.route("/output/<path:filename>")
 def serve_output(filename):
     """Video dosyasını Range header destekli olarak servis eder.

@@ -1152,6 +1152,8 @@ def render_video(content: dict, output_path: str,
     final = concatenate_videoclips([intro_clip, content_clip, outro_clip],
                                    method="chain")
     full_dur = intro_dur + total_dur + outro_dur
+    # Instagram için kısa kesit: açılış + ilk iki bölüm (hook + genel)
+    content["ig_cut_at"] = round(intro_dur + sum(seg_durations[:2]) + 0.3, 2)
 
     # 6) Arka plan müziği (varsa)
     music_path = _find_bg_music(full_dur)
