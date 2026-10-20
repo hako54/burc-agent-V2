@@ -37,3 +37,4 @@ python-dotenv>=1.0.1
 
 # Optional (ElevenLabs)
 elevenlabs>=1.0.0
+ephem>=4.1

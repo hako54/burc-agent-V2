@@ -296,6 +296,19 @@ def start_scheduler():
 
     # Instagram'a özel içerik (manifest, numeroloji…)
     from services import ig_content
+    # Gök olayları: her gün IG_ASTRO_TIME'da yarınki olaylar için Reels
+    try:
+        ah, am = map(int, os.environ.get("IG_ASTRO_TIME", "13:00").split(":"))
+        scheduler.add_job(
+            ig_content.astro_events_job,
+            CronTrigger(hour=ah, minute=am, timezone=tz),
+            id="ig_astro_events", name="Instagram gök olayları",
+            misfire_grace_time=1800, replace_existing=True,
+        )
+        log.info(f"📅 Instagram gök olayları @ {ah:02d}:{am:02d}")
+    except Exception as e:
+        log.warning(f"Gök olayı zamanlaması kurulamadı: {e}")
+
     for kind, hhmm in ig_content.schedule():
         try:
             h, m = map(int, hhmm.split(":"))
