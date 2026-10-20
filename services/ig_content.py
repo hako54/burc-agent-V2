@@ -155,6 +155,10 @@ def produce(kind: str, theme: str = None, publish_now: bool = True,
                    kind, "Doğum tarihini yorumlara yaz 💬"),
         music_hint="bolluk" if kind == "manifest" else "gece",
     )
+    if kind == "manifest":
+        data["caption"] = (data.get("caption", "").rstrip() +
+                           "\n\nAdını yorumlara yaz, isminin sırrını cevap "
+                           "olarak yazayım ✨")
     caption = instagram.build_caption(
         "\n".join(data["lines"][:1]) if kind == "manifest"
         else data.get("title", ""),

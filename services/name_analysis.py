@@ -63,22 +63,36 @@ def _load() -> dict:
         return {}
 
 
-def analyze(comment: str) -> str:
-    """Yorum metninden DM metni üretir."""
+NOT_A_NAME = "NOT_A_NAME"
+
+
+def analyze(comment: str, strict: bool = False) -> str:
+    """Yorum metninden isim analizi metni üretir. strict=True ise yorum
+    bir kişi adı değilse NOT_A_NAME döner (yorumlara otomatik cevapta
+    "harika video" gibi yorumlara analiz yazılmasın diye)."""
     name = extract_name(comment)
     if not name:
+        if strict:
+            return NOT_A_NAME
         return ("Merhaba! 🌙 İsim analizin için Reels'in altına sadece "
                 "adını yaz, sana özel yorumu hemen göndereyim ✨")
     key = tr_lower(name)
     with _lock:
         cached = _load().get(key)
     if cached:
+        if cached == NOT_A_NAME and not strict:
+            return ("Merhaba! 🌙 İsim analizin için sadece adını yaz, "
+                    "sana özel yorumu hemen göndereyim ✨")
         return cached
 
     num = name_number(name)
     prompt = f"""Bir Instagram takipçisine DM ile kısa İSİM ANALİZİ yaz.
 İsim: {name}
 Numerolojide isim sayısı: {num} ({MEANINGS.get(num, '')})
+
+ÖNCE KONTROL: "{name}" gerçek bir kişi adı değilse (ör. "harika",
+"güzel", "teşekkürler", "amin" gibi sıradan bir kelimeyse) SADECE
+NOT_A_NAME yaz, başka hiçbir şey yazma.
 
 Kurallar: Samimi, sıcak, "sen" diliyle; 4-5 kısa cümle. İsmin anlamını
 biliyorsan bir cümleyle söyle (bilmiyorsan uydurma, atla). Sayının
@@ -88,14 +102,23 @@ takipte kal 💫" Emojiyi az kullan. Sadece mesaj metnini yaz."""
         from services.content import call_llm_with_fallback
         text, _ = call_llm_with_fallback(prompt, max_tokens=500)
         text = text.strip().strip('"')
+        if NOT_A_NAME in text:
+            text = NOT_A_NAME
     except Exception as e:
         log.warning(f"İsim analizi LLM hatası: {e}")
+        if strict:
+            raise  # yorum cevabında sonra tekrar denensin
         return (f"{name}, isim sayın {num} ✨ Bu sayı {MEANINGS.get(num)} "
                 f"bir enerji taşıyor. Günlük burç yorumların için takipte "
                 f"kal 💫")
+    if text == NOT_A_NAME and not strict:
+        text_out = ("Merhaba! 🌙 İsim analizin için sadece adını yaz, "
+                    "sana özel yorumu hemen göndereyim ✨")
+    else:
+        text_out = text
     with _lock:
         data = _load()
         data[key] = text
         _cache_file().parent.mkdir(parents=True, exist_ok=True)
         _cache_file().write_text(json.dumps(data, ensure_ascii=False))
-    return text
+    return text_out
