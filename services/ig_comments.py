@@ -6,8 +6,9 @@ Son 7 günün gönderilerindeki yeni yorumları birkaç dakikada bir okur:
     mesaj (burç başına günde bir kez üretilir, önbellekten)
   • Yorum bir İSİMse ("Ayşe", "benim adım ışıl") → isim analizi
   • Diğer yorumlar ("harika video") → cevap yok
-Cevap yorumun altına "@kullanıcı ..." diye yazılır. (DM izni Meta
-onayından sonra eklenecek.)
+Cevap yorumun altına "@kullanıcı ..." diye yazılır. IG_COMMENT_DM=1 ise
+(Meta onayından sonra) analiz DM olarak gider, yoruma "DM'ine gönderdim
+💌" yazılır.
 
 IG_COMMENT_REPLY=0 ise kapalı. Her çalışmada en fazla 10 cevap.
 """
@@ -31,6 +32,12 @@ def enabled() -> bool:
     from services import instagram
     return (instagram.enabled()
             and os.environ.get("IG_COMMENT_REPLY", "1") not in ("0", "false"))
+
+
+def _dm_enabled() -> bool:
+    """IG_COMMENT_DM=1: cevap DM olarak gider (Meta onayından sonra açılır).
+    DM başarısız olursa cevap yine yorumun altına yazılır."""
+    return os.environ.get("IG_COMMENT_DM", "0") in ("1", "true", "on")
 
 
 def _state_file() -> Path:
@@ -136,11 +143,21 @@ def process_comments() -> dict:
                 text = _reply_text(c.get("text", ""), st)
                 if text:
                     who = c.get("username")
-                    msg = f"@{who} {text}" if who else text
+                    sent_dm = False
+                    if _dm_enabled():
+                        try:
+                            instagram.send_private_reply(uid, cid, text)
+                            sent_dm = True
+                        except Exception as e:
+                            log.warning(f"DM gönderilemedi, yoruma "
+                                        f"yazılıyor: {e}")
+                    public = ("DM'ine gönderdim 💌 Kutunu kontrol et ✨"
+                              if sent_dm else text)
+                    msg = f"@{who} {public}" if who else public
                     instagram._api("POST", f"{cid}/replies",
                                    message=msg[:1000])
                     replied += 1
-                    log.info(f"💬 Yoruma cevap verildi: {cid}")
+                    log.info(f"💬 Yoruma cevap verildi ({'DM' if sent_dm else 'yorum'}): {cid}")
                 else:
                     skipped += 1
                 st["done"].append(cid)

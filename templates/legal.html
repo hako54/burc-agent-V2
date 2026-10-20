@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+<style>
+  :root { --bg:#fbf9ff; --fg:#1d1530; --muted:#5b5270; --accent:#6b3fd1; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#120d1d; --fg:#ece7f7; --muted:#a79fbd; --accent:#b59bff; }
+  }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:16px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { max-width:760px; margin:0 auto; padding:40px 16px 64px; }
+  h1 { font-size:1.7rem; margin:0 0 4px; }
+  h2 { font-size:1.15rem; margin:28px 0 6px; color:var(--accent); }
+  p, li { color:var(--fg); }
+  .muted { color:var(--muted); font-size:.92rem; }
+  hr { border:0; border-top:1px solid rgba(127,127,127,.25); margin:36px 0; }
+  a { color:var(--accent); }
+</style>
+</head>
+<body><main>
+{% if page == "privacy" %}
+<h1>Gizlilik Politikası</h1>
+<p class="muted">{{ brand }} · Son güncelleme: {{ updated }}</p>
+<p>{{ brand }} (Instagram: @{{ handle }}) günlük burç yorumu, manifest ve
+astroloji içerikleri yayınlar ve takipçilerin yorumlarına otomatik cevap
+verir. Bu sayfa hangi verileri nasıl kullandığımızı açıklar.</p>
+<h2>Topladığımız veriler</h2>
+<ul>
+<li>Gönderilerimize yazdığınız yorumun metni, Instagram kullanıcı adınız ve
+yorum kimliği (Instagram API üzerinden).</li>
+<li>Yorumda yazdığınız isim veya burç adı, size özel cevap üretmek için
+kullanılır.</li>
+</ul>
+<h2>Verileri nasıl kullanıyoruz</h2>
+<ul>
+<li>Yalnızca sizin yorumunuza cevap vermek için: isim analizi veya burç
+mesajını yorumunuzun altına ya da (yorum yaptığınız için) bir kez özel mesaj
+olarak göndeririz.</li>
+<li>Size ilk mesajı yalnızca siz yorum yaptıktan sonra göndeririz; toplu
+veya istenmeyen mesaj göndermeyiz.</li>
+<li>Cevap metni yapay zekâ ile (Anthropic Claude) üretilir; bu amaçla
+yalnızca yorumdaki isim/burç metni işlenir.</li>
+</ul>
+<h2>Saklama</h2>
+<p>Aynı yoruma iki kez cevap vermemek için yorum kimliklerini ve aynı isme
+tekrar analiz üretmemek için isim–analiz eşleşmelerini saklarız. Kullanıcı
+adınızı ayrıca bir profil olarak saklamayız. Verileri satmayız ve reklam için
+paylaşmayız.</p>
+<h2>Haklarınız</h2>
+<p>Verilerinizin silinmesini istediğinizde <a href="/veri-silme">veri silme
+talimatlarını</a> izleyebilirsiniz.</p>
+<h2>İletişim</h2>
+<p>{{ contact or "İletişim için Instagram'dan @" ~ handle ~ " hesabına mesaj gönderebilirsiniz." }}</p>
+<hr>
+<h1>Privacy Policy (English)</h1>
+<p>{{ brand }} (Instagram @{{ handle }}) publishes daily horoscope and
+astrology content and automatically replies to comments. We process the
+comment text, your Instagram username and the comment ID via the Instagram
+API solely to reply to your comment (publicly, or once by private message
+because you commented). We never message anyone who has not commented first.
+Replies are generated with AI (Anthropic Claude) using only the name or sign
+written in the comment. We keep comment IDs (to avoid duplicate replies) and
+name→analysis pairs (to reuse answers); we do not sell or share data. See
+<a href="/veri-silme">data deletion instructions</a>.
+{{ contact }}</p>
+{% else %}
+<h1>Veri Silme Talimatları</h1>
+<p class="muted">{{ brand }} · Data deletion instructions</p>
+<p>Yorumlarınızla ilgili sakladığımız verilerin silinmesi için:</p>
+<ol>
+<li>Instagram'da @{{ handle }} hesabına <b>"Verilerimi sil"</b> yazan bir
+mesaj gönderin{% if contact %} veya {{ contact }}{% endif %}.</li>
+<li>Talebinizi aldıktan sonra 30 gün içinde kullanıcı adınızla ilişkili
+yorum kayıtlarını ve size gönderilen analizleri sileriz.</li>
+<li>Yorumunuzu Instagram'dan silmeniz de, o yorumun bizim tarafımızdan
+tekrar işlenmesini durdurur.</li>
+</ol>
+<hr>
+<p><b>English:</b> To delete your data, send a direct message with
+"Delete my data" to @{{ handle }} on Instagram{% if contact %} or {{ contact }}{% endif %}.
+We delete records linked to your username within 30 days.</p>
+{% endif %}
+</main></body></html>

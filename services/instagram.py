@@ -157,6 +157,27 @@ def _api(method: str, path: str, **params) -> dict:
     return data
 
 
+def send_private_reply(user_id: str, comment_id: str, text: str) -> dict:
+    """Yorum yapan kişiye DM (Instagram Private Replies). Yorum başına bir
+    kez ve yorumdan sonraki 7 gün içinde gönderilebilir. Takipçilere
+    gönderebilmek için uygulamanın Meta onayı (Advanced Access,
+    instagram_business_manage_messages) gerekir."""
+    r = requests.post(f"{GRAPH}/{user_id}/messages",
+                      params={"access_token": _token()},
+                      json={"recipient": {"comment_id": comment_id},
+                            "message": {"text": text[:1000]}},
+                      timeout=60)
+    try:
+        data = r.json()
+    except Exception:
+        data = {"raw": r.text[:300]}
+    if r.status_code != 200 or "error" in data:
+        err = data.get("error", data)
+        msg = err.get("message") if isinstance(err, dict) else str(err)
+        raise RuntimeError(f"Instagram DM {r.status_code}: {msg}")
+    return data
+
+
 def account_info() -> dict:
     return _api("GET", "me", fields="user_id,username,account_type,"
                 "media_count,followers_count")
