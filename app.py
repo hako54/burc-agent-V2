@@ -76,7 +76,9 @@ def _admin_key_ok() -> bool:
 def require_panel_auth():
     # /pub/<imza>/<dosya>: Instagram'ın videoyu indirebilmesi için
     # şifresiz ama imzalı bağlantı (imza route'ta doğrulanır)
+    # /api/manychat/: ManyChat'in çağırdığı uç; kendi anahtarıyla korunur
     if (request.path in _PUBLIC_PATHS or request.path.startswith("/pub/")
+            or request.path.startswith("/api/manychat/")
             or _panel_auth_ok()):
         return None
     return Response(
@@ -835,8 +837,8 @@ def instagram_produce(kind):
     """Instagram'a özel Reels üretip hemen paylaşır (manifest/numeroloji).
     Gövde: {"theme": "bolluk ve bereket"} (opsiyonel)."""
     from services import instagram, ig_content
-    if kind not in ("manifest", "numeroloji"):
-        return jsonify({"error": "kind: manifest | numeroloji"}), 400
+    if kind not in ("manifest", "numeroloji", "gokolayi"):
+        return jsonify({"error": "kind: manifest | numeroloji | gokolayi"}), 400
     if not instagram.enabled():
         return jsonify({"error": "Instagram bağlı değil"}), 400
     theme = (request.get_json(silent=True) or {}).get("theme")
@@ -854,6 +856,40 @@ def instagram_produce(kind):
 
     threading.Thread(target=run, daemon=True).start()
     return jsonify({"status": "running", "kind": kind, "theme": theme})
+
+
+@app.route("/api/astro/events")
+def astro_events_list():
+    """Önümüzdeki gök olayları (Instagram içerik takvimi)."""
+    from services import astro_events
+    from services.tr_locale import now_local
+    tz = now_local().tzinfo
+    days = min(int(request.args.get("days", 60)), 365)
+    return jsonify([{**{k: v for k, v in e.items() if k != "when"},
+                     "when": e["when"].astimezone(tz).strftime(
+                         "%Y-%m-%d %H:%M")}
+                    for e in astro_events.upcoming(days=days)])
+
+
+@app.route("/api/manychat/isim", methods=["POST"])
+def manychat_name_analysis():
+    """ManyChat External Request: yorumdan isim analizi DM metni döner.
+    Başlık: X-Api-Key: <MANYCHAT_SECRET>. Gövde: {"comment": "..."}
+    (ManyChat'te Last Text Input / yorum metni). Cevap ManyChat
+    Dynamic Block v2 biçiminde."""
+    secret = os.environ.get("MANYCHAT_SECRET", "")
+    given = request.headers.get("X-Api-Key", "")
+    if not secret or not hmac.compare_digest(given, secret):
+        return jsonify({"error": "unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    comment = (body.get("comment") or body.get("text")
+               or body.get("name") or "")
+    from services.name_analysis import analyze
+    text = analyze(str(comment)[:200])
+    return jsonify({"version": "v2", "content": {
+        "type": "instagram",
+        "messages": [{"type": "text", "text": text[:1000]}],
+    }})
 
 
 @app.route("/output/<path:filename>")

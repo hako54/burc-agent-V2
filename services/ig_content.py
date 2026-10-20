@@ -78,11 +78,46 @@ merak uyandıran kapanış. Somut, akıcı, abartısız.
 }}"""
 
 
-def generate(kind: str, theme: str = None) -> dict:
+def _event_prompt(ev: dict) -> str:
+    from services.tr_locale import tr_date as _trd
+    when = ev["when"].astimezone(now_local().tzinfo)
+    return f"""Instagram Reels için GÖK OLAYI içeriği yaz.
+Olay: {ev['title']} ({ev['emoji']})
+Zaman: {_trd(when)} saat {when.strftime('%H:%M')} (Türkiye saati)
+Bu video olaydan ÖNCE yayınlanacak; izleyiciyi hazırlasın.
+
+Ekranda müzik eşliğinde tek tek belirecek 5 cümle:
+1) Olay ne ve ne zaman (somut, merak uyandıran),
+2) Hangi alanları etkiler (aşk, iş, iletişim…),
+3) En çok etkilenecek burçlar (2-3 burç adı),
+4) Ne yapmalı / ne yapmamalı,
+5) Kısa, güçlü bir kapanış.
+Abartısız, korkutmayan, akıcı Türkçe.
+
+{_COMMON_RULES}
+{{
+  "title": "Kısa başlık (NORMAL yazımla, emoji ile; örn. 'Yarın Dolunay Boğa'da 🌕')",
+  "lines": ["5 cümle"],
+  "caption": "Instagram açıklaması (2-3 cümle; 'Burcunu yorumlara yaz, seni nasıl etkileyeceğini söyleyelim' gibi bir çağrı)",
+  "hashtags": ["#astroloji", "... toplam 12-18 etiket, olaya özel olanlar dahil"],
+  "visual_queries": ["İngilizce 3 görsel arama sorgusu (ör. 'full moon night sky', 'cosmic stars nebula')"],
+  "accent_color": "#hex"
+}}"""
+
+
+def generate(kind: str, theme: str = None, event: dict = None) -> dict:
     """LLM ile içerik üretir: title, lines, caption, hashtags, ..."""
     if kind == "manifest":
         theme = theme or random.choice(MANIFEST_THEMES)
         prompt = _manifest_prompt(theme)
+    elif kind == "gokolayi":
+        if not event:
+            from services import astro_events
+            event = (astro_events.upcoming(days=14) or [None])[0]
+            if not event:
+                raise RuntimeError("Yakında gök olayı yok")
+        theme = event["title"]
+        prompt = _event_prompt(event)
     elif kind == "numeroloji":
         prompt = _numerology_prompt(universal_day_number(now_local().date()))
     else:
@@ -99,13 +134,14 @@ def generate(kind: str, theme: str = None) -> dict:
     return data
 
 
-def produce(kind: str, theme: str = None, publish_now: bool = True) -> dict:
+def produce(kind: str, theme: str = None, publish_now: bool = True,
+            event: dict = None) -> dict:
     """Üret → render → Instagram kuyruğu. publish_now=True ise hemen
     kuyruğu işletir (zamanı şimdi)."""
     from services import instagram
     from services.ig_reels import render_text_reel
 
-    data = generate(kind, theme)
+    data = generate(kind, theme, event=event)
     stamp = now_local().strftime("%Y%m%d_%H%M%S")
     out = str(OUTPUT_DIR / f"ig_{kind}_{stamp}.mp4")
     render_text_reel(
@@ -114,8 +150,9 @@ def produce(kind: str, theme: str = None, publish_now: bool = True) -> dict:
         data.get("visual_queries") or [],
         out,
         accent_hex=data.get("accent_color") or "#d4af37",
-        outro=("Kaydet 🔖 Her sabah tekrar et ✨" if kind == "manifest"
-               else "Doğum tarihini yorumlara yaz 💬"),
+        outro={"manifest": "Kaydet 🔖 Her sabah tekrar et ✨",
+               "gokolayi": "Burcunu yorumlara yaz 💬 Kaydet 🔖"}.get(
+                   kind, "Doğum tarihini yorumlara yaz 💬"),
         music_hint="bolluk" if kind == "manifest" else "gece",
     )
     caption = instagram.build_caption(
@@ -140,6 +177,31 @@ def schedule() -> list:
             kind, hhmm = part.strip().split("@", 1)
             out.append((kind.strip(), hhmm.strip()))
     return out
+
+
+def astro_events_job() -> None:
+    """Her gün çalışır: YARIN gerçekleşecek gök olayları için Reels
+    üretir (günde en fazla 2). IG_ASTRO_EVENTS=0 ise kapalı."""
+    from datetime import timedelta
+    from services import instagram, astro_events
+    if (not instagram.enabled()
+            or os.environ.get("IG_ASTRO_EVENTS", "1") in ("0", "false")):
+        return
+    tomorrow = (now_local() + timedelta(days=1)).date()
+    tz = now_local().tzinfo
+    evs = [e for e in astro_events.upcoming(days=3)
+           if e["when"].astimezone(tz).date() == tomorrow][:2]
+    for ev in evs:
+        try:
+            produce("gokolayi", event=ev)
+        except Exception as e:
+            log.exception(f"Gök olayı Reels'i başarısız: {ev['title']}")
+            try:
+                from telegram_bot import send as tg_send
+                tg_send(f"⚠️ Gök olayı Reels'i üretilemedi "
+                        f"({ev['title']}): {str(e)[:200]}")
+            except Exception:
+                pass
 
 
 def scheduled_job(kind: str) -> None:
