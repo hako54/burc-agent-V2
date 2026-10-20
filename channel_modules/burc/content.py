@@ -66,7 +66,7 @@ Sadece JSON döndür:
 {{
   "title": "YouTube başlığı (max 80 karakter). Biçim: '{info['name']} {info['symbol']} <merak uyandıran vaat> <emoji> | {short_date}'. Vaat somut ve kişisel olsun (örn. 'Bugün Biri Sana İçini Açacak'). Tarih EN SONDA.",
   "hook": "İlk cümle - izleyiciyi durduran somut vaat (burç adı geçsin)",
-  "hook_text": "Ekranda dev harflerle çıkacak 3-5 kelimelik merak cümlesi (burç adı YOK, örn. 'BUGÜN BİRİ SANA AÇILACAK')",
+  "hook_text": "Ekranda dev harflerle çıkacak 3-5 kelimelik merak cümlesi; NORMAL yazımla yaz, büyük harfe sistem çevirir (burç adı YOK, örn. 'Bugün biri sana açılacak')",
   "segments": [
     {{"section": "giris", "text": "Kısa altyazı", "narration": "Hook cümlesi (en fazla 12 kelime)"}},
     {{"section": "genel", "text": "Kısa altyazı", "narration": "Genel enerji (en fazla 25 kelime)"}},
