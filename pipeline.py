@@ -370,6 +370,12 @@ def produce_content(
             "generated_at": datetime.now().isoformat(),
             "source": source,
             "sign_key": topic_key,  # geriye uyumluluk
+            # Instagram günlük derlemesi için
+            "ig_hook_cut_at": content.get("ig_hook_cut_at"),
+            "presenter_frame": content.get("presenter_frame"),
+            "sign_name": content.get("sign_name", ""),
+            "sign_symbol": content.get("sign_symbol", ""),
+            "accent_color": content.get("accent_color", ""),
         }
 
         # 3a) Onay gerekliyse kuyruğa al

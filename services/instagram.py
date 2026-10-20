@@ -293,7 +293,7 @@ def _first_frame(video_path: str, out_path: str) -> bool:
 
 def enqueue(channel_id: str, topic_key: str, video_path: str,
             caption: str, publish_after: str = None,
-            cut_at: float = None) -> dict:
+            cut_at: float = None, cover_path: str = None) -> dict:
     """Videoyu (ve kapağını) volume'e kopyalayıp kuyruğa ekler. cut_at
     verilirse Instagram'a videonun kısa (vurucu) kesiti gider."""
     qd = _queue_dir()
@@ -311,7 +311,9 @@ def enqueue(channel_id: str, topic_key: str, video_path: str,
     if not done:
         shutil.copyfile(video_path, qd / vname)
     cname = f"{stem}_cover.jpg"
-    if not _first_frame(str(qd / vname), str(qd / cname)):
+    if cover_path and os.path.exists(cover_path):
+        shutil.copyfile(cover_path, qd / cname)
+    elif not _first_frame(str(qd / vname), str(qd / cname)):
         cname = ""
     item = {
         "id": stem, "channel_id": channel_id, "topic_key": topic_key,

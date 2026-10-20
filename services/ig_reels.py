@@ -197,3 +197,87 @@ def make_short_cut(src: str, dst: str, cut_at: float,
                                        "-movflags", "+faststart"])
     src_clip.close()
     return dst
+
+
+def make_compilation(parts: list, dst: str,
+                     cta: str = "Tam yorumlar YouTube'da 👉 Link profilde"
+                     ) -> str:
+    """[(video_yolu, kesim_saniyesi), ...] → tek Reels. Her burcun
+    açılışı + hook cümlesi arka arkaya; sonda YouTube çağrısı."""
+    from moviepy.editor import concatenate_videoclips
+    srcs, subs = [], []
+    for path, cut in parts:
+        c = VideoFileClip(path)
+        srcs.append(c)
+        sub = c.subclip(0, min(cut or c.duration, c.duration))
+        if sub.audio is not None:
+            sub = sub.set_audio(sub.audio.audio_fadein(0.1)
+                                .audio_fadeout(0.25))
+        subs.append(sub)
+    if not subs:
+        raise ValueError("Birleştirilecek video yok")
+    full = concatenate_videoclips(subs, method="chain")
+
+    layer = _text_block(cta, 70, W - 160, (255, 250, 235, 255), int(H * 0.80))
+    over = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    over.alpha_composite(Image.new("RGBA", (W, 260), (0, 0, 0, 150)),
+                         (0, int(H * 0.80) - 130))
+    over.alpha_composite(layer)
+    arr = np.asarray(over).astype(np.float32)
+    rgb, alpha = arr[..., :3], arr[..., 3:4] / 255.0
+    start = max(0.0, full.duration - 3.0)
+
+    def fx(get_frame, t):
+        fr = get_frame(t)
+        if t < start:
+            return fr
+        k = alpha * _ease_out((t - start) / 0.4)
+        return (fr * (1 - k) + rgb * k).astype(np.uint8)
+
+    out = full.fl(fx)
+    Path(dst).parent.mkdir(parents=True, exist_ok=True)
+    out.write_videofile(dst, fps=FPS, codec="libx264", audio_codec="aac",
+                        logger=None, threads=4, preset="veryfast",
+                        ffmpeg_params=["-crf", "24", "-pix_fmt", "yuv420p",
+                                       "-movflags", "+faststart"])
+    for c in srcs:
+        c.close()
+    log.info(f"📸 Günlük burç derlemesi: {dst} ({full.duration:.1f}s)")
+    return dst
+
+
+def make_daily_cover(frame_path: str, title: str, date_text: str,
+                     symbols: str, accent_hex: str, dst: str) -> str:
+    """Dikey Reels kapağı: astrolog + günün başlığı + burç sembolleri."""
+    from services.video import _fit_cover
+    ac = _hex_to_rgb(accent_hex or "#d4af37")
+    if frame_path and os.path.exists(frame_path):
+        base = Image.fromarray(_fit_cover(np.asarray(
+            Image.open(frame_path).convert("RGB")))).convert("RGBA")
+    else:
+        base = create_fallback_image(W, H, accent_hex or "#d4af37",
+                                     "#120a1f", 0).convert("RGBA")
+    shade = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(shade)
+    for y in range(H):
+        a = 0 if y < H * 0.45 else int(215 * (y - H * 0.45) / (H * 0.55))
+        sd.line([(0, y), (W, y)], fill=(8, 4, 18, a))
+    base.alpha_composite(shade)
+
+    d = ImageDraw.Draw(base)
+    lf = _get_font(46)
+    label = "GÜNLÜK BURÇ YORUMU"
+    lw = text_width(d, label, lf)
+    d.rounded_rectangle([(W - lw) // 2 - 34, 120, (W + lw) // 2 + 34, 206],
+                        radius=40, fill=(10, 6, 20, 180),
+                        outline=ac + (255,), width=4)
+    draw_text(base, d, ((W - lw) // 2, 136), label, lf, ac + (255,))
+    base.alpha_composite(_text_block(title, 112, W - 120,
+                                     (255, 250, 235, 255), int(H * 0.66)))
+    base.alpha_composite(_text_block(symbols, 84, W - 120, ac + (255,),
+                                     int(H * 0.82)))
+    base.alpha_composite(_text_block(date_text, 52, W - 120,
+                                     (255, 255, 255, 235), int(H * 0.89)))
+    Path(dst).parent.mkdir(parents=True, exist_ok=True)
+    base.convert("RGB").save(dst, "JPEG", quality=90)
+    return dst

@@ -349,6 +349,17 @@ def _channel_zodiac_job(channel_id: str):
             scheduled_publish_at=publish_at,
             channel_id=channel_id,
         )
+        # Instagram: 6 burcun kısa kesitleri tek Reels (yayın saatinde)
+        try:
+            from services import ig_daily
+            if ig_daily.enabled() and results["success"]:
+                ig_daily.build_and_queue(results["success"],
+                                         publish_after=publish_at)
+        except Exception as e:
+            log.exception("Instagram günlük derleme hatası")
+            tg_send(f"⚠️ Instagram burç derlemesi yapılamadı: "
+                    f"{str(e)[:200]}")
+
         s = len(results["success"])
         f = len(results["failed"])
         msg = f"✅ <b>{channel['name']}</b>: {s}/{len(group)} ba\u015far\u0131l\u0131"
