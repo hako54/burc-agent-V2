@@ -49,7 +49,7 @@ app = Flask(__name__)
 # PANEL_PASSWORD set edilirse tüm sayfalar ve API'ler HTTP Basic Auth
 # ister (kullanıcı adı: PANEL_USER, varsayılan "admin"). /health açık
 # kalır ki Railway healthcheck çalışsın.
-_PUBLIC_PATHS = {"/health"}
+_PUBLIC_PATHS = {"/health", "/gizlilik", "/veri-silme"}
 
 
 def _panel_auth_ok() -> bool:
@@ -863,6 +863,29 @@ def instagram_comments_run():
     """Yorum cevaplamayı hemen bir kez çalıştırır (test için)."""
     from services import ig_comments
     return jsonify(ig_comments.process_comments())
+
+
+def _legal(page: str):
+    email = os.environ.get("CONTACT_EMAIL", "").strip()
+    return render_template(
+        "legal.html", page=page,
+        title="Gizlilik Politikası" if page == "privacy" else "Veri Silme",
+        brand=os.environ.get("BRAND_NAME", "Günlük Burç Yorumu"),
+        handle=os.environ.get("IG_HANDLE", "gunlukburc.yorum"),
+        updated="20 Ekim 2026",
+        contact=f"E-posta: {email}" if email else "")
+
+
+@app.route("/gizlilik")
+def privacy_policy():
+    """Meta uygulama incelemesi için herkese açık gizlilik politikası."""
+    return _legal("privacy")
+
+
+@app.route("/veri-silme")
+def data_deletion():
+    """Meta uygulama incelemesi için veri silme talimatları."""
+    return _legal("deletion")
 
 
 @app.route("/api/astro/events")
