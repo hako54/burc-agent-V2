@@ -101,7 +101,7 @@ Burç: {sign_name}
 
 THUMBNAIL kuralları (KRİTİK):
 - 2-4 KELİME, en fazla 25 karakter
-- BÜYÜK harflerle yazılacak şekilde tasarla
+- NORMAL yazımla yaz (büyük harfe çevirmeyi sistem yapar), büyük harfle okunacağını düşünerek tasarla
 - Tıklatıcı, merak uyandırıcı, duygusal
 - Klasik klişeler değil ("DİKKAT", "KORKUNÇ" gibi) — daha akıllı
 - Burç adı dahil değil (zaten thumbnail'de görsel olacak)
@@ -155,7 +155,7 @@ Tema: {topic_label}
 
 THUMBNAIL kuralları (KRİTİK):
 - 2-4 KELİME, en fazla 25 karakter
-- BÜYÜK harflerle yazılacak şekilde tasarla
+- NORMAL yazımla yaz (büyük harfe çevirmeyi sistem yapar), büyük harfle okunacağını düşünerek tasarla
 - Duygusal, yürek burkan veya çarpıcı
 - Klasik klişeler değil — özgün, içe işleyen
 - ⚠️ MUTLAKA TÜRKÇEDE GERÇEK KELİMELER kullan
@@ -599,8 +599,11 @@ def generate_thumbnail(content: dict, output_path: str,
     try:
         # Başlık bir kez üretilir; sunucu karesiyle kapak yeniden
         # yapıldığında aynı başlık kullanılır (ikinci LLM çağrısı yok)
-        title = content.get("thumb_title") or \
-            generate_thumbnail_title(content, channel_type)
+        title = content.get("thumb_title")
+        if not title:
+            from services.tr_spell import fix_turkish
+            title = fix_turkish(
+                [generate_thumbnail_title(content, channel_type)])[0]
         content["thumb_title"] = title
         log.info(f"🎨 Thumbnail başlığı: {title} "
                  f"({'dikey' if vertical else 'yatay'})")

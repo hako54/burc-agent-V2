@@ -220,6 +220,12 @@ def produce_content(
 
         content = clean_content(content)
 
+        # Başlık ve ekrandaki merak cümlesi için son imla kontrolü
+        if content.get("hook_text") or content.get("title"):
+            from services.tr_spell import fix_turkish
+            content["title"], content["hook_text"] = fix_turkish(
+                [content.get("title", ""), content.get("hook_text", "")])
+
         jt.set_provider(jkey, provider)
         jt.set_title(jkey, content.get("title", ""))
 

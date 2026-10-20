@@ -30,6 +30,7 @@ MANIFEST_THEMES = [
 
 _COMMON_RULES = """TÜRKÇE İMLA: "de/da", "ki", "mi" ayrı; "bir şey" ayrı; yanlış yazım yok.
 Her cümle kısa, akıcı, Instagram'da ekranda okunacak (en fazla 9 kelime).
+Tüm metinleri NORMAL yazımla yaz (büyük harfe çevirmeyi sistem yapar).
 Sadece JSON döndür."""
 
 
@@ -42,7 +43,7 @@ Klişe ve tekrar yok. Bugün: {tr_date()}.
 
 {_COMMON_RULES}
 {{
-  "title": "Kısa başlık (2-4 kelime, örn. 'BOLLUK MANİFESTİ ✨')",
+  "title": "Kısa başlık (2-4 kelime, NORMAL yazımla, BÜYÜK HARF KULLANMA; örn. 'Bolluk Manifesti ✨')",
   "lines": ["5 olumlama cümlesi"],
   "caption": "Instagram açıklaması (2-3 cümle, samimi; 'Kaydet ve her sabah 3 kez tekrar et' gibi bir çağrı içersin)",
   "hashtags": ["#manifest", "#olumlama", "... toplam 12-18 Türkçe/İngilizce etiket"],
@@ -68,7 +69,7 @@ merak uyandıran kapanış. Somut, akıcı, abartısız.
 
 {_COMMON_RULES}
 {{
-  "title": "GÜNÜN SAYISI: {num} 🔢",
+  "title": "Günün Sayısı: {num} 🔢",
   "lines": ["5 cümle"],
   "caption": "Instagram açıklaması (2-3 cümle; 'Doğum tarihini yorumlara yaz, kişisel sayını söyleyelim' gibi bir çağrı)",
   "hashtags": ["#numeroloji", "... toplam 12-18 etiket"],
@@ -90,6 +91,10 @@ def generate(kind: str, theme: str = None) -> dict:
     data = parse_llm_json(raw)
     if not data.get("lines"):
         raise RuntimeError("LLM cümle üretmedi")
+    # Ekranda görünecek metinlerin son imla kontrolü
+    from services.tr_spell import fix_turkish
+    fixed = fix_turkish([data.get("title", "")] + list(data["lines"]))
+    data["title"], data["lines"] = fixed[0], fixed[1:]
     data["kind"], data["theme"], data["provider"] = kind, theme, provider
     return data
 
