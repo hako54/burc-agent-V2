@@ -858,6 +858,13 @@ def instagram_produce(kind):
     return jsonify({"status": "running", "kind": kind, "theme": theme})
 
 
+@app.route("/api/instagram/comments/run", methods=["POST"])
+def instagram_comments_run():
+    """Yorum cevaplamayı hemen bir kez çalıştırır (test için)."""
+    from services import ig_comments
+    return jsonify(ig_comments.process_comments())
+
+
 @app.route("/api/astro/events")
 def astro_events_list():
     """Önümüzdeki gök olayları (Instagram içerik takvimi)."""

@@ -296,6 +296,15 @@ def start_scheduler():
 
     # Instagram'a özel içerik (manifest, numeroloji…)
     from services import ig_content
+    # Instagram yorumlarına otomatik cevap (isim analizi / burç mesajı)
+    from services import ig_comments
+    scheduler.add_job(
+        ig_comments.process_comments,
+        IntervalTrigger(minutes=5, timezone=tz),
+        id="ig_comments", name="Instagram yorum cevapları",
+        max_instances=1, coalesce=True, replace_existing=True,
+    )
+
     # Gök olayları: her gün IG_ASTRO_TIME'da yarınki olaylar için Reels
     try:
         ah, am = map(int, os.environ.get("IG_ASTRO_TIME", "13:00").split(":"))
