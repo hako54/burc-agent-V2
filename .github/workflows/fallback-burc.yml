@@ -1,0 +1,77 @@
+# Yedek burç üretimi: Railway bugünün burç videolarını YouTube'a
+# yüklemediyse (çökme/kesinti) videoları burada üretip yükler.
+# Railway çalışıyorsa sadece kontrol eder (~1 dk) ve çıkar.
+name: Yedek burç üretimi
+
+on:
+  schedule:
+    - cron: "15 4 * * *"      # 07:15 İstanbul
+    - cron: "40 7 * * *"      # 10:40 İstanbul (eski 10:00 düzeni için ikinci kontrol)
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Railway yüklemiş olsa bile üret"
+        type: boolean
+        default: false
+      dry_run:
+        description: "Sadece kontrol et, üretme"
+        type: boolean
+        default: false
+
+concurrency:
+  group: fallback-burc
+  cancel-in-progress: false
+
+jobs:
+  fallback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      TIMEZONE: Europe/Istanbul
+      DATA_DIR: data
+      OUTPUT_DIR: output
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+      ELEVENLABS_VOICE_ID: ${{ secrets.ELEVENLABS_VOICE_ID }}
+      PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+      PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+      CREDENTIALS_BURC: ${{ secrets.CREDENTIALS_BURC }}
+      TOKEN_BURC: ${{ secrets.TOKEN_BURC }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Kontrol paketleri
+        run: pip install google-api-python-client google-auth google-auth-oauthlib google-auth-httplib2 python-dotenv pytz requests
+
+      - name: Railway bugün yükledi mi?
+        id: check
+        run: |
+          ARGS="--check"
+          if [ "${{ inputs.force }}" = "true" ]; then ARGS="$ARGS --force"; fi
+          python scripts/fallback_burc.py $ARGS
+
+      - name: Sistem paketleri (ffmpeg, fontlar)
+        if: steps.check.outputs.needed == 'true' && inputs.dry_run != true
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg \
+            fonts-liberation fonts-dejavu-core fonts-noto-core fonts-noto-color-emoji
+
+      - name: Python paketleri
+        if: steps.check.outputs.needed == 'true' && inputs.dry_run != true
+        run: pip install -r requirements.txt
+
+      - name: Yedek üretim
+        if: steps.check.outputs.needed == 'true' && inputs.dry_run != true
+        run: |
+          ARGS=""
+          if [ "${{ inputs.force }}" = "true" ]; then ARGS="--force"; fi
+          python scripts/fallback_burc.py $ARGS

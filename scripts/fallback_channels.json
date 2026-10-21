@@ -1,0 +1,22 @@
+[
+  {
+    "auto_schedule": true,
+    "color": "#d4af37",
+    "created_at": "2026-04-25T05:58:16.768581",
+    "data_subdir": "burc",
+    "icon": "🔮",
+    "id": "burc",
+    "name": "Burç Kanalı",
+    "schedule_times": [
+      "06:00"
+    ],
+    "token_env": "TOKEN_BURC",
+    "token_file": "token_burc.json",
+    "type": "zodiac",
+    "voice_id": "TASY7VCrU29rEMoYFTGG",
+    "voice_speed": 0.95,
+    "voice_stability": 0.5,
+    "voice_style": 0.35,
+    "youtube_url": "https://www.youtube.com/channel/UCdoYOpVL2lnd2U0ZrRXJchQ"
+  }
+]
