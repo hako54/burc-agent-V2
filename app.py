@@ -904,6 +904,16 @@ def instagram_burc_today():
     return jsonify({"status": "running", "signs": signs})
 
 
+@app.route("/api/backup/run", methods=["POST"])
+def backup_run():
+    """Şifreli yedeği hemen alıp Telegram'a gönderir."""
+    from services import backup
+    try:
+        return jsonify(backup.send_backup())
+    except Exception as e:
+        return jsonify({"error": str(e)[:300]}), 500
+
+
 @app.route("/api/instagram/comments/run", methods=["POST"])
 def instagram_comments_run():
     """Yorum cevaplamayı hemen bir kez çalıştırır (test için)."""

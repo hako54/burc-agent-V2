@@ -305,6 +305,20 @@ def start_scheduler():
         max_instances=1, coalesce=True, replace_existing=True,
     )
 
+    # Günlük şifreli yedek (volume → Telegram)
+    try:
+        from services import backup
+        bh, bm = map(int, os.environ.get("BACKUP_TIME", "04:10").split(":"))
+        scheduler.add_job(
+            backup.scheduled_job,
+            CronTrigger(hour=bh, minute=bm, timezone=tz),
+            id="daily_backup", name="Günlük yedek",
+            misfire_grace_time=3600, replace_existing=True,
+        )
+        log.info(f"📅 Günlük yedek @ {bh:02d}:{bm:02d}")
+    except Exception as e:
+        log.warning(f"Yedek zamanlaması kurulamadı: {e}")
+
     # Gök olayları: her gün IG_ASTRO_TIME'da yarınki olaylar için Reels
     try:
         ah, am = map(int, os.environ.get("IG_ASTRO_TIME", "13:00").split(":"))
