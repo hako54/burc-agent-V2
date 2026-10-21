@@ -74,9 +74,22 @@ def _queue_instagram(channel_id: str, topic_key: str, video_path: str,
             "Tam yorum YouTube'da, link profilde 👆\n\nBurcunu yorumlara yaz",
             1)
         short = os.environ.get("IG_BURC_SHORT", "1") not in ("0", "false")
+        cover = None
+        if content.get("sign_name"):
+            # Her burca ayrı kapak: astrolog karesi + burç adı + hook
+            from services.ig_reels import make_sign_cover
+            from services.tr_locale import tr_date
+            cover = make_sign_cover(
+                content.get("presenter_frame") or "",
+                content["sign_name"], content.get("sign_symbol", ""),
+                content.get("hook_text", ""), tr_date(),
+                content.get("accent_color") or "#d4af37",
+                str(Path(video_path).with_name(
+                    Path(video_path).stem + "_igcover.jpg")))
         instagram.enqueue(channel_id, topic_key, video_path, caption,
                           publish_after=publish_after,
-                          cut_at=content.get("ig_cut_at") if short else None)
+                          cut_at=content.get("ig_cut_at") if short else None,
+                          cover_path=cover)
     except Exception as e:
         log.warning(f"Instagram kuyruğuna eklenemedi: {e}")
         _tg_notify(f"⚠️ Instagram kuyruğuna eklenemedi ({topic_key}): "

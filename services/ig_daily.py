@@ -5,7 +5,7 @@ Sabah üretilen 6 burç videosunun açılış + hook kesitleri tek bir Reels'te
 birleşir; her gün farklı bir kapakla (astrologun o günkü karesi, günün
 başlığı, burç sembolleri, o burcun rengi) Instagram'a gider.
 
-IG_BURC_DAILY=0 ise kapalı.
+Varsayılan kapalı (burçlar ayrı ayrı gidiyor); IG_BURC_DAILY=1 ile açılır.
 """
 
 import os
@@ -30,7 +30,7 @@ TITLES = [
 def enabled() -> bool:
     from services import instagram
     return (instagram.enabled()
-            and os.environ.get("IG_BURC_DAILY", "1") not in ("0", "false"))
+            and os.environ.get("IG_BURC_DAILY", "0") in ("1", "true", "on"))
 
 
 def build_and_queue(results: list, publish_after: str = None) -> dict:

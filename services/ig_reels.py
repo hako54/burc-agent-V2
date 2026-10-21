@@ -246,11 +246,9 @@ def make_compilation(parts: list, dst: str,
     return dst
 
 
-def make_daily_cover(frame_path: str, title: str, date_text: str,
-                     symbols: str, accent_hex: str, dst: str) -> str:
-    """Dikey Reels kapağı: astrolog + günün başlığı + burç sembolleri."""
+def _cover_base(frame_path: str, accent_hex: str) -> Image.Image:
+    """Astrolog karesi (yoksa renkli zemin), altı okunaklılık için koyu."""
     from services.video import _fit_cover
-    ac = _hex_to_rgb(accent_hex or "#d4af37")
     if frame_path and os.path.exists(frame_path):
         base = Image.fromarray(_fit_cover(np.asarray(
             Image.open(frame_path).convert("RGB")))).convert("RGBA")
@@ -263,21 +261,59 @@ def make_daily_cover(frame_path: str, title: str, date_text: str,
         a = 0 if y < H * 0.45 else int(215 * (y - H * 0.45) / (H * 0.55))
         sd.line([(0, y), (W, y)], fill=(8, 4, 18, a))
     base.alpha_composite(shade)
+    return base
 
+
+def _pill(base: Image.Image, label: str, size: int, y: int, ac) -> None:
     d = ImageDraw.Draw(base)
-    lf = _get_font(46)
-    label = "GÜNLÜK BURÇ YORUMU"
+    lf = _get_font(size)
     lw = text_width(d, label, lf)
-    d.rounded_rectangle([(W - lw) // 2 - 34, 120, (W + lw) // 2 + 34, 206],
-                        radius=40, fill=(10, 6, 20, 180),
+    pad = size * 3 // 4
+    d.rounded_rectangle([(W - lw) // 2 - pad, y, (W + lw) // 2 + pad,
+                         y + int(size * 1.85)],
+                        radius=size, fill=(10, 6, 20, 180),
                         outline=ac + (255,), width=4)
-    draw_text(base, d, ((W - lw) // 2, 136), label, lf, ac + (255,))
+    draw_text(base, d, ((W - lw) // 2, y + size // 3), label, lf,
+              ac + (255,))
+
+
+def make_daily_cover(frame_path: str, title: str, date_text: str,
+                     symbols: str, accent_hex: str, dst: str) -> str:
+    """Dikey Reels kapağı: astrolog + günün başlığı + burç sembolleri."""
+    ac = _hex_to_rgb(accent_hex or "#d4af37")
+    base = _cover_base(frame_path, accent_hex)
+    _pill(base, "GÜNLÜK BURÇ YORUMU", 46, 120, ac)
     base.alpha_composite(_text_block(title, 112, W - 120,
                                      (255, 250, 235, 255), int(H * 0.66)))
     base.alpha_composite(_text_block(symbols, 84, W - 120, ac + (255,),
                                      int(H * 0.82)))
     base.alpha_composite(_text_block(date_text, 52, W - 120,
                                      (255, 255, 255, 235), int(H * 0.89)))
+    Path(dst).parent.mkdir(parents=True, exist_ok=True)
+    base.convert("RGB").save(dst, "JPEG", quality=90)
+    return dst
+
+
+def make_sign_cover(frame_path: str, sign_name: str, symbol: str,
+                    hook: str, date_text: str, accent_hex: str,
+                    dst: str) -> str:
+    """Tek burç Reels kapağı: astrolog + büyük burç adı + günün vurucu
+    cümlesi (hook) + tarih. Profil ızgarasında (3:4 orta kesit) burç adı
+    ve hook görünür kalır."""
+    from services.tr_locale import tr_upper
+    ac = _hex_to_rgb(accent_hex or "#d4af37")
+    base = _cover_base(frame_path, accent_hex)
+    # Burcun rengiyle çerçeve: ızgarada her burç ayrı renkte görünür
+    ImageDraw.Draw(base).rounded_rectangle(
+        [24, 24, W - 25, H - 25], radius=48, outline=ac + (255,), width=12)
+    _pill(base, date_text, 44, 250, ac)
+    base.alpha_composite(_text_block(
+        f"{symbol} {tr_upper(sign_name)}".strip(), 150, W - 100,
+        ac + (255,), int(H * 0.56)))
+    if hook:
+        base.alpha_composite(_text_block(tr_upper(hook), 96, W - 110,
+                                         (255, 250, 235, 255),
+                                         int(H * 0.72)))
     Path(dst).parent.mkdir(parents=True, exist_ok=True)
     base.convert("RGB").save(dst, "JPEG", quality=90)
     return dst
