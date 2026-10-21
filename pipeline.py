@@ -168,6 +168,7 @@ def produce_content(
     source: str = "web",
     scheduled_publish_at: str = None,
     require_approval: bool = False,
+    ig_only: bool = False,
 ) -> dict:
     """Bir kanala bir içerik üretir.
 
@@ -179,6 +180,7 @@ def produce_content(
         source: 'web', 'telegram', 'scheduler'
         scheduled_publish_at: YouTube planlı yayın
         require_approval: Onay kuyruğuna alsın mı
+        ig_only: YouTube'a yüklemeden sadece Instagram kuyruğuna ekle
     """
     channel = ch_registry.get_channel(channel_id)
     if not channel:
@@ -396,6 +398,16 @@ def produce_content(
             "sign_symbol": content.get("sign_symbol", ""),
             "accent_color": content.get("accent_color", ""),
         }
+
+        # Sadece Instagram (YouTube'a dokunmaz, history'e yazılmaz)
+        if ig_only:
+            _queue_instagram(channel_id, topic_key, video_path, content,
+                             module.format_title(topic_key, content))
+            result["status"] = "instagram_queued"
+            jt.finish_job(jkey, result=result)
+            cancel_mgr.cleanup_job(jkey)
+            log.info(f"📸 {channel['name']}/{topic_key} Instagram kuyruğunda")
+            return result
 
         # 3a) Onay gerekliyse kuyruğa al
         if require_approval and upload:

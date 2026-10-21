@@ -858,6 +858,52 @@ def instagram_produce(kind):
     return jsonify({"status": "running", "kind": kind, "theme": theme})
 
 
+@app.route("/api/instagram/burc/today", methods=["POST"])
+def instagram_burc_today():
+    """Bugünün burçlarını YouTube'a dokunmadan yeniden üretip Instagram'a
+    ayrı Reels olarak (burca özel kapakla) gönderir. Gövde:
+    {"signs": ["koc", ...]} (opsiyonel; yoksa bugün YouTube'a gidenler)."""
+    from services import instagram
+    from services.tr_locale import now_local
+    import pipeline
+    if not instagram.channel_enabled("burc"):
+        return jsonify({"error": "Instagram burç kanalı kapalı "
+                                 "(INSTAGRAM_CHANNELS)"}), 400
+    signs = (request.get_json(silent=True) or {}).get("signs")
+    if not signs:
+        today = now_local().strftime("%Y-%m-%d")
+        hist = Path(os.environ.get("DATA_DIR", "data")) / "burc" / "history.json"
+        try:
+            data = json.loads(hist.read_text(encoding="utf-8"))
+        except Exception:
+            data = []
+        signs = []
+        for e in sorted(data, key=lambda e: e.get("generated_at", "")):
+            k = e.get("topic_key")
+            if (e.get("youtube_id") and k and k not in signs
+                    and e.get("generated_at", "").startswith(today)):
+                signs.append(k)
+    if not signs:
+        return jsonify({"error": "Bugün üretilmiş burç yok"}), 400
+
+    def run():
+        for k in signs:
+            try:
+                pipeline.produce_content("burc", k, upload=False,
+                                         source="instagram", ig_only=True)
+            except Exception as e:
+                log.exception(f"Instagram burç üretimi başarısız: {k}")
+                try:
+                    from telegram_bot import send as tg_send
+                    tg_send(f"⚠️ Instagram {k} Reels üretilemedi: "
+                            f"{str(e)[:200]}")
+                except Exception:
+                    pass
+
+    threading.Thread(target=run, daemon=True).start()
+    return jsonify({"status": "running", "signs": signs})
+
+
 @app.route("/api/instagram/comments/run", methods=["POST"])
 def instagram_comments_run():
     """Yorum cevaplamayı hemen bir kez çalıştırır (test için)."""
