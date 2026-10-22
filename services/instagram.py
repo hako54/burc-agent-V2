@@ -46,6 +46,7 @@ REFRESH_EVERY = 20 * 86400
 MAX_ATTEMPTS = 3
 
 _lock = threading.Lock()
+_publish_lock = threading.Lock()
 
 
 # ── Ayarlar ──────────────────────────────────────────────────────────
@@ -381,9 +382,20 @@ def _notify(text: str) -> None:
 
 
 def process_queue() -> None:
-    """Zamanı gelmiş ilk kaydı yayınlar (her çağrıda en fazla bir tane)."""
+    """Zamanı gelmiş ilk kaydı yayınlar (her çağrıda en fazla bir tane).
+    Aynı anda iki çağrı (zamanlayıcı + elle üretim) aynı kaydı iki kez
+    yayınlamasın diye tek seferde bir yayın yapılır."""
     if not enabled():
         return
+    if not _publish_lock.acquire(blocking=False):
+        return
+    try:
+        _process_one()
+    finally:
+        _publish_lock.release()
+
+
+def _process_one() -> None:
     refresh_token_if_needed()
     with _lock:
         items = _load_queue()
@@ -402,7 +414,7 @@ def process_queue() -> None:
                 f"{res.get('permalink', '')}")
     except Exception as e:
         log.warning(f"Instagram yayını başarısız ({item['id']}): {e}")
-        attempts = MAX_ATTEMPTS
+        attempts = 0
         with _lock:
             items = _load_queue()
             for i in items:
