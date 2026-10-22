@@ -184,7 +184,8 @@ def api_channel_create():
 
 @app.route("/api/channels/<channel_id>", methods=["PUT"])
 def api_channel_update(channel_id):
-    """Kanal bilgilerini güncelle (name, youtube_url, color, voice_*, auto_schedule)."""
+    """Kanal bilgilerini güncelle (name, youtube_url, color, voice_*, auto_schedule,
+    schedule_times). Saat değişince /api/scheduler/reload çağrılmalı."""
     data = request.get_json() or {}
     try:
         channel = ch_registry.update_channel(
@@ -197,6 +198,7 @@ def api_channel_update(channel_id):
             voice_style=data.get("voice_style"),
             voice_speed=data.get("voice_speed"),
             auto_schedule=data.get("auto_schedule"),
+            schedule_times=data.get("schedule_times"),
         )
         return jsonify({"channel": channel})
     except ValueError as e:
