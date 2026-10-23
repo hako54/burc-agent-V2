@@ -285,14 +285,31 @@ def queue_status() -> list:
     return _load_queue()
 
 
+def youtube_channel_url() -> str:
+    """Burç YouTube kanalının adresi (açıklamaya eklenir)."""
+    url = os.environ.get("YOUTUBE_CHANNEL_URL", "")
+    if not url:
+        try:
+            import channel_registry
+            url = (channel_registry.get_channel("burc") or {}).get(
+                "youtube_url", "")
+        except Exception:
+            url = ""
+    return url
+
+
 def build_caption(title: str, description: str, hashtags: list,
-                  sign_name: str = "") -> str:
+                  sign_name: str = "", youtube_url: str = None) -> str:
+    """youtube_url verilmezse kanal adresi eklenir; "" ise link eklenmez."""
     tags = list(dict.fromkeys(
         (hashtags or []) + ["#burç", "#astroloji", "#günlükburç",
                             "#burçyorumu", "#reels", "#keşfet"]))[:25]
     parts = [title.strip()]
     if description:
         parts.append(description.strip())
+    link = youtube_channel_url() if youtube_url is None else youtube_url
+    if link:
+        parts.append(f"▶️ YouTube: {link}")
     parts.append("Burcunu yorumlara yaz, sana özel mesajı kaçırma! 💬✨")
     parts.append(" ".join(t if t.startswith("#") else f"#{t}" for t in tags))
     return "\n\n".join(p for p in parts if p)
