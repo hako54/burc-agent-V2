@@ -49,7 +49,7 @@ app = Flask(__name__)
 # PANEL_PASSWORD set edilirse tüm sayfalar ve API'ler HTTP Basic Auth
 # ister (kullanıcı adı: PANEL_USER, varsayılan "admin"). /health açık
 # kalır ki Railway healthcheck çalışsın.
-_PUBLIC_PATHS = {"/health", "/gizlilik", "/veri-silme"}
+_PUBLIC_PATHS = {"/health", "/gizlilik", "/veri-silme", "/burclar"}
 
 
 def _panel_auth_ok() -> bool:
@@ -932,6 +932,59 @@ def _legal(page: str):
         handle=os.environ.get("IG_HANDLE", "gunlukburc.yorum"),
         updated="20 Ekim 2026",
         contact=f"E-posta: {email}" if email else "")
+
+
+@app.route("/burclar")
+def burclar_page():
+    """Instagram profilindeki bağlantı: her burcun en son (yayında olan)
+    YouTube videosu. Açıklamadaki linkler tıklanmadığı için buradan."""
+    from datetime import timezone
+    from services.tr_locale import now_local, tr_date
+    from services.instagram import youtube_channel_url
+    now = now_local()
+    h, m = map(int, os.environ.get("BURC_PUBLISH_TIME", "10:00").split(":"))
+    published_until = now.replace(hour=h, minute=m, second=0, microsecond=0)
+    hist = Path(os.environ.get("DATA_DIR", "data")) / "burc" / "history.json"
+    try:
+        data = json.loads(hist.read_text(encoding="utf-8"))
+    except Exception:
+        data = []
+    latest = {}
+    for e in sorted(data, key=lambda e: e.get("generated_at", "")):
+        key, url = e.get("topic_key"), e.get("youtube_url")
+        if not (key and url) or key not in ZODIAC_SIGNS:
+            continue
+        try:
+            made = datetime.fromisoformat(e["generated_at"]).replace(
+                tzinfo=timezone.utc).astimezone(now.tzinfo)
+        except Exception:
+            continue
+        # Planlı (henüz gizli) videoları gösterme
+        if made.date() == now.date() and now < published_until:
+            continue
+        latest[key] = (made.date(), e)
+    newest = max((d for d, _ in latest.values()), default=None)
+    groups = {"today": [], "other": []}
+    for key in all_sign_keys():
+        if key not in latest:
+            continue
+        day, e = latest[key]
+        sign = get_sign(key)
+        # "Koç ♈ Bugün ... ✨ | 24 Ekim" → "Bugün ... ✨"
+        title = e.get("title", "").split("|")[0].strip()
+        for prefix in (sign["name"], sign.get("symbol", "")):
+            if prefix and title.startswith(prefix):
+                title = title[len(prefix):].strip()
+        groups["today" if day == newest else "other"].append({
+            "url": e["youtube_url"], "name": sign["name"],
+            "symbol": sign.get("symbol", ""), "title": title,
+            "color": e.get("accent_color") or "#d4af37"})
+    sections = [s for s in (
+        {"label": "Bugünün burçları", "items": groups["today"]},
+        {"label": "Diğer burçlar", "items": groups["other"]}) if s["items"]]
+    return render_template("burclar.html", sections=sections,
+                           today=tr_date(now),
+                           channel_url=youtube_channel_url())
 
 
 @app.route("/gizlilik")

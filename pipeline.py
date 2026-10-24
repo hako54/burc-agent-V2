@@ -71,7 +71,9 @@ def _queue_instagram(channel_id: str, topic_key: str, video_path: str,
         caption = instagram.build_caption(
             title, content.get("description", ""),
             content.get("hashtags", []), youtube_url=youtube_url)
-        caption = caption.replace("▶️ YouTube:", "▶️ Tam yorum YouTube'da:", 1)
+        caption = caption.replace(
+            "▶️ YouTube:",
+            "▶️ Tam yorum için profildeki linke dokun 👆\nYouTube:", 1)
         short = os.environ.get("IG_BURC_SHORT", "1") not in ("0", "false")
         cover = None
         if content.get("sign_name"):
