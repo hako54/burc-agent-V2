@@ -58,6 +58,19 @@ def _public_url(file_path: str) -> str:
     return f"https://{domain}/output/{filename}"
 
 
+def _make_sign_cover(content: dict, video_path: str) -> str:
+    """Burca özel dikey kapak (astrolog karesi + burç adı + hook); hem
+    Instagram hem YouTube'da kullanılır."""
+    from services.ig_reels import make_sign_cover
+    from services.tr_locale import tr_date
+    return make_sign_cover(
+        content.get("presenter_frame") or "",
+        content["sign_name"], content.get("sign_symbol", ""),
+        content.get("hook_text", ""), tr_date(),
+        content.get("accent_color") or "#d4af37",
+        str(Path(video_path).with_name(Path(video_path).stem + "_cover.jpg")))
+
+
 def _queue_instagram(channel_id: str, topic_key: str, video_path: str,
                      content: dict, title: str, publish_after: str = None,
                      youtube_url: str = None):
@@ -75,18 +88,9 @@ def _queue_instagram(channel_id: str, topic_key: str, video_path: str,
             "▶️ YouTube:",
             "▶️ Tam yorum için profildeki linke dokun 👆\nYouTube:", 1)
         short = os.environ.get("IG_BURC_SHORT", "1") not in ("0", "false")
-        cover = None
-        if content.get("sign_name"):
-            # Her burca ayrı kapak: astrolog karesi + burç adı + hook
-            from services.ig_reels import make_sign_cover
-            from services.tr_locale import tr_date
-            cover = make_sign_cover(
-                content.get("presenter_frame") or "",
-                content["sign_name"], content.get("sign_symbol", ""),
-                content.get("hook_text", ""), tr_date(),
-                content.get("accent_color") or "#d4af37",
-                str(Path(video_path).with_name(
-                    Path(video_path).stem + "_igcover.jpg")))
+        cover = content.get("sign_cover")
+        if not (cover and os.path.exists(cover)) and content.get("sign_name"):
+            cover = _make_sign_cover(content, video_path)
         instagram.enqueue(channel_id, topic_key, video_path, caption,
                           publish_after=publish_after,
                           cut_at=content.get("ig_cut_at") if short else None,
@@ -379,6 +383,14 @@ def produce_content(
                     or thumbnail_path)
             except Exception as e:
                 log.warning(f"Astrologlu kapak üretilemedi: {e}")
+
+        # Burç: Instagram'daki dikey kapak YouTube'da da kullanılır
+        if content.get("sign_name"):
+            try:
+                content["sign_cover"] = _make_sign_cover(content, video_path)
+                thumbnail_path = content["sign_cover"]
+            except Exception as e:
+                log.warning(f"Burç kapağı üretilemedi: {e}")
 
         result = {
             "channel_id": channel_id,
