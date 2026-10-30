@@ -389,6 +389,14 @@ def produce_content(
             try:
                 content["sign_cover"] = _make_sign_cover(content, video_path)
                 thumbnail_path = content["sign_cover"]
+                # Shorts akışında da kapak görünsün: videonun ilk karesi
+                if os.environ.get("COVER_FIRST_FRAME", "1") not in ("0", "false"):
+                    from services.ig_reels import prepend_cover
+                    pad = 0.5
+                    prepend_cover(video_path, thumbnail_path, pad)
+                    for k in ("ig_cut_at", "ig_hook_cut_at"):
+                        if content.get(k):
+                            content[k] += pad
             except Exception as e:
                 log.warning(f"Burç kapağı üretilemedi: {e}")
 

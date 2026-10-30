@@ -165,6 +165,31 @@ def render_text_reel(title: str, lines: list, visual_queries: list,
     return output_path
 
 
+def prepend_cover(video_path: str, cover_path: str,
+                  duration: float = 0.5) -> str:
+    """Kapağı videonun başına kısa sabit kare olarak ekler (yerinde).
+    YouTube Shorts akışta yüklenen küçük resmi değil videodan bir kareyi
+    gösterdiği için ilk kare kapak olsun diye."""
+    from moviepy.editor import (ImageClip, CompositeAudioClip,
+                                concatenate_videoclips)
+    src = VideoFileClip(video_path)
+    still = ImageClip(np.asarray(Image.open(cover_path).convert("RGB")
+                                 .resize((W, H)))).set_duration(duration)
+    out = concatenate_videoclips([still, src.without_audio()])
+    if src.audio is not None:
+        out = out.set_audio(CompositeAudioClip(
+            [src.audio.set_start(duration)]).set_duration(out.duration))
+    tmp = str(Path(video_path).with_suffix(".cover.mp4"))
+    out.write_videofile(tmp, fps=FPS, codec="libx264", audio_codec="aac",
+                        logger=None, threads=4, preset="veryfast",
+                        ffmpeg_params=["-crf", "26", "-maxrate", "6M",
+                                       "-bufsize", "12M", "-pix_fmt",
+                                       "yuv420p", "-movflags", "+faststart"])
+    src.close()
+    os.replace(tmp, video_path)
+    return video_path
+
+
 def make_short_cut(src: str, dst: str, cut_at: float,
                    cta: str = "Devamı YouTube'da 👉 Link profilde") -> str:
     """Burç videosunun Instagram için kısa (vurucu) kesiti: baştan cut_at
