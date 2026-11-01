@@ -214,7 +214,7 @@ def _text_layers(text: str, accent_hex: str, sign_name: str,
     if show_header and sign_name:
         # Otomatik boyut — uzun başlık için küçült
         max_header_w = W - 200
-        tf_size = 46
+        tf_size = 84
         tf = _get_font(tf_size)
         tw2 = text_width(draw, sign_name, tf)
         while tw2 > max_header_w and tf_size > 30:
@@ -229,6 +229,12 @@ def _text_layers(text: str, accent_hex: str, sign_name: str,
 
         ty2 = 80
         line_h2 = int(tf_size * 1.15)
+        # Okunaklılık için koyu, burç renginde çerçeveli şerit
+        bw2 = max(text_width(draw, ln, tf) for ln in header_lines)
+        draw.rounded_rectangle(
+            [(W - bw2) // 2 - 36, ty2 - 18, (W + bw2) // 2 + 36,
+             ty2 + line_h2 * len(header_lines) + 52],
+            radius=34, fill=(8, 4, 18, 170), outline=(*ac, 230), width=4)
         for line in header_lines:
             lw = text_width(draw, line, tf)
             tx = (W - lw) // 2
@@ -1063,7 +1069,12 @@ def render_video(content: dict, output_path: str,
         img_src = np.asarray(images[i].convert("RGB"))
         zoom_in = (i % 2 == 0)
         direction = dirs[i % len(dirs)]
-        show_hdr = (i == 0)
+        # Burç: burç adı her bölümde üstte kalır (Shorts küçük resmi
+        # videodan rastgele bir kare olduğundan her karede burç okunur)
+        show_hdr = (i == 0) or bool(content.get("sign_name"))
+        seg_header = sign_name
+        if content.get("sign_name"):
+            seg_header = f"{sign_symbol} {tr_upper(sign_name)}".strip()
         sd = seg_durations[i]
         narration_text = seg.get("narration") or seg.get("text", "")
         section_label = seg.get("text", "")
@@ -1080,7 +1091,7 @@ def render_video(content: dict, output_path: str,
                 _ken_burns(_img, t, _sd, _zi, _dir)).convert("RGBA")
             _apply_text_overlay(
                 img, t, _txt, _sd, accent,
-                sign_name=sign_name if _sh else "",
+                sign_name=seg_header if _sh else "",
                 section_label=_sec,
                 seg_idx=_i, total=len(segments),
                 show_header=_sh,
