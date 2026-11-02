@@ -112,8 +112,9 @@ def build_content(topic: str) -> dict:
     return content
 
 
-def produce(topic: str = None) -> dict:
-    """Üret → render → YouTube Shorts + Instagram Reels."""
+def produce(topic: str = None, publish: bool = True) -> dict:
+    """Üret → render → YouTube Shorts + Instagram Reels. publish=False:
+    sadece önizleme (Telegram'a gönderilir, hiçbir yerde yayınlanmaz)."""
     from services import instagram
     from services.ig_content import _list_topic, _upload_youtube
     from services.video import render_video
@@ -130,6 +131,16 @@ def produce(topic: str = None) -> dict:
         tr_date(), "  ".join(s["symbol"] for s in content["signs"]),
         content["accent_color"], out.replace(".mp4", "_cover.jpg"),
         label="HAFTA SONU ÖZEL")
+
+    if not publish:
+        try:
+            from telegram_bot import send_video
+            send_video(out, f"👀 Önizleme (yayınlanmadı): {content['title']}")
+        except Exception as e:
+            log.warning(f"Önizleme Telegram'a gönderilemedi: {e}")
+        log.info(f"👀 Hafta sonu listesi önizleme: {out}")
+        return {"video": out, "cover": out.replace(".mp4", "_cover.jpg"),
+                "topic": topic, "title": content["title"]}
 
     data = {"title": content["title"], "caption": content["caption"],
             "hashtags": content["hashtags"]}

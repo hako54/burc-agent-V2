@@ -928,6 +928,35 @@ def backup_run():
         return jsonify({"error": str(e)[:300]}), 500
 
 
+_list_preview = {}
+
+
+@app.route("/api/weekend-list/preview", methods=["GET", "POST"])
+def weekend_list_preview():
+    """POST: hafta sonu liste videosunun önizlemesini arka planda üretir
+    (yayınlamaz, Telegram'a gönderir). GET: son önizlemenin durumu."""
+    if request.method == "GET":
+        return jsonify(_list_preview)
+
+    def run():
+        from services import weekend_list
+        _list_preview.clear()
+        _list_preview["status"] = "running"
+        try:
+            res = weekend_list.produce(
+                topic=(request_topic or None), publish=False)
+            _list_preview.update(res, status="done",
+                                 video_name=os.path.basename(res["video"]),
+                                 cover_name=os.path.basename(res["cover"]))
+        except Exception as e:
+            log.exception("Liste önizleme hatası")
+            _list_preview.update(status="error", error=str(e)[:300])
+
+    request_topic = (request.get_json(silent=True) or {}).get("topic")
+    threading.Thread(target=run, daemon=True).start()
+    return jsonify({"status": "running"})
+
+
 @app.route("/api/instagram/comments/run", methods=["POST"])
 def instagram_comments_run():
     """Yorum cevaplamayı hemen bir kez çalıştırır (test için)."""
