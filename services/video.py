@@ -162,6 +162,10 @@ def _scaled_alpha(layer: Image.Image, alpha: float) -> Image.Image:
     return out
 
 
+# Tarih sadece günlük burç videolarında yazılır (render_video ayarlar)
+_SHOW_DATE = True
+
+
 @lru_cache(maxsize=8)
 def _text_layers(text: str, accent_hex: str, sign_name: str,
                  section_label: str, seg_idx: int, total: int,
@@ -244,7 +248,7 @@ def _text_layers(text: str, accent_hex: str, sign_name: str,
             draw_text(overlay, draw, (tx, ty2), line, tf, (*ac, 245))
             ty2 += line_h2
 
-        datestr = tr_date()
+        datestr = tr_date() if _SHOW_DATE else ""
         df = _get_font(28)
         db = draw.textbbox((0, 0), datestr, font=df)
         dw = db[2]
@@ -608,7 +612,7 @@ def _make_intro_clip(duration: float, sign_name: str, sign_symbol: str,
         ny = ny - line_h + nf_size + 40
 
         # Tarih
-        datestr = tr_date()
+        datestr = tr_date() if _SHOW_DATE else ""
         df = _get_font(36)
         db = d.textbbox((0, 0), datestr, font=df)
         dw = db[2]
@@ -958,6 +962,11 @@ def render_video(content: dict, output_path: str,
     # Burç: sign_name, sign_symbol (♈♉♊...)
     # Motivasyon: topic_label, icon (🏆🎯🧘...)
     # Generic: content.main_label, content.main_icon
+    global _SHOW_DATE
+    show_date = bool(content.get("sign_name"))
+    if show_date != _SHOW_DATE:
+        _SHOW_DATE = show_date
+        _text_layers.cache_clear()
     sign_name = (content.get("main_label")
                  or content.get("sign_name")
                  or content.get("topic_label", ""))
@@ -1144,7 +1153,8 @@ def render_video(content: dict, output_path: str,
         label = f"{sign_symbol} {tr_upper(sign_name)}".strip()
         still = f"{tmp_prefix}_presenter.jpg"
         p_intro = _fetch_presenter(presenter_jobs, tmp_prefix, "intro",
-                                   label, tr_date(), accent, top=True,
+                                   label, tr_date() if _SHOW_DATE else "",
+                                   accent, top=True,
                                    hook=tr_upper(content.get("hook_text")
                                                  or "").strip(),
                                    still_path=still)

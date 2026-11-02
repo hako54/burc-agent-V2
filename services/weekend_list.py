@@ -139,7 +139,7 @@ def produce(topic: str = None, publish: bool = True) -> dict:
 
     cover = make_daily_cover(
         content.get("presenter_frame") or "", tr_upper(content["title"]),
-        tr_date(), "  ".join(s["symbol"] for s in content["signs"]),
+        "", "  ".join(s["symbol"] for s in content["signs"]),
         content["accent_color"], out.replace(".mp4", "_cover.jpg"),
         label="HAFTA SONU ÖZEL")
 
