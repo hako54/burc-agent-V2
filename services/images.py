@@ -199,3 +199,43 @@ def create_fallback_image(w: int, h: int, accent_hex: str,
             fill=(ra, ga, ba),
         )
     return img
+
+
+def fetch_video_file(query: str, dst: str, used: set = None) -> str:
+    """Pexels'ten dikey, en fazla 1080p bir stok video indirir. used:
+    aynı videonun bir videoda iki kez kullanılmaması için id kümesi."""
+    api_key = os.environ.get("PEXELS_API_KEY")
+    if not api_key:
+        return ""
+    try:
+        r = requests.get(
+            "https://api.pexels.com/videos/search",
+            headers={"Authorization": api_key},
+            params={"query": query, "per_page": 10,
+                    "orientation": "portrait", "size": "medium"},
+            timeout=20)
+        if r.status_code != 200:
+            return ""
+        for v in r.json().get("videos", []):
+            if used is not None and v.get("id") in used:
+                continue
+            if v.get("duration", 0) < 4:
+                continue
+            files = [f for f in v.get("video_files", [])
+                     if f.get("file_type") == "video/mp4"
+                     and (f.get("height") or 0) >= (f.get("width") or 0)
+                     and (f.get("height") or 0) <= 1920]
+            if not files:
+                continue
+            best = max(files, key=lambda f: f.get("height") or 0)
+            with requests.get(best["link"], stream=True, timeout=60) as d:
+                d.raise_for_status()
+                with open(dst, "wb") as fh:
+                    for chunk in d.iter_content(1 << 16):
+                        fh.write(chunk)
+            if used is not None:
+                used.add(v.get("id"))
+            return dst
+    except Exception as e:
+        log.warning(f"Pexels video hata ({query[:30]}): {e}")
+    return ""

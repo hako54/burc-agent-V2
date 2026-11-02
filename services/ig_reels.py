@@ -303,11 +303,12 @@ def _pill(base: Image.Image, label: str, size: int, y: int, ac) -> None:
 
 
 def make_daily_cover(frame_path: str, title: str, date_text: str,
-                     symbols: str, accent_hex: str, dst: str) -> str:
+                     symbols: str, accent_hex: str, dst: str,
+                     label: str = "GÜNLÜK BURÇ YORUMU") -> str:
     """Dikey Reels kapağı: astrolog + günün başlığı + burç sembolleri."""
     ac = _hex_to_rgb(accent_hex or "#d4af37")
     base = _cover_base(frame_path, accent_hex)
-    _pill(base, "GÜNLÜK BURÇ YORUMU", 46, 120, ac)
+    _pill(base, label, 46, 120, ac)
     base.alpha_composite(_text_block(title, 112, W - 120,
                                      (255, 250, 235, 255), int(H * 0.66)))
     base.alpha_composite(_text_block(symbols, 84, W - 120, ac + (255,),
