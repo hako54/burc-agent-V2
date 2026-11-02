@@ -81,6 +81,19 @@ def _queue_instagram(channel_id: str, topic_key: str, video_path: str,
         from services import instagram
         if not instagram.channel_enabled(channel_id):
             return
+        # Hafta sonu Instagram'a günlük burç gitmez (yerine burç listesi)
+        if content.get("sign_name") and os.environ.get(
+                "IG_BURC_WEEKEND", "0") not in ("1", "true"):
+            from services.tr_locale import now_local
+            when = now_local()
+            if publish_after:
+                try:
+                    when = datetime.fromisoformat(publish_after)
+                except Exception:
+                    pass
+            if when.weekday() >= 5:
+                log.info(f"📸 Hafta sonu: {topic_key} Instagram'a gönderilmedi")
+                return
         caption = instagram.build_caption(
             title, content.get("description", ""),
             content.get("hashtags", []), youtube_url=youtube_url)

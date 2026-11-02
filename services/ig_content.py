@@ -52,6 +52,60 @@ Klişe ve tekrar yok. Bugün: {tr_date()}.
 }}"""
 
 
+LIST_TOPICS = [
+    "En kıskanç 3 burç", "Bu hafta en şanslı 3 burç",
+    "Aşkta ilk adımı atan 3 burç", "Sırrını asla söylemeyen 3 burç",
+    "En inatçı 3 burç", "En romantik 3 burç", "Parayı en iyi yöneten 3 burç",
+    "Eski sevgilisine dönen 3 burç", "En sadık 3 burç",
+    "Kalbini en zor açan 3 burç", "En iyi arkadaş olan 3 burç",
+    "Affetmesi en zor 3 burç", "En çok alınganlık yapan 3 burç",
+    "Sezgileri en güçlü 3 burç", "En çekici 3 burç",
+    "Sözünü en iyi tutan 3 burç", "En dramatik 3 burç",
+    "Yalnızlığı en çok seven 3 burç", "En cömert 3 burç",
+    "Son dakikacı 3 burç", "İlk görüşte aşık olan 3 burç",
+    "Kıskandığını belli etmeyen 3 burç", "En iyi tavsiye veren 3 burç",
+    "Bu ay aşkta şansı açık 3 burç", "En maceracı 3 burç",
+    "Duygularını en iyi saklayan 3 burç", "En komik 3 burç",
+    "Lider ruhlu 3 burç", "Çok düşünen 3 burç", "En şefkatli 3 burç",
+]
+
+
+def _list_topic() -> str:
+    """Konuları sırayla dolaştırır; son 20 konu tekrar edilmez."""
+    import json
+    f = Path(os.environ.get("DATA_DIR", "data")) / "ig_list_topics.json"
+    try:
+        used = json.loads(f.read_text(encoding="utf-8"))
+    except Exception:
+        used = []
+    fresh = [t for t in LIST_TOPICS if t not in used[-20:]] or LIST_TOPICS
+    topic = random.choice(fresh)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps((used + [topic])[-40:], ensure_ascii=False),
+                 encoding="utf-8")
+    return topic
+
+
+def _list_prompt(topic: str) -> str:
+    return f"""Instagram Reels için eğlenceli BURÇ LİSTESİ yaz. Konu: "{topic}".
+Ekranda müzik eşliğinde tek tek belirecek 4 satır:
+- 1., 2. ve 3. satır: "1. Akrep ♏ — kısa, esprili ve yerinde gerekçe" biçiminde
+  (burç adı + sembolü + en fazla 7 kelimelik gerekçe). Burçlar farklı olsun,
+  gerçekten o özelliğiyle bilinen burçları seç.
+- 4. satır: merak uyandıran kapanış ("Senin burcun listede mi? 👀" gibi).
+Sıcak, eğlenceli, kimseyi kırmayan bir dil. Bugün: {tr_date()}.
+
+{_COMMON_RULES}
+{{
+  "title": "{topic} (emoji ile, NORMAL yazımla)",
+  "lines": ["4 satır"],
+  "caption": "Instagram açıklaması (2-3 cümle; 'Burcunu yorumlara yaz, arkadaşını etiketle' gibi bir çağrı)",
+  "hashtags": ["#burç", "... toplam 12-18 etiket, listedeki burçların etiketleri dahil"],
+  "visual_queries": ["İngilizce 3 görsel arama sorgusu (ör. 'zodiac stars night', 'mystical purple sky')"],
+  "accent_color": "#hex (konuya uygun parlak renk)"
+}}"""
+
+
 def universal_day_number(d: date) -> int:
     """Numerolojide evrensel gün sayısı (11/22 usta sayıları korunur)."""
     n = sum(int(c) for c in d.strftime("%Y%m%d"))
@@ -118,6 +172,9 @@ def generate(kind: str, theme: str = None, event: dict = None) -> dict:
                 raise RuntimeError("Yakında gök olayı yok")
         theme = event["title"]
         prompt = _event_prompt(event)
+    elif kind == "liste":
+        theme = theme or _list_topic()
+        prompt = _list_prompt(theme)
     elif kind == "numeroloji":
         prompt = _numerology_prompt(universal_day_number(now_local().date()))
     else:
@@ -151,7 +208,8 @@ def produce(kind: str, theme: str = None, publish_now: bool = True,
         out,
         accent_hex=data.get("accent_color") or "#d4af37",
         outro={"manifest": "Kaydet 🔖 Her sabah tekrar et ✨",
-               "gokolayi": "Burcunu yorumlara yaz 💬 Kaydet 🔖"}.get(
+               "gokolayi": "Burcunu yorumlara yaz 💬 Kaydet 🔖",
+               "liste": "Burcunu yorumlara yaz 👇 Arkadaşını etiketle"}.get(
                    kind, "Doğum tarihini yorumlara yaz 💬"),
         music_hint="bolluk" if kind == "manifest" else "gece",
     )

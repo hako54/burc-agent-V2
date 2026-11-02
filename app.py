@@ -851,8 +851,8 @@ def instagram_produce(kind):
     """Instagram'a özel Reels üretip hemen paylaşır (manifest/numeroloji).
     Gövde: {"theme": "bolluk ve bereket"} (opsiyonel)."""
     from services import instagram, ig_content
-    if kind not in ("manifest", "numeroloji", "gokolayi"):
-        return jsonify({"error": "kind: manifest | numeroloji | gokolayi"}), 400
+    if kind not in ("manifest", "numeroloji", "gokolayi", "liste"):
+        return jsonify({"error": "kind: manifest | numeroloji | gokolayi | liste"}), 400
     if not instagram.enabled():
         return jsonify({"error": "Instagram bağlı değil"}), 400
     theme = (request.get_json(silent=True) or {}).get("theme")

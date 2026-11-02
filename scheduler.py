@@ -332,6 +332,22 @@ def start_scheduler():
     except Exception as e:
         log.warning(f"Gök olayı zamanlaması kurulamadı: {e}")
 
+    # Hafta sonu: günlük burç yerine eğlenceli burç listesi Reels'i
+    try:
+        lh, lm = map(int, os.environ.get("IG_WEEKEND_LIST_TIME",
+                                         "10:30").split(":"))
+        scheduler.add_job(
+            ig_content.scheduled_job,
+            CronTrigger(day_of_week="sat,sun", hour=lh, minute=lm,
+                        timezone=tz),
+            args=["liste"], id="ig_weekend_list",
+            name="Instagram hafta sonu burç listesi",
+            misfire_grace_time=1800, replace_existing=True,
+        )
+        log.info(f"📅 Instagram hafta sonu listesi @ {lh:02d}:{lm:02d}")
+    except Exception as e:
+        log.warning(f"Hafta sonu listesi zamanlanamadı: {e}")
+
     for kind, hhmm in ig_content.schedule():
         try:
             h, m = map(int, hhmm.split(":"))
