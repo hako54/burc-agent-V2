@@ -1071,8 +1071,9 @@ def render_video(content: dict, output_path: str,
         direction = dirs[i % len(dirs)]
         # Burç: burç adı her bölümde üstte kalır (Shorts küçük resmi
         # videodan rastgele bir kare olduğundan her karede burç okunur)
-        show_hdr = (i == 0) or bool(content.get("sign_name"))
-        seg_header = sign_name
+        show_hdr = ((i == 0) or bool(content.get("sign_name"))
+                    or bool(content.get("segment_header")))
+        seg_header = content.get("segment_header") or sign_name
         if content.get("sign_name"):
             seg_header = f"{sign_symbol} {tr_upper(sign_name)}".strip()
         sd = seg_durations[i]
@@ -1082,13 +1083,30 @@ def render_video(content: dict, output_path: str,
             section_label = ""
         is_last = (i == len(segments) - 1)
 
+        # Hareketli arka plan (stok video) varsa görsel yerine o kullanılır
+        broll = None
+        bpaths = content.get("segment_videos") or []
+        if i < len(bpaths) and bpaths[i]:
+            try:
+                broll = VideoFileClip(bpaths[i], audio=False)
+            except Exception as e:
+                log.warning(f"Stok video açılamadı ({bpaths[i]}): {e}")
+
         def make_frame(t, _img=img_src, _txt=narration_text, _sd=sd,
                        _zi=zoom_in, _dir=direction, _i=i, _sh=show_hdr,
                        _sec=section_label, _last=is_last,
                        _card=lucky_card, _ln=lucky_num,
-                       _lc=lucky_col, _cp=compat):
-            img = Image.fromarray(
-                _ken_burns(_img, t, _sd, _zi, _dir)).convert("RGBA")
+                       _lc=lucky_col, _cp=compat, _br=broll):
+            if _br is not None:
+                fr = _fit_cover(_br.get_frame(t % max(_br.duration - 0.05,
+                                                      0.1)))
+                # Yazı okunsun diye hafif karart
+                img = Image.fromarray(
+                    (fr.astype(np.float32) * 0.62).astype(np.uint8)
+                ).convert("RGBA")
+            else:
+                img = Image.fromarray(
+                    _ken_burns(_img, t, _sd, _zi, _dir)).convert("RGBA")
             _apply_text_overlay(
                 img, t, _txt, _sd, accent,
                 sign_name=seg_header if _sh else "",

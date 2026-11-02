@@ -229,7 +229,7 @@ def produce(kind: str, theme: str = None, publish_now: bool = True,
     return {"video": out, "queue_id": item["id"], **data}
 
 
-def _upload_youtube(video: str, data: dict) -> str:
+def _upload_youtube(video: str, data: dict, thumbnail_path: str = None) -> str:
     """Burç listesi videosunu burç YouTube kanalına Short olarak yükler.
     Hata olursa Instagram paylaşımı etkilenmez."""
     if os.environ.get("LIST_YOUTUBE", "1") in ("0", "false"):
@@ -241,7 +241,7 @@ def _upload_youtube(video: str, data: dict) -> str:
                 + " ".join(data.get("hashtags", [])[:15]) + " #Shorts")
         res = upload_video(video_path=video, title=out_title(data),
                            description=desc, tags=tags, privacy="public",
-                           channel_id="burc")
+                           channel_id="burc", thumbnail_path=thumbnail_path)
         return res.get("url", "")
     except Exception as e:
         log.warning(f"Burç listesi YouTube'a yüklenemedi: {e}")
@@ -300,6 +300,22 @@ def scheduled_job(kind: str) -> None:
     from services import instagram
     if not instagram.enabled():
         return
+    if kind == "liste" and os.environ.get("LIST_PRESENTER", "1") not in (
+            "0", "false"):
+        # Astrologlu, stok videolu liste; olmazsa yazılı Reels'e düş
+        try:
+            from services import weekend_list
+            weekend_list.produce()
+            return
+        except Exception as e:
+            log.exception("Astrologlu burç listesi başarısız, yazılı "
+                          "Reels'e geçiliyor")
+            try:
+                from telegram_bot import send as tg_send
+                tg_send(f"⚠️ Astrologlu burç listesi üretilemedi, yazılı "
+                        f"liste gönderiliyor: {str(e)[:200]}")
+            except Exception:
+                pass
     try:
         produce(kind)
     except Exception as e:
