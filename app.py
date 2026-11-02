@@ -834,6 +834,17 @@ def instagram_status():
     return jsonify(info)
 
 
+@app.route("/api/instagram/stats")
+def instagram_stats():
+    """Son gönderilerin beğeni/yorum/izlenme istatistikleri."""
+    from services import instagram
+    try:
+        return jsonify(instagram.media_stats(
+            int(request.args.get("limit", 100))))
+    except Exception as e:
+        return jsonify({"error": str(e)[:300]}), 500
+
+
 @app.route("/api/instagram/produce/<kind>", methods=["POST"])
 def instagram_produce(kind):
     """Instagram'a özel Reels üretip hemen paylaşır (manifest/numeroloji).
