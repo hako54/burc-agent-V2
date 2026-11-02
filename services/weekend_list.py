@@ -21,6 +21,13 @@ log = logging.getLogger(__name__)
 
 OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", "output"))
 # Sabit kapanış: HeyGen klibi bir kez üretilip önbellekten kullanılır
+# Her burcun sembolünü gösteren stok video aramaları (İngilizce)
+SIGN_VISUALS = {
+    "koc": "ram mountain", "boga": "bull field", "ikizler": "twins sisters",
+    "yengec": "crab beach", "aslan": "lion", "basak": "wheat field woman",
+    "terazi": "balance scales", "akrep": "scorpion", "yay": "archer bow arrow",
+    "oglak": "mountain goat", "kova": "water pouring", "balik": "fish underwater",
+}
 OUTRO_LINE = ("Senin burcun listede mi? Yorumlara yaz, arkadaşını etiketle "
               "ve takipte kal!")
 
@@ -85,10 +92,14 @@ def build_content(topic: str) -> dict:
         segments.append({"section": "liste",
                          "text": f"{n}. {sign['name']} {sign['symbol']}",
                          "narration": reason})
-        q = it.get("video_query") or f"{sign['name']} zodiac"
-        queries.append(q)
-        videos.append(fetch_video_file(
-            q, str(OUTPUT_DIR / f"liste_{stamp}_b{n}.mp4"), used))
+        # Önce burcun sembolü (Boğa → boğa), olmazsa LLM'in önerdiği sahne
+        dst = str(OUTPUT_DIR / f"liste_{stamp}_b{n}.mp4")
+        path = ""
+        for q in (SIGN_VISUALS.get(key), it.get("video_query")):
+            if q and not path:
+                queries.append(q)
+                path = fetch_video_file(q, dst, used)
+        videos.append(path)
 
     content = {
         "title": title, "hook_text": title, "intro_text": hook,

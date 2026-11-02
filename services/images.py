@@ -5,6 +5,7 @@ Pixabay ve Pexels API'lerinden konuya uygun, dikey (9:16) görseller çeker.
 
 import io
 import os
+import random
 import logging
 import requests
 from PIL import Image, ImageEnhance
@@ -216,7 +217,9 @@ def fetch_video_file(query: str, dst: str, used: set = None) -> str:
             timeout=20)
         if r.status_code != 200:
             return ""
-        for v in r.json().get("videos", []):
+        found = r.json().get("videos", [])
+        random.shuffle(found)  # her seferinde farklı video
+        for v in found:
             if used is not None and v.get("id") in used:
                 continue
             if v.get("duration", 0) < 4:
