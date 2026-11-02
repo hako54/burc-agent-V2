@@ -76,6 +76,12 @@ def main():
     force = "--force" in sys.argv
     check_only = "--check" in sys.argv
     from zodiac import get_todays_group, get_sign
+    from services.tr_locale import now_local
+    if now_local().weekday() >= 5 and not force:
+        log.info("Hafta sonu: günlük burç yok, yedek üretime gerek yok")
+        if check_only:
+            _set_output(False)
+        return 0
     group = get_todays_group()
     names = [get_sign(k)["name"] for k in group]
     log.info(f"Bugünün burçları: {', '.join(names)}")
