@@ -375,6 +375,11 @@ def _channel_zodiac_job(channel_id: str):
     import channel_registry
     log.info("=" * 60)
     today = datetime.now(pytz.timezone(TIMEZONE))
+    # Hafta sonu günlük burç yok (yerine burç listesi videosu)
+    if (today.weekday() >= 5
+            and os.environ.get("BURC_WEEKEND", "0") not in ("1", "true")):
+        log.info(f"🔮 Hafta sonu: {channel_id} günlük burç üretilmedi")
+        return
     group = get_todays_group()
     day_type = group_label(today)
 

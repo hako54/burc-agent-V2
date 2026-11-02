@@ -221,10 +221,40 @@ def produce(kind: str, theme: str = None, publish_now: bool = True,
         "\n".join(data["lines"][:1]) if kind == "manifest"
         else data.get("title", ""),
         data.get("caption", ""), data.get("hashtags", []))
+    if kind == "liste":
+        data["youtube_url"] = _upload_youtube(out, data)
     item = instagram.enqueue("ig", kind, out, caption)
     if publish_now:
         instagram.process_queue()
     return {"video": out, "queue_id": item["id"], **data}
+
+
+def _upload_youtube(video: str, data: dict) -> str:
+    """Burç listesi videosunu burç YouTube kanalına Short olarak yükler.
+    Hata olursa Instagram paylaşımı etkilenmez."""
+    if os.environ.get("LIST_YOUTUBE", "1") in ("0", "false"):
+        return ""
+    try:
+        from services.youtube import upload_video
+        tags = [t.lstrip("#") for t in data.get("hashtags", [])][:15]
+        desc = (data.get("caption", "").strip() + "\n\n"
+                + " ".join(data.get("hashtags", [])[:15]) + " #Shorts")
+        res = upload_video(video_path=video, title=out_title(data),
+                           description=desc, tags=tags, privacy="public",
+                           channel_id="burc")
+        return res.get("url", "")
+    except Exception as e:
+        log.warning(f"Burç listesi YouTube'a yüklenemedi: {e}")
+        try:
+            from telegram_bot import send as tg_send
+            tg_send(f"⚠️ Burç listesi YouTube'a yüklenemedi: {str(e)[:200]}")
+        except Exception:
+            pass
+        return ""
+
+
+def out_title(data: dict) -> str:
+    return (data.get("title") or "Burç listesi")[:90] + " #Shorts"
 
 
 def schedule() -> list:
