@@ -840,7 +840,8 @@ def instagram_stats():
     from services import instagram
     try:
         return jsonify(instagram.media_stats(
-            int(request.args.get("limit", 100))))
+            int(request.args.get("limit", 100)),
+            int(request.args.get("offset", 0))))
     except Exception as e:
         return jsonify({"error": str(e)[:300]}), 500
 
