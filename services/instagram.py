@@ -158,6 +158,39 @@ def _api(method: str, path: str, **params) -> dict:
     return data
 
 
+def media_stats(limit: int = 100) -> dict:
+    """Son gönderilerin istatistikleri: beğeni/yorum (her zaman) ve
+    izlenme/erişim/kaydetme/paylaşım (insights izni varsa)."""
+    uid = str(account_info().get("user_id"))
+    fields = ("id,caption,media_type,media_product_type,timestamp,"
+              "like_count,comments_count,permalink")
+    rows, after = [], None
+    while len(rows) < limit:
+        params = {"fields": fields, "limit": 50}
+        if after:
+            params["after"] = after
+        page = _api("GET", f"{uid}/media", **params)
+        rows += page.get("data", [])
+        after = page.get("paging", {}).get("cursors", {}).get("after")
+        if not after or not page.get("paging", {}).get("next"):
+            break
+    rows = rows[:limit]
+    insights_error = None
+    for m in rows:
+        m["caption"] = (m.get("caption") or "").split("\n")[0][:80]
+        if insights_error:
+            continue
+        try:
+            data = _api("GET", f"{m['id']}/insights",
+                        metric="views,reach,saved,shares").get("data", [])
+            for d in data:
+                m[d["name"]] = (d.get("values") or [{}])[0].get("value",
+                                                                d.get("total_value", {}).get("value"))
+        except Exception as e:
+            insights_error = str(e)[:300]
+    return {"media": rows, "insights_error": insights_error}
+
+
 def send_private_reply(user_id: str, comment_id: str, text: str) -> dict:
     """Yorum yapan kişiye DM (Instagram Private Replies). Yorum başına bir
     kez ve yorumdan sonraki 7 gün içinde gönderilebilir. Takipçilere
