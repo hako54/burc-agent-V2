@@ -201,7 +201,7 @@ def _text_layers(text: str, accent_hex: str, sign_name: str,
         sf = _get_font(40)
         sw = text_width(draw, section_label, sf)
         sx2 = (W - sw) // 2
-        sy2 = 260
+        sy2 = 300
         draw.rounded_rectangle(
             [sx2 - 28, sy2 - 12, sx2 + sw + 28, sy2 + 56],
             radius=30, fill=(0, 0, 0, 180),
@@ -227,7 +227,7 @@ def _text_layers(text: str, accent_hex: str, sign_name: str,
         else:
             header_lines = [sign_name]
 
-        ty2 = 80
+        ty2 = 130  # Shorts ızgarası üstü kırpıyor
         line_h2 = int(tf_size * 1.15)
         # Okunaklılık için koyu, burç renginde çerçeveli şerit
         bw2 = max(text_width(draw, ln, tf) for ln in header_lines)
