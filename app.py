@@ -940,6 +940,13 @@ def music_library():
     return jsonify({"tracks": [f.name for f in music_lib.tracks()]})
 
 
+@app.route("/api/music/telegram", methods=["POST"])
+def music_to_telegram():
+    """Kütüphanedeki parçaları Telegram'a gönderir."""
+    from services import music_lib
+    return jsonify({"sent": music_lib.send_to_telegram()})
+
+
 @app.route("/api/music/<name>")
 def music_file(name):
     """Kütüphanedeki bir parçayı indirir (dinleyip kontrol için)."""
