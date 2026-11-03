@@ -940,11 +940,31 @@ def music_library():
     return jsonify({"tracks": [f.name for f in music_lib.tracks()]})
 
 
+@app.route("/api/music/replace/<name>", methods=["POST"])
+def music_replace(name):
+    """Bir parçayı çıkarıp yerine yenisini üretir (arka planda)."""
+    from services import music_lib
+    if "/" in name or not name.endswith(".mp3"):
+        abort(400)
+    threading.Thread(target=music_lib.replace, args=(name,),
+                     daemon=True).start()
+    return jsonify({"status": "running"})
+
+
+@app.route("/api/music/starts")
+def music_starts():
+    """Her parçanın videoda başlatılacağı saniye (giriş atlanır)."""
+    from services import music_lib
+    return jsonify({f.name: music_lib.best_start(str(f))
+                    for f in music_lib.tracks()})
+
+
 @app.route("/api/music/telegram", methods=["POST"])
 def music_to_telegram():
     """Kütüphanedeki parçaları Telegram'a gönderir."""
     from services import music_lib
-    return jsonify({"sent": music_lib.send_to_telegram()})
+    return jsonify({"sent": music_lib.send_to_telegram(
+        request.args.get("name", ""))})
 
 
 @app.route("/api/music/<name>")
