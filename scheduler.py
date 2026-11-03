@@ -332,6 +332,18 @@ def start_scheduler():
     except Exception as e:
         log.warning(f"Gök olayı zamanlaması kurulamadı: {e}")
 
+    # Fon müziği kütüphanesi: her ayın 1'inde 6 yeni ElevenLabs parçası
+    try:
+        from services import music_lib
+        scheduler.add_job(
+            music_lib.monthly_job,
+            CronTrigger(day=1, hour=4, minute=40, timezone=tz),
+            id="music_monthly", name="Aylık müzik üretimi",
+            misfire_grace_time=6 * 3600, replace_existing=True,
+        )
+    except Exception as e:
+        log.warning(f"Aylık müzik zamanlanamadı: {e}")
+
     # Hafta sonu: günlük burç yerine eğlenceli burç listesi Reels'i
     try:
         lh, lm = map(int, os.environ.get("IG_WEEKEND_LIST_TIME",

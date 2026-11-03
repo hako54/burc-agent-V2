@@ -31,6 +31,11 @@ OUTRO_DUR = 2.8
 
 
 def pick_music(prefer: str = "") -> str:
+    # Önce ElevenLabs kütüphanesi (karışık sırayla), yoksa eski parçalar
+    from services import music_lib
+    lib = music_lib.pick()
+    if lib:
+        return lib
     files = sorted(MUSIC_DIR.glob("*.mp3"))
     if not files:
         return ""
