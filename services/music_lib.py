@@ -144,3 +144,24 @@ def monthly_job() -> None:
         log.info("🎵 Müzik kütüphanesi tamam, yeni parça üretilmiyor")
         return
     generate_batch()
+
+
+def send_to_telegram() -> int:
+    """Kütüphanedeki parçaları dinlemek için Telegram'a ses olarak gönderir."""
+    from telegram_bot import _bot_token, _allowed_chat
+    sent = 0
+    for i, f in enumerate(tracks(), 1):
+        idx = int(f.stem.split("_")[-1]) if f.stem.split("_")[-1].isdigit() else 0
+        desc = PROMPTS[idx - 1] if 0 < idx <= len(PROMPTS) else ""
+        with open(f, "rb") as fh:
+            r = requests.post(
+                f"https://api.telegram.org/bot{_bot_token()}/sendAudio",
+                data={"chat_id": _allowed_chat(), "title": f"Parça {i}",
+                      "performer": "Fon müziği",
+                      "caption": f"🎵 Parça {i} ({f.name})\n{desc}"},
+                files={"audio": (f.name, fh, "audio/mpeg")}, timeout=120)
+        if r.ok:
+            sent += 1
+        else:
+            log.warning(f"Telegram sendAudio {r.status_code}: {r.text[:200]}")
+    return sent
