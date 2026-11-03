@@ -4,8 +4,9 @@ Fon müziği kütüphanesi (ElevenLabs Music)
 Instagram yazılı Reels'lerinin (manifest, numeroloji, gök olayı…) fon
 müziği. Parçalar ElevenLabs'te BİR KEZ üretilip volume'e (DATA_DIR/music)
 kaydedilir ve sonra karışık sırayla tekrar tekrar kullanılır; her video
-için yeniden üretilmez. Her ayın 1'inde 6 yeni parça eklenir
-(MUSIC_MONTHLY=0 ile kapatılır).
+için yeniden üretilmez. İlk 6 parça elle, ikinci 6 parça ayın 1'inde
+üretilir; kütüphane 12 parçaya (MUSIC_MAX_TRACKS) ulaşınca yeni üretim
+durur ve parçalar döngüyle kullanılır.
 
 Kütüphane boşsa eski sentez parçalara (igmusic/) düşülür.
 """
@@ -135,6 +136,11 @@ def generate_batch(n: int = BATCH) -> dict:
 
 
 def monthly_job() -> None:
+    """Ayda 6 parça; kütüphane MUSIC_MAX_TRACKS'e (12 = iki ay) ulaşınca
+    yeni üretim durur, mevcut parçalar döngüyle kullanılır."""
     if os.environ.get("MUSIC_MONTHLY", "1") in ("0", "false"):
+        return
+    if len(tracks()) >= int(os.environ.get("MUSIC_MAX_TRACKS", "12")):
+        log.info("🎵 Müzik kütüphanesi tamam, yeni parça üretilmiyor")
         return
     generate_batch()
