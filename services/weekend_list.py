@@ -143,24 +143,61 @@ def produce(topic: str = None, publish: bool = True) -> dict:
         content["accent_color"], out.replace(".mp4", "_cover.jpg"),
         label="HAFTA SONU ÖZEL")
 
+    data = {"title": content["title"], "caption": content["caption"],
+            "hashtags": content["hashtags"], "topic": topic}
     if not publish:
+        # Önizleme volume'e kaydedilir: yeniden başlatmada silinmez ve
+        # beğenilirse aynen yayınlanabilir (publish_preview)
+        import json
+        import shutil
+        pdir = _preview_dir()
+        pdir.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(out, pdir / "preview.mp4")
+        shutil.copyfile(cover, pdir / "preview_cover.jpg")
+        (pdir / "preview.json").write_text(
+            json.dumps(data, ensure_ascii=False), encoding="utf-8")
         try:
             from telegram_bot import send_video
             send_video(out, f"👀 Önizleme (yayınlanmadı): {content['title']}")
         except Exception as e:
             log.warning(f"Önizleme Telegram'a gönderilemedi: {e}")
         log.info(f"👀 Hafta sonu listesi önizleme: {out}")
-        return {"video": out, "cover": out.replace(".mp4", "_cover.jpg"),
-                "topic": topic, "title": content["title"]}
+        return {"video": out, "cover": cover, "topic": topic,
+                "title": content["title"]}
+    return _publish(out, cover, data)
 
-    data = {"title": content["title"], "caption": content["caption"],
-            "hashtags": content["hashtags"]}
+
+def _preview_dir() -> Path:
+    return Path(os.environ.get("DATA_DIR", "data")) / "weekend_preview"
+
+
+def publish_preview() -> dict:
+    """Son kaydedilen önizlemeyi aynen YouTube + Instagram'da yayınlar."""
+    import json
+    import shutil
+    pdir = _preview_dir()
+    data = json.loads((pdir / "preview.json").read_text(encoding="utf-8"))
+    stamp = now_local().strftime("%Y%m%d_%H%M%S")
+    out = str(OUTPUT_DIR / f"burc_liste_{stamp}.mp4")
+    cover = out.replace(".mp4", "_cover.jpg")
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(pdir / "preview.mp4", out)
+    shutil.copyfile(pdir / "preview_cover.jpg", cover)
+    res = _publish(out, cover, data)
+    (pdir / "preview.json").rename(pdir / f"published_{stamp}.json")
+    return res
+
+
+def _publish(out: str, cover: str, data: dict) -> dict:
+    from services import instagram
+    from services.ig_content import _upload_youtube
     yt_url = _upload_youtube(out, data, thumbnail_path=cover)
     caption = instagram.build_caption(
-        content["title"], content["caption"], content["hashtags"],
+        data["title"], data["caption"], data["hashtags"],
         youtube_url=yt_url or None)
     item = instagram.enqueue("ig", "liste", out, caption, cover_path=cover)
     instagram.process_queue()
-    log.info(f"🔮 Hafta sonu listesi hazır: {topic} | YouTube: {yt_url}")
-    return {"video": out, "topic": topic, "youtube_url": yt_url,
+    log.info(f"🔮 Hafta sonu listesi yayında: {data.get('topic')} | "
+             f"YouTube: {yt_url}")
+    return {"video": out, "topic": data.get("topic"), "youtube_url": yt_url,
             "queue_id": item["id"]}

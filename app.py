@@ -982,6 +982,29 @@ def music_file(name):
 _list_preview = {}
 
 
+@app.route("/api/weekend-list/publish", methods=["POST"])
+def weekend_list_publish():
+    """Hafta sonu liste videosunu yayınlar (YouTube + Instagram).
+    {"preview": true}: son önizlemeyi aynen yayınlar; yoksa {"topic": ..}
+    ile yeni üretip yayınlar. Arka planda çalışır."""
+    from services import weekend_list
+    body = request.get_json(silent=True) or {}
+
+    def run():
+        _list_preview.clear()
+        _list_preview["status"] = "publishing"
+        try:
+            res = (weekend_list.publish_preview() if body.get("preview")
+                   else weekend_list.produce(topic=body.get("topic") or None))
+            _list_preview.update(res, status="published")
+        except Exception as e:
+            log.exception("Liste yayınlama hatası")
+            _list_preview.update(status="error", error=str(e)[:300])
+
+    threading.Thread(target=run, daemon=True).start()
+    return jsonify({"status": "publishing"})
+
+
 @app.route("/api/weekend-list/preview", methods=["GET", "POST"])
 def weekend_list_preview():
     """POST: hafta sonu liste videosunun önizlemesini arka planda üretir
