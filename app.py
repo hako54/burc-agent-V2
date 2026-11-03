@@ -940,6 +940,15 @@ def music_library():
     return jsonify({"tracks": [f.name for f in music_lib.tracks()]})
 
 
+@app.route("/api/music/<name>")
+def music_file(name):
+    """Kütüphanedeki bir parçayı indirir (dinleyip kontrol için)."""
+    from services import music_lib
+    if "/" in name or not name.endswith(".mp3"):
+        abort(400)
+    return send_from_directory(music_lib.music_dir(), name)
+
+
 _list_preview = {}
 
 
