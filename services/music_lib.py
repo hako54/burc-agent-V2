@@ -30,24 +30,26 @@ _BASE = ("Soft, warm, calm instrumental background music for a short "
          "no drums, no vocals, slow tempo. Starts right away with the full "
          "arrangement (no long intro), smooth fade out at the end. ")
 PROMPTS = [
+    # 1-6: ilk kütüphane (beğenildi)
     "Warm felt piano with soft string pad, dreamy and hopeful.",
     "Deep mystical ambient pad with slow cello drones, night sky mood.",
     "Gentle harp arpeggios over a soft warm synth pad, magical and serene.",
     "Lo-fi mellow electric piano with tape warmth, cozy and peaceful.",
     "Soft acoustic guitar fingerpicking with warm ambient pad, calm sunrise.",
     "Slow cinematic strings and low piano, emotional and uplifting.",
-    "Tibetan singing bowl tones blended with warm low pad, meditative.",
-    "Soft music box melody muffled and warm over gentle pad, nostalgic.",
-    "Warm Rhodes piano chords with subtle vinyl texture, relaxed evening.",
-    "Ethereal choir-like pad without words, low and soft, cosmic calm.",
-    "Gentle flute melody over warm drone, mystical desert night.",
-    "Soft ambient piano with distant reverb, rain at night, introspective.",
-    "Low warm marimba patterns with soft pad, light and positive.",
-    "Slow orchestral swell with soft horns and strings, hopeful dawn.",
-    "Warm analog synth pad with slow evolving texture, deep space calm.",
-    "Gentle kalimba notes softened with warm pad, peaceful and sweet.",
-    "Soft nylon guitar and cello duet, intimate and romantic.",
-    "Mellow jazz piano ballad, brushed and quiet, late night calm.",
+    # Sonrakiler: beğenilenlere yakın piyano / gitar / yaylı tarzları
+    "Warm Rhodes piano chords with soft strings, relaxed and hopeful evening.",
+    "Soft nylon guitar and cello duet, intimate, warm and romantic.",
+    "Gentle grand piano melody with warm string pad, peaceful and positive.",
+    "Lo-fi warm piano with soft bass and light vinyl texture, cozy morning.",
+    "Slow cinematic piano and strings, hopeful and inspiring, warm tone.",
+    "Acoustic guitar and soft piano together, calm and heartfelt.",
+    "Warm harp and piano duet with soft pad, dreamy and magical.",
+    "Mellow electric piano with gentle cello, calm night, soothing.",
+    "Soft orchestral strings with low warm piano, serene and hopeful.",
+    "Fingerpicked acoustic guitar with warm cello, peaceful afternoon.",
+    "Slow warm piano ballad with soft synth pad, emotional and gentle.",
+    "Lo-fi mellow guitar and Rhodes piano, cozy and relaxed.",
 ]
 
 
@@ -106,17 +108,28 @@ def _compose(prompt: str, dst: Path) -> None:
     dst.write_bytes(r.content)
 
 
-def generate_batch(n: int = BATCH) -> dict:
-    """Henüz kullanılmamış n prompt'la yeni parça üretir."""
+def generate_batch(n: int = BATCH, names: list = None) -> dict:
+    """Henüz kullanılmamış n prompt'la yeni parça üretir. names verilirse
+    parçalar bu dosya adlarıyla kaydedilir (değiştirilen parça adını
+    korur)."""
     st = _load()
     todo = [p for p in PROMPTS if p not in st["used_prompts"]][:n]
     made, errors = [], []
-    for p in todo:
+    existing = {f.name for f in tracks()}
+    for k, p in enumerate(todo):
         idx = PROMPTS.index(p) + 1
-        dst = music_dir() / f"el_{idx:02d}.mp3"
+        name = (names[k] if names and k < len(names) else None)
+        if not name:
+            num = idx
+            while f"el_{num:02d}.mp3" in existing:
+                num += 1
+            name = f"el_{num:02d}.mp3"
+        existing.add(name)
+        dst = music_dir() / name
         try:
             _compose(p, dst)
             st["used_prompts"].append(p)
+            st.setdefault("prompts", {})[dst.name] = p
             _save(st)
             made.append(dst.name)
             log.info(f"🎵 Müzik üretildi: {dst.name}")
@@ -155,8 +168,7 @@ def send_to_telegram(only: str = "") -> int:
     for i, f in enumerate(tracks(), 1):
         if only and f.name != only:
             continue
-        idx = int(f.stem.split("_")[-1]) if f.stem.split("_")[-1].isdigit() else 0
-        desc = PROMPTS[idx - 1] if 0 < idx <= len(PROMPTS) else ""
+        desc = _load().get("prompts", {}).get(f.name, "")
         with open(f, "rb") as fh:
             r = requests.post(
                 f"https://api.telegram.org/bot{_bot_token()}/sendAudio",
@@ -204,14 +216,17 @@ def best_start(path: str) -> float:
     return start
 
 
-def replace(name: str) -> dict:
+def replace(name: str, save_as: str = "") -> dict:
     """Bir parçayı kütüphaneden çıkarıp yerine yeni (kullanılmamış
-    tarifli) bir parça üretir."""
-    f = music_dir() / name
-    if f.exists():
-        f.unlink()
+    tarifli) bir parça üretir; yeni parça aynı adla (ya da save_as)
+    kaydedilir."""
+    target = save_as or name
     st = _load()
-    st.get("starts", {}).pop(name, None)
+    for n in {name, target}:
+        f = music_dir() / n
+        if f.exists():
+            f.unlink()
+        st.get("starts", {}).pop(n, None)
     st.setdefault("removed", []).append(name)
     _save(st)
-    return generate_batch(1)
+    return generate_batch(1, names=[target])

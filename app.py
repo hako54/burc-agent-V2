@@ -946,7 +946,10 @@ def music_replace(name):
     from services import music_lib
     if "/" in name or not name.endswith(".mp3"):
         abort(400)
-    threading.Thread(target=music_lib.replace, args=(name,),
+    save_as = request.args.get("as", "")
+    if save_as and ("/" in save_as or not save_as.endswith(".mp3")):
+        abort(400)
+    threading.Thread(target=music_lib.replace, args=(name, save_as),
                      daemon=True).start()
     return jsonify({"status": "running"})
 
