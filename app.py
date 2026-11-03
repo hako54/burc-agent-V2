@@ -928,6 +928,18 @@ def backup_run():
         return jsonify({"error": str(e)[:300]}), 500
 
 
+@app.route("/api/music", methods=["GET", "POST"])
+def music_library():
+    """GET: kütüphanedeki parçalar. POST: 6 yeni ElevenLabs parçası üretir
+    (arka planda)."""
+    from services import music_lib
+    if request.method == "POST":
+        threading.Thread(target=music_lib.generate_batch,
+                         daemon=True).start()
+        return jsonify({"status": "running"})
+    return jsonify({"tracks": [f.name for f in music_lib.tracks()]})
+
+
 _list_preview = {}
 
 
