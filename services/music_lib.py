@@ -27,7 +27,8 @@ BATCH = 6
 
 _BASE = ("Soft, warm, calm instrumental background music for a short "
          "astrology video. Gentle and low, no sharp or high-pitched sounds, "
-         "no drums, no vocals, slow tempo, smooth fade in and fade out. ")
+         "no drums, no vocals, slow tempo. Starts right away with the full "
+         "arrangement (no long intro), smooth fade out at the end. ")
 PROMPTS = [
     "Warm felt piano with soft string pad, dreamy and hopeful.",
     "Deep mystical ambient pad with slow cello drones, night sky mood.",
@@ -146,11 +147,14 @@ def monthly_job() -> None:
     generate_batch()
 
 
-def send_to_telegram() -> int:
-    """Kütüphanedeki parçaları dinlemek için Telegram'a ses olarak gönderir."""
+def send_to_telegram(only: str = "") -> int:
+    """Kütüphanedeki parçaları (ya da sadece `only`) dinlemek için
+    Telegram'a ses olarak gönderir."""
     from telegram_bot import _bot_token, _allowed_chat
     sent = 0
     for i, f in enumerate(tracks(), 1):
+        if only and f.name != only:
+            continue
         idx = int(f.stem.split("_")[-1]) if f.stem.split("_")[-1].isdigit() else 0
         desc = PROMPTS[idx - 1] if 0 < idx <= len(PROMPTS) else ""
         with open(f, "rb") as fh:
@@ -165,3 +169,49 @@ def send_to_telegram() -> int:
         else:
             log.warning(f"Telegram sendAudio {r.status_code}: {r.text[:200]}")
     return sent
+
+
+def best_start(path: str) -> float:
+    """Parçanın uzun girişini atlamak için müziğin 'dolduğu' saniye:
+    1 sn'lik pencerelerde ses gücü, parçanın tipik seviyesinin %70'ine
+    ilk ulaştığı an. Sonuç library.json'da saklanır."""
+    st = _load()
+    starts = st.setdefault("starts", {})
+    name = Path(path).name
+    if name in starts:
+        return starts[name]
+    try:
+        import subprocess
+        import numpy as np
+        import imageio_ffmpeg
+        raw = subprocess.run(
+            [imageio_ffmpeg.get_ffmpeg_exe(), "-v", "quiet", "-i", path,
+             "-ac", "1", "-ar", "8000", "-f", "s16le", "-"],
+            capture_output=True, timeout=60).stdout
+        x = np.frombuffer(raw, dtype=np.int16).astype(np.float32)
+        win = 8000
+        rms = np.array([np.sqrt(np.mean(x[i:i + win] ** 2))
+                        for i in range(0, len(x) - win, win)])
+        target = 0.7 * np.percentile(rms, 75)
+        hit = int(np.argmax(rms >= target)) if (rms >= target).any() else 0
+        # Videoya en az 25 sn müzik kalsın
+        start = float(min(hit, max(0, len(rms) - 25)))
+    except Exception as e:
+        log.warning(f"Müzik başlangıcı bulunamadı ({name}): {e}")
+        start = 0.0
+    starts[name] = start
+    _save(st)
+    return start
+
+
+def replace(name: str) -> dict:
+    """Bir parçayı kütüphaneden çıkarıp yerine yeni (kullanılmamış
+    tarifli) bir parça üretir."""
+    f = music_dir() / name
+    if f.exists():
+        f.unlink()
+    st = _load()
+    st.get("starts", {}).pop(name, None)
+    st.setdefault("removed", []).append(name)
+    _save(st)
+    return generate_batch(1)

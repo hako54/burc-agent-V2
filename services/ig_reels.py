@@ -156,6 +156,12 @@ def render_text_reel(title: str, lines: list, visual_queries: list,
     music = pick_music(music_hint)
     if music:
         a = AudioFileClip(music)
+        # Kütüphane parçalarında uzun girişi atla
+        from services import music_lib
+        if str(music).startswith(str(music_lib.music_dir())):
+            s0 = music_lib.best_start(music)
+            if 0 < s0 < a.duration - 5:
+                a = a.subclip(s0)
         if a.duration < total:
             a = concatenate_audioclips([a] * (int(total // a.duration) + 1))
         a = a.subclip(0, total).audio_fadein(0.8).audio_fadeout(1.5)
