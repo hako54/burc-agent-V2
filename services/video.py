@@ -200,28 +200,15 @@ def _text_layers(text: str, accent_hex: str, sign_name: str,
             draw.ellipse([cx - 4, dy - 4, cx + 4, dy + 4],
                          fill=(180, 180, 180, 80))
 
-    # Bölüm etiketi (💕 Aşk, 💼 Kariyer vb)
-    if section_label and section_label.strip():
-        sf = _get_font(40)
-        sw = text_width(draw, section_label, sf)
-        sx2 = (W - sw) // 2
-        sy2 = 300
-        draw.rounded_rectangle(
-            [sx2 - 28, sy2 - 12, sx2 + sw + 28, sy2 + 56],
-            radius=30, fill=(0, 0, 0, 180),
-            outline=(*ac, 220), width=3
-        )
-        draw_text(overlay, draw, (sx2, sy2), section_label, sf,
-                  (255, 245, 220, 250))
-
     # İlk segmentte burç adı + tarih başlığı
+    header_bottom = 0
     if show_header and sign_name:
         # Otomatik boyut — uzun başlık için küçült
         max_header_w = W - 200
         tf_size = 84
         tf = _get_font(tf_size)
         tw2 = text_width(draw, sign_name, tf)
-        while tw2 > max_header_w and tf_size > 30:
+        while tw2 > max_header_w and tf_size > 60:  # sonra 2 satıra böl
             tf_size -= 4
             tf = _get_font(tf_size)
             tw2 = text_width(draw, sign_name, tf)
@@ -245,7 +232,10 @@ def _text_layers(text: str, accent_hex: str, sign_name: str,
             for ox, oy in [(-3, -3), (3, -3), (-3, 3), (3, 3)]:
                 draw_text(overlay, draw, (tx + ox, ty2 + oy), line, tf,
                           (0, 0, 0, 220), emoji=False)
-            draw_text(overlay, draw, (tx, ty2), line, tf, (*ac, 245))
+            # Koyu burç renginde başlık okunmuyordu: koyu renkte beyaz yaz
+            lum = (0.299 * ac[0] + 0.587 * ac[1] + 0.114 * ac[2]) / 255
+            hc = ac if lum >= 0.3 else (255, 255, 255)
+            draw_text(overlay, draw, (tx, ty2), line, tf, (*hc, 245))
             ty2 += line_h2
 
         datestr = tr_date() if _SHOW_DATE else ""
@@ -255,6 +245,21 @@ def _text_layers(text: str, accent_hex: str, sign_name: str,
         dx = (W - dw) // 2
         dy_d = ty2 + 22
         draw.text((dx, dy_d), datestr, font=df, fill=(220, 220, 220, 200))
+        header_bottom = ty2 + 52 - 18 + 18
+
+    # Bölüm etiketi (💕 Aşk, 💼 Kariyer vb)
+    if section_label and section_label.strip():
+        sf = _get_font(40)
+        sw = text_width(draw, section_label, sf)
+        sx2 = (W - sw) // 2
+        sy2 = max(300, header_bottom + 24)
+        draw.rounded_rectangle(
+            [sx2 - 28, sy2 - 12, sx2 + sw + 28, sy2 + 56],
+            radius=30, fill=(0, 0, 0, 180),
+            outline=(*ac, 220), width=3
+        )
+        draw_text(overlay, draw, (sx2, sy2), section_label, sf,
+                  (255, 245, 220, 250))
 
     # Ana metin (ortalanmış) — ayrı katman, çünkü girişte kayarak geliyor
     text_layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
