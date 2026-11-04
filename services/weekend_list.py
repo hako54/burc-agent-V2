@@ -110,6 +110,7 @@ def build_content(topic: str) -> dict:
         "accent_color": data.get("accent_color") or "#d4af37",
         "background_color": "#120a1f",
         "segments": segments, "segment_videos": videos,
+        "crossfade": 0.5,
         "pexels_queries": queries,
         "caption": data.get("caption", ""),
         "hashtags": data.get("hashtags", []),
@@ -129,7 +130,7 @@ def produce(topic: str = None, publish: bool = True) -> dict:
     from services import instagram
     from services.ig_content import _list_topic, _upload_youtube
     from services.video import render_video
-    from services.ig_reels import make_daily_cover
+    from services.ig_reels import make_list_cover
 
     topic = topic or _list_topic()
     content = build_content(topic)
@@ -137,11 +138,10 @@ def produce(topic: str = None, publish: bool = True) -> dict:
     out = str(OUTPUT_DIR / f"burc_liste_{stamp}.mp4")
     render_video(content, out, voice_config=_voice_config())
 
-    cover = make_daily_cover(
-        content.get("presenter_frame") or "", tr_upper(content["title"]),
-        "", "  ".join(s["symbol"] for s in content["signs"]),
-        content["accent_color"], out.replace(".mp4", "_cover.jpg"),
-        label="HAFTA SONU ÖZEL")
+    cover = make_list_cover(
+        content.get("presenter_frame") or "", content["title"],
+        [(s["symbol"], s["name"]) for s in content["signs"]],
+        content["accent_color"], out.replace(".mp4", "_cover.jpg"))
 
     data = {"title": content["title"], "caption": content["caption"],
             "hashtags": content["hashtags"], "topic": topic}

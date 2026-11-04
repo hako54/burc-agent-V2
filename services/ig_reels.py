@@ -354,3 +354,82 @@ def make_sign_cover(frame_path: str, sign_name: str, symbol: str,
     Path(dst).parent.mkdir(parents=True, exist_ok=True)
     base.convert("RGB").save(dst, "JPEG", quality=90)
     return dst
+
+
+def make_list_cover(frame_path: str, title: str, signs: list,
+                    accent_hex: str, dst: str) -> str:
+    """Hafta sonu liste videosu kapağı: astrolog + eğik sarı 'HAFTA SONU
+    ÖZEL' etiketi + renkli şeritler üzerinde dev başlık + 3 burç
+    madalyonu. signs: [(sembol, ad), ...]"""
+    from services.tr_locale import tr_upper
+    from services.video import _wrap_lines
+    ac = _hex_to_rgb(accent_hex or "#e63946")
+    gold = (255, 212, 0)
+    base = _cover_base(frame_path, accent_hex)
+    # Daha koyu alt yarı: yazılar patlasın
+    shade = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(shade)
+    for y in range(int(H * 0.40), H):
+        a = int(150 * (y - H * 0.40) / (H * 0.60))
+        sd.line([(0, y), (W, y)], fill=(5, 2, 12, a))
+    base.alpha_composite(shade)
+
+    # 1) Eğik etiket
+    lf = _get_font(64)
+    label = "🔥 HAFTA SONU ÖZEL"
+    tmp = ImageDraw.Draw(base)
+    lw = text_width(tmp, label, lf)
+    tag = Image.new("RGBA", (lw + 90, 130), (0, 0, 0, 0))
+    td = ImageDraw.Draw(tag)
+    td.rounded_rectangle([0, 0, lw + 89, 129], radius=26,
+                         fill=gold + (255,), outline=(0, 0, 0, 255), width=6)
+    draw_text(tag, td, (45, 28), label, lf, (20, 10, 0, 255))
+    tag = tag.rotate(6, expand=True, resample=Image.BICUBIC)
+    # Profil ızgarası 3:4 kırpıyor: etiket ve madalyonlar güvenli alanda
+    base.alpha_composite(tag, ((W - tag.width) // 2, 255))
+
+    # 2) Dev başlık: her satır renkli şerit üzerinde
+    text = tr_upper(title)
+    size = 132
+    while True:
+        f = _get_font(size)
+        lines = _wrap_lines(tmp, text, f, W - 140)
+        if len(lines) <= 3 or size <= 84:
+            break
+        size -= 8
+    lh = int(size * 1.28)
+    y = int(H * 0.55) - lh * len(lines) // 2
+    for i, ln in enumerate(lines):
+        w = text_width(tmp, ln, f)
+        x = (W - w) // 2
+        bg = gold if i == len(lines) - 1 else ac
+        fg = (20, 10, 0, 255) if bg == gold else (255, 255, 255, 255)
+        bar = Image.new("RGBA", (w + 60, lh - 10), bg + (255,))
+        bar = bar.rotate(-2 if i % 2 else 2, expand=True,
+                         resample=Image.BICUBIC)
+        base.alpha_composite(bar, (x - 30 - (bar.width - w - 60) // 2,
+                                   y - 4))
+        d = ImageDraw.Draw(base)
+        draw_text(base, d, (x, y + int(size * 0.08)), ln, f, fg)
+        y += lh
+
+    # 3) Burç madalyonları
+    n = max(1, len(signs[:3]))
+    r = 105
+    gap = (W - n * 2 * r) // (n + 1)
+    cy = int(H * 0.765)
+    sf, nf = _get_font(120), _get_font(46)
+    d = ImageDraw.Draw(base)
+    for i, (sym, name) in enumerate(signs[:3]):
+        cx = gap + r + i * (2 * r + gap)
+        d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(12, 6, 24, 235),
+                  outline=gold + (255,), width=8)
+        sw = text_width(d, sym, sf)
+        draw_text(base, d, (cx - sw // 2, cy - 78), sym, sf, ac + (255,))
+        label = tr_upper(name)
+        nw = text_width(d, label, nf)
+        _outlined(base, d, (cx - nw // 2, cy + r + 14), label, nf,
+                  (255, 255, 255, 255), 3)
+    Path(dst).parent.mkdir(parents=True, exist_ok=True)
+    base.convert("RGB").save(dst, "JPEG", quality=92)
+    return dst

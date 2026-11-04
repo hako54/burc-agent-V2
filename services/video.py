@@ -1107,8 +1107,17 @@ def render_video(content: dict, output_path: str,
                        _card=lucky_card, _ln=lucky_num,
                        _lc=lucky_col, _cp=compat, _br=broll):
             if _br is not None:
-                fr = _fit_cover(_br.get_frame(t % max(_br.duration - 0.05,
-                                                      0.1)))
+                # Stok video bölümden kısaysa sıçramasın: yavaşlat ya da
+                # ileri-geri (ping-pong) oynat
+                bd = max(_br.duration - 0.05, 0.1)
+                if bd >= _sd:
+                    tt = t
+                elif bd >= _sd * 0.6:
+                    tt = t * bd / _sd
+                else:
+                    m = t % (2 * bd)
+                    tt = m if m < bd else 2 * bd - m
+                fr = _fit_cover(_br.get_frame(tt))
                 # Yazı okunsun diye hafif karart
                 img = Image.fromarray(
                     (fr.astype(np.float32) * 0.62).astype(np.uint8)
@@ -1187,10 +1196,18 @@ def render_video(content: dict, output_path: str,
                                       subtitle=outro_sub)
 
     # 5) Birleştir
-    content_clip = concatenate_videoclips(clips, method="chain")
-    final = concatenate_videoclips([intro_clip, content_clip, outro_clip],
-                                   method="chain")
-    full_dur = intro_dur + total_dur + outro_dur
+    xf = float(content.get("crossfade") or 0)
+    if xf > 0:
+        # Yumuşak geçiş: her parça bir öncekinin üstüne xf sn'de açılır
+        seq = [intro_clip] + clips + [outro_clip]
+        seq = [seq[0]] + [c.crossfadein(xf) for c in seq[1:]]
+        final = concatenate_videoclips(seq, method="compose", padding=-xf)
+        full_dur = final.duration
+    else:
+        content_clip = concatenate_videoclips(clips, method="chain")
+        final = concatenate_videoclips([intro_clip, content_clip, outro_clip],
+                                       method="chain")
+        full_dur = intro_dur + total_dur + outro_dur
     # Instagram için kısa kesit: açılış + ilk iki bölüm (hook + genel)
     content["ig_cut_at"] = round(intro_dur + sum(seg_durations[:2]) + 0.3, 2)
     # Günlük derleme için daha kısa kesit: açılış + hook cümlesi

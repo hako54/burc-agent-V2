@@ -219,6 +219,8 @@ def fetch_video_file(query: str, dst: str, used: set = None) -> str:
             return ""
         found = r.json().get("videos", [])
         random.shuffle(found)  # her seferinde farklı video
+        # Bölümü tek seferde dolduracak uzun videolar önce (döngü olmasın)
+        found.sort(key=lambda v: v.get("duration", 0) < 9)
         for v in found:
             if used is not None and v.get("id") in used:
                 continue
