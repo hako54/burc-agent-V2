@@ -888,7 +888,8 @@ def _start_presenter(content: dict, tmp_prefix: str, intro_tts_path: str,
         parts.append(("outro", "kapanış", content["presenter_outro_text"]))
 
     for part, label, text in parts:
-        key = presenter.cache_key(part, text or "", voice_config)
+        bg = content.get("presenter_background", "")
+        key = presenter.cache_key(part, text or "", voice_config, bg)
         hit = presenter.cached_clip(key)
         if hit:
             jobs[f"{part}_cached"] = hit
@@ -905,7 +906,8 @@ def _start_presenter(content: dict, tmp_prefix: str, intro_tts_path: str,
                 audio = f"{tmp_prefix}_outro_tts.mp3"
                 generate_tts(text, audio, voice_config=voice_config)
                 jobs["outro_tts"] = audio
-            jobs[part] = presenter.start_clip(audio, f"{title} {label}")
+            jobs[part] = presenter.start_clip(audio, f"{title} {label}",
+                                              background_url=bg)
             jobs[f"{part}_key"] = key
         except Exception as e:
             log.warning(f"🎭 Sunucu {label} başlatılamadı: {e}")

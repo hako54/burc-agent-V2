@@ -169,9 +169,13 @@ def _cache_dir() -> Path:
     return Path(os.environ.get("DATA_DIR", "data")) / "presenter_cache"
 
 
-def cache_key(part: str, text: str, voice_config: dict = None) -> str:
-    raw = json.dumps([avatar_id(), _flag("HEYGEN_PRESENTER_AVATAR_IV"),
-                      text, voice_config or {}],
+def cache_key(part: str, text: str, voice_config: dict = None,
+              background: str = "") -> str:
+    parts = [avatar_id(), _flag("HEYGEN_PRESENTER_AVATAR_IV"),
+             text, voice_config or {}]
+    if background:
+        parts.append(background)
+    raw = json.dumps(parts,
                      sort_keys=True, ensure_ascii=False, default=str)
     return f"{part}_{hashlib.sha1(raw.encode('utf-8')).hexdigest()[:12]}"
 
@@ -222,9 +226,21 @@ def _upload_audio(audio_path: str) -> str:
     return asset_id
 
 
-def start_clip(audio_path: str, title: str) -> str:
-    """Ses dosyasını yükler ve sunucu videosunu başlatır; video_id döner."""
+def start_clip(audio_path: str, title: str, background_url: str = "") -> str:
+    """Ses dosyasını yükler ve sunucu videosunu başlatır; video_id döner.
+    background_url: aynı sunucu farklı bir ortamda (fotoğrafın arka planı
+    kaldırılıp bu görsel konur). HeyGen reddederse arka plansız denenir."""
     asset_id = _upload_audio(audio_path)
+    if background_url:
+        try:
+            return _generate(asset_id, title, background_url)
+        except Exception as e:
+            log.warning(f"🎭 Arka planlı klip başlatılamadı, normal "
+                        f"deneniyor: {e}")
+    return _generate(asset_id, title, "")
+
+
+def _generate(asset_id: str, title: str, background_url: str) -> str:
     use_iv = _flag("HEYGEN_PRESENTER_AVATAR_IV")
     payload = {
         "video_inputs": [{
@@ -238,6 +254,10 @@ def start_clip(audio_path: str, title: str) -> str:
         "dimension": {"width": 1080, "height": 1920},
         "title": title[:100],
     }
+    if background_url:
+        payload["video_inputs"][0]["character"]["matting"] = True
+        payload["video_inputs"][0]["background"] = {
+            "type": "image", "url": background_url}
     if use_iv:
         payload["use_avatar_iv_model"] = True
         payload["custom_motion_prompt"] = MOTION_PROMPT
@@ -252,7 +272,8 @@ def start_clip(audio_path: str, title: str) -> str:
     video_id = (data.get("data") or {}).get("video_id")
     if not video_id:
         raise RuntimeError(f"HeyGen video_id dönmedi: {data}")
-    log.info(f"🎭 Sunucu klibi başlatıldı ({title}, IV={use_iv}): {video_id}")
+    log.info(f"🎭 Sunucu klibi başlatıldı ({title}, IV={use_iv}, "
+             f"arka plan={'var' if background_url else 'yok'}): {video_id}")
     return video_id
 
 
