@@ -1018,7 +1018,8 @@ def weekend_list_preview():
         _list_preview["status"] = "running"
         try:
             res = weekend_list.produce(
-                topic=(request_topic or None), publish=False)
+                topic=(request_topic or None), publish=False,
+                pool=request_pool)
             _list_preview.update(res, status="done",
                                  video_name=os.path.basename(res["video"]),
                                  cover_name=os.path.basename(res["cover"]))
@@ -1027,6 +1028,7 @@ def weekend_list_preview():
             _list_preview.update(status="error", error=str(e)[:300])
 
     request_topic = (request.get_json(silent=True) or {}).get("topic")
+    request_pool = (request.get_json(silent=True) or {}).get("pool", "")
     threading.Thread(target=run, daemon=True).start()
     return jsonify({"status": "running"})
 
