@@ -62,6 +62,7 @@ FIELDS = OrderedDict([
     ("stok",           ("Gün Sonu Reyon Stok Ort.",        "Gün Sonu Reyon Stok Ortalaması")),
     ("satis",          ("Satış Adet",                      "Satış Adet")),
     ("devir",          ("Devir Hızı",                      "Devir Hızı")),
+    ("indirim",        ("İndirim Oranı",                   "İndirim Oranı")),
     ("merch_alt_grup", ("Merch Alt Grup",                  "Merch Alt Grup")),
     ("klasman",        ("Gelecek Dönem Ürün Klasman",      "Gelecek Dönem Ürün Klasman")),
 ])
@@ -127,6 +128,9 @@ DEFAULT_SETTINGS = {
     # Büyük, detaylı görselli kartlar (sayfada 4 ürün) / normal (12 ürün)
     "buyuk_gorsel": True,
 }
+
+# İndirim Oranı bu değerin üstündeyse kırmızı gösterilir
+INDIRIM_ESIK = 0.20
 
 DURUM_COLORS = {
     "Çok İyi": "#0f7b3f",
@@ -282,6 +286,7 @@ def read_options(xlsx_path, durumlar, buyer_gruplar=None, klasman_kelimeler=None
             "stok": _num(g("stok")),
             "satis": _num(g("satis")),
             "devir": _num(g("devir")),
+            "indirim": _num(g("indirim")),
             "merch_alt_grup": str(g("merch_alt_grup") or "-").strip(),
             "klasman": str(g("klasman") or "-").strip(),
         })
@@ -545,6 +550,11 @@ class _Report:
                                 ("devir", "Devir Hızı", 2)):
             if key not in self.hidden:
                 lines.append(("kv", it and (label, _fmt(it[key], dec))))
+        if "indirim" not in self.hidden:
+            v = it and it.get("indirim")
+            txt = "-" if v is None else "%" + _fmt(v * 100, 1)
+            lines.append(("kvr" if v is not None and v > INDIRIM_ESIK else "kv",
+                          it and ("İndirim Oranı", txt)))
         if "cluster" not in self.hidden:
             lines.append(("kv", it and ("Cluster", it["cluster"] or "-")))
         if self.has_range:
@@ -949,6 +959,9 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
   .kv b { color:var(--text); }
   .noimg .img { display:none; }
   .kv.miss b { color:var(--accent); }
+  .minq { font-size:12px; display:flex; gap:4px; align-items:center; white-space:nowrap; }
+  .minq select, .minq input[type=number] { font:inherit; padding:1px 4px; border:1px solid var(--line); border-radius:5px; }
+  .minq input[type=number] { width:64px; }
   [hidden] { display:none !important; }
   .tabs { display:flex; gap:6px; padding:12px 20px 0; }
   .tabs button { background:#fff; color:var(--brand); border:1px solid var(--line); border-radius:7px 7px 0 0;
@@ -1002,6 +1015,8 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
 <div class="bar" id="bar">
   <b>Filtre:</b>
   <span id="filters" class="chk"></span>
+  <label class="minq"><input type="checkbox" id="minOn"><select id="minF"><option value="stok">Stok Ort.</option>
+    <option value="satis">Satış Adet</option></select> <input type="number" id="minV" min="0" step="50"> altını gösterme</label>
   <button onclick="window.print()">PDF olarak kaydet / Yazdır</button>
   <span class="break"></span>
   <b>Gizle:</b>
@@ -1033,6 +1048,10 @@ const FILTERS = {
 };
 // Açılışta seçili gelenler; değerlerin hiçbiri veride yoksa o grup "Tümü"
 const DEFAULT_ON = __DEFAULT_ON__;
+const INDIRIM_ESIK = 0.2;
+// Adet eşiği: seçili alanı (stok / satış) eşiğin altında olanlar gizlenir
+const MINQ = Object.assign({on: false, alan: 'stok', deger: 400}, DEFAULT_ON._min || {});
+const passMin = i => !MINQ.on || (i[MINQ.alan] || 0) >= MINQ.deger;
 const OFF = {};
 const normV = v => String(v ?? '').trim().toLocaleLowerCase('tr');
 // Arama: Türkçe harf/aksan duyarsız ("hirka" → "HIRKA")
@@ -1094,6 +1113,8 @@ function card(it) {
     ${kv('stok', 'Gün Sonu Reyon Stok Ort.', fmt(it.stok, 0))}
     ${kv('satis', 'Satış Adet', fmt(it.satis, 0))}
     ${kv('devir', 'Devir Hızı', fmt(it.devir, 2))}
+    ${h.has('indirim') ? '' : `<div class="kv${it.indirim > INDIRIM_ESIK ? ' miss' : ''}"><span>İndirim Oranı</span><b>${
+      it.indirim == null ? '-' : '%' + fmt(it.indirim * 100, 1)}</b></div>`}
     ${kv('cluster', 'Cluster', esc(it.cluster || '-'))}
     ${HAS_RANGE ? rangeLines(it) : ''}
   </div></div>`;
@@ -1117,7 +1138,7 @@ function render() {
   document.body.classList.toggle('noimg', HIDDEN.has('resim'));
   document.getElementById('warn').style.display = HIDDEN.has('uyari') ? 'none' : '';
   const keys = ['merch_alt_grup', 'klasman'].filter(k => !HIDDEN.has(k));
-  const shown = DATA.filter(i => Object.keys(FILTERS).every(k => !OFF[k].has(i[k] || '-')));
+  const shown = DATA.filter(i => passMin(i) && Object.keys(FILTERS).every(k => !OFF[k].has(i[k] || '-')));
   renderStats(shown);
   renderWarn(shown);
   const items = shown.sort((a, b) =>
@@ -1178,7 +1199,7 @@ function summaryTable(base, key, title, extra) {
     rows.map(([g, r]) => line(g, r)).join('') + line('Toplam', tot, 'tot') + '</tbody></table></div>';
 }
 function renderSummary() {
-  const base = DATA.filter(i => i.durum !== OZET_HARIC &&
+  const base = DATA.filter(i => i.durum !== OZET_HARIC && passMin(i) &&
     Object.keys(FILTERS).every(k => k === 'durum' || !OFF[k].has(i[k] || '-')));
   const good = base.filter(i => i.durum === 'Çok İyi' || i.durum === 'İyi').length;
   document.getElementById('ozet').innerHTML =
@@ -1263,6 +1284,12 @@ document.getElementById('filters').addEventListener('change', e => {
   render();
 });
 document.querySelectorAll('.ddl').forEach(b => refreshList(b.id.slice(4)));
+(() => {
+  const on = document.getElementById('minOn'), f = document.getElementById('minF'), v = document.getElementById('minV');
+  on.checked = MINQ.on; f.value = MINQ.alan; v.value = MINQ.deger;
+  const upd = () => { MINQ.on = on.checked; MINQ.alan = f.value; MINQ.deger = +v.value || 0; render(); };
+  on.onchange = f.onchange = upd; v.oninput = upd;
+})();
 // Uyarı listesi sadece filtrede görünen opsiyonları kapsar; ilk 10 satır, gerisi "Tümünü göster"
 let warnAll = false;
 function renderWarn(shown) {
@@ -1306,7 +1333,7 @@ def render_html(items, hidden, title, subtitle, out_path, warnings=None, varsayi
     data = []
     for it in items:
         d = {k: it.get(k) for k in ("option_kod", "urun_ad", "renk", "durum", "stok",
-                                     "satis", "devir", "cluster", "kumas", "bitim",
+                                     "satis", "devir", "indirim", "cluster", "kumas", "bitim",
                                      "paca", "yaka", "range_need", "range_eksik",
                                      "merch_alt_grup", "klasman", "buyer")}
         d["img"] = it["resim"]
