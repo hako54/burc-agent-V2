@@ -20,6 +20,15 @@ from services.tr_locale import tr_date, tr_upper, now_local
 log = logging.getLogger(__name__)
 
 OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", "output"))
+# Özel videolarda astrolog farklı bir ortamda (aynı kişi, farklı arka
+# plan). Her video için bu sahnelerden biri, Pexels'ten dikey görsel.
+SCENES = [
+    "candle lit mystical room crystals", "starry night sky observatory",
+    "tarot cards table candles", "moonlit balcony night city",
+    "cosmic purple nebula", "cozy library fireplace night",
+    "full moon over sea night", "golden sunset terrace flowers",
+]
+
 # Sabit kapanış: HeyGen klibi bir kez üretilip önbellekten kullanılır
 # Her burcun sembolünü gösteren stok video aramaları (İngilizce)
 SIGN_VISUALS = {
@@ -55,6 +64,20 @@ Sadece JSON döndür:
   "hashtags": ["#burç", "... toplam 12-18 etiket, listedeki burçların etiketleri dahil"],
   "accent_color": "#hex (konuya uygun parlak renk)"
 }}"""
+
+
+def _scene_url() -> str:
+    """Bu videonun astrolog ortamı: sırayla dönen sahnelerden dikey bir
+    Pexels görseli (aynı sahne bir sonraki videoda tekrar etmez)."""
+    import random
+    from services.images import _fetch_from_pexels
+    n = now_local().toordinal()
+    for k in range(len(SCENES)):
+        q = SCENES[(n + k) % len(SCENES)]
+        urls = _fetch_from_pexels(q, count=6)
+        if urls:
+            return random.choice(urls)
+    return ""
 
 
 def _voice_config() -> dict:
@@ -124,6 +147,8 @@ def build_content(topic: str, label: str = "Hafta Sonu Özel") -> dict:
     if presenter.enabled():
         content["presenter"] = True
         content["presenter_outro_text"] = OUTRO_LINE
+        if os.environ.get("PRESENTER_SCENES", "1") not in ("0", "false"):
+            content["presenter_background"] = _scene_url()
     return content
 
 
