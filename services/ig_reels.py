@@ -357,7 +357,8 @@ def make_sign_cover(frame_path: str, sign_name: str, symbol: str,
 
 
 def make_list_cover(frame_path: str, title: str, signs: list,
-                    accent_hex: str, dst: str) -> str:
+                    accent_hex: str, dst: str,
+                    label: str = "🔥 HAFTA SONU ÖZEL") -> str:
     """Hafta sonu liste videosu kapağı: astrolog + eğik sarı 'HAFTA SONU
     ÖZEL' etiketi + renkli şeritler üzerinde dev başlık + 3 burç
     madalyonu. signs: [(sembol, ad), ...]"""
@@ -376,7 +377,6 @@ def make_list_cover(frame_path: str, title: str, signs: list,
 
     # 1) Eğik etiket
     lf = _get_font(64)
-    label = "🔥 HAFTA SONU ÖZEL"
     tmp = ImageDraw.Draw(base)
     lw = text_width(tmp, label, lf)
     tag = Image.new("RGBA", (lw + 90, 130), (0, 0, 0, 0))
@@ -397,6 +397,9 @@ def make_list_cover(frame_path: str, title: str, signs: list,
         if len(lines) <= 3 or size <= 84:
             break
         size -= 8
+    # Tek başına kalan emoji satırını bir üstteki satıra al
+    if len(lines) > 1 and len(lines[-1].strip()) <= 2:
+        lines = lines[:-2] + [lines[-2] + " " + lines[-1].strip()]
     lh = int(size * 1.28)
     y = int(H * 0.55) - lh * len(lines) // 2
     for i, ln in enumerate(lines):

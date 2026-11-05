@@ -344,6 +344,24 @@ def start_scheduler():
     except Exception as e:
         log.warning(f"Aylık müzik zamanlanamadı: {e}")
 
+    # Pazartesi/Çarşamba: günlük burçlara ek "Bu hafta" / "Hafta ortası"
+    # astrologlu liste videosu (YouTube + Instagram)
+    try:
+        from services import weekend_list
+        wh, wm = map(int, os.environ.get("WEEKDAY_LIST_TIME",
+                                         "18:30").split(":"))
+        for dow, pool in (("mon", "pazartesi"), ("wed", "carsamba")):
+            scheduler.add_job(
+                weekend_list.weekday_job,
+                CronTrigger(day_of_week=dow, hour=wh, minute=wm, timezone=tz),
+                args=[pool], id=f"weekday_list_{pool}",
+                name=f"Liste videosu ({pool})",
+                misfire_grace_time=1800, replace_existing=True,
+            )
+        log.info(f"📅 Pazartesi/Çarşamba liste videosu @ {wh:02d}:{wm:02d}")
+    except Exception as e:
+        log.warning(f"Hafta içi liste zamanlanamadı: {e}")
+
     # Hafta sonu: günlük burç yerine eğlenceli burç listesi Reels'i
     try:
         lh, lm = map(int, os.environ.get("IG_WEEKEND_LIST_TIME",

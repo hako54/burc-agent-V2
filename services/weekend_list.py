@@ -36,6 +36,9 @@ def _prompt(topic: str) -> str:
     return f"""Hafta sonu için eğlenceli BURÇ LİSTESİ videosu yaz. Konu: "{topic}".
 Bir kadın astrolog seslendirecek; "sen" diliyle, sıcak, esprili, kimseyi
 kırmayan bir dil. Gerçekten o özelliğiyle bilinen 3 farklı burç seç.
+Konu "bu hafta" ya da "bugün" diyorsa o zamana özel, somut ve olumlu yaz.
+Konu şanslı sayı ya da renk diyorsa her burcun gerekçesinde bir şanslı
+sayı ya da renk söyle.
 Bugün: {tr_date()}.
 
 TÜRKÇE İMLA: "de/da", "ki", "mi" ayrı; yanlış yazım yok. NORMAL yazımla yaz.
@@ -66,7 +69,7 @@ def _voice_config() -> dict:
             "speed": ch.get("voice_speed", 0.95)}
 
 
-def build_content(topic: str) -> dict:
+def build_content(topic: str, label: str = "Hafta Sonu Özel") -> dict:
     from zodiac import normalize_sign, get_sign
     from services.images import fetch_video_file
     raw, provider = call_llm_with_fallback(_prompt(topic), max_tokens=1500)
@@ -105,7 +108,7 @@ def build_content(topic: str) -> dict:
         "title": title, "hook_text": title, "intro_text": hook,
         # Liste başlığı her bölümde üstte (Shorts küçük resmi için)
         "segment_header": tr_upper(title),
-        "main_label": "Hafta Sonu Özel", "main_icon": "🔮",
+        "main_label": label, "main_icon": "🔮",
         "intro_subtitle": "Burç listesi", "outro_subtitle": "Takipte kal 🔮",
         "accent_color": data.get("accent_color") or "#d4af37",
         "background_color": "#120a1f",
@@ -124,7 +127,11 @@ def build_content(topic: str) -> dict:
     return content
 
 
-def produce(topic: str = None, publish: bool = True) -> dict:
+LABELS = {"": "Hafta Sonu Özel", "pazartesi": "Bu Hafta Özel",
+          "carsamba": "Hafta Ortası Özel"}
+
+
+def produce(topic: str = None, publish: bool = True, pool: str = "") -> dict:
     """Üret → render → YouTube Shorts + Instagram Reels. publish=False:
     sadece önizleme (Telegram'a gönderilir, hiçbir yerde yayınlanmaz)."""
     from services import instagram
@@ -132,8 +139,9 @@ def produce(topic: str = None, publish: bool = True) -> dict:
     from services.video import render_video
     from services.ig_reels import make_list_cover
 
-    topic = topic or _list_topic()
-    content = build_content(topic)
+    topic = topic or _list_topic(pool)
+    label = LABELS.get(pool, LABELS[""])
+    content = build_content(topic, label)
     stamp = now_local().strftime("%Y%m%d_%H%M%S")
     out = str(OUTPUT_DIR / f"burc_liste_{stamp}.mp4")
     render_video(content, out, voice_config=_voice_config())
@@ -141,7 +149,8 @@ def produce(topic: str = None, publish: bool = True) -> dict:
     cover = make_list_cover(
         content.get("presenter_frame") or "", content["title"],
         [(s["symbol"], s["name"]) for s in content["signs"]],
-        content["accent_color"], out.replace(".mp4", "_cover.jpg"))
+        content["accent_color"], out.replace(".mp4", "_cover.jpg"),
+        label=f"🔥 {tr_upper(label)}")
 
     data = {"title": content["title"], "caption": content["caption"],
             "hashtags": content["hashtags"], "topic": topic}
@@ -201,3 +210,21 @@ def _publish(out: str, cover: str, data: dict) -> dict:
              f"YouTube: {yt_url}")
     return {"video": out, "topic": data.get("topic"), "youtube_url": yt_url,
             "queue_id": item["id"]}
+
+
+def weekday_job(pool: str) -> None:
+    """Pazartesi/Çarşamba ek liste videosu (günlük burçlara ek)."""
+    from services import instagram
+    if not instagram.enabled() or os.environ.get(
+            "WEEKDAY_LIST", "1") in ("0", "false"):
+        return
+    try:
+        produce(pool=pool)
+    except Exception as e:
+        log.exception(f"Hafta içi liste videosu başarısız ({pool})")
+        try:
+            from telegram_bot import send as tg_send
+            tg_send(f"⚠️ {LABELS.get(pool, pool)} liste videosu "
+                    f"üretilemedi: {str(e)[:200]}")
+        except Exception:
+            pass

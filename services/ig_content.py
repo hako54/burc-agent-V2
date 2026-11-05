@@ -70,15 +70,51 @@ LIST_TOPICS = [
 ]
 
 
-def _list_topic() -> str:
-    """Konuları sırayla dolaştırır; son 20 konu tekrar edilmez."""
+# Pazartesi: haftanın tahmini; Çarşamba: hafta ortası / bugünün şansı
+WEEKDAY_TOPICS = {
+    "pazartesi": [
+        "Bu hafta en şanslı 3 burç", "Bu hafta parası artacak 3 burç",
+        "Bu hafta aşkta şansı açık 3 burç",
+        "Bu hafta en çok kazanacak 3 burç",
+        "Bu hafta dikkatli olması gereken 3 burç",
+        "Bu hafta iş hayatında parlayacak 3 burç",
+        "Bu hafta sürpriz haber alacak 3 burç",
+        "Bu hafta yeni bir başlangıç yapacak 3 burç",
+        "Bu hafta enerjisi en yüksek 3 burç",
+        "Bu hafta eski sevgilisinden haber alacak 3 burç",
+        "Bu hafta dileği gerçekleşecek 3 burç",
+        "Bu hafta yorulup dinlenmesi gereken 3 burç",
+    ],
+    "carsamba": [
+        "Hafta ortası şansı dönecek 3 burç",
+        "Bugünün şanslı sayıları: en şanslı 3 burç",
+        "Bugün para konusunda şanslı 3 burç",
+        "Bu akşam sürpriz yaşayacak 3 burç",
+        "Hafta ortası aşkta hareketlenecek 3 burç",
+        "Bugün beklenmedik bir mesaj alacak 3 burç",
+        "Bugün kararlarında şanslı 3 burç",
+        "Bugünün şanslı renkleri: en şanslı 3 burç",
+        "Hafta sonuna kadar müjde alacak 3 burç",
+        "Bugün moralini yükseltecek 3 burç",
+        "Bugün bir fırsat yakalayacak 3 burç",
+        "Bugün sezgilerine güvenmesi gereken 3 burç",
+    ],
+}
+
+
+def _list_topic(pool: str = "") -> str:
+    """Konuları sırayla dolaştırır; son konular tekrar edilmez.
+    pool: "" (hafta sonu), "pazartesi" ya da "carsamba"."""
     import json
-    f = Path(os.environ.get("DATA_DIR", "data")) / "ig_list_topics.json"
+    topics = WEEKDAY_TOPICS.get(pool, LIST_TOPICS)
+    f = Path(os.environ.get("DATA_DIR", "data")) / (
+        f"ig_list_topics_{pool}.json" if pool else "ig_list_topics.json")
     try:
         used = json.loads(f.read_text(encoding="utf-8"))
     except Exception:
         used = []
-    fresh = [t for t in LIST_TOPICS if t not in used[-20:]] or LIST_TOPICS
+    keep = min(20, len(topics) - 4)
+    fresh = [t for t in topics if t not in used[-keep:]] or topics
     topic = random.choice(fresh)
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_text(json.dumps((used + [topic])[-40:], ensure_ascii=False),
