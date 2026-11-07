@@ -1005,6 +1005,14 @@ def weekend_list_publish():
     return jsonify({"status": "publishing"})
 
 
+@app.route("/api/weekend-list/scenes")
+def weekend_list_scenes():
+    """Astrolog arka planı adayları (kontrol için): sahne → görsel URL'leri."""
+    from services import weekend_list
+    return jsonify({q: weekend_list._clean_scenes(q)[:3]
+                    for q in weekend_list.SCENES})
+
+
 @app.route("/api/weekend-list/preview", methods=["GET", "POST"])
 def weekend_list_preview():
     """POST: hafta sonu liste videosunun önizlemesini arka planda üretir
