@@ -178,7 +178,7 @@ def produce(topic: str = None, publish: bool = True, pool: str = "") -> dict:
         label=f"🔥 {tr_upper(label)}")
 
     data = {"title": content["title"], "caption": content["caption"],
-            "hashtags": content["hashtags"], "topic": topic}
+            "hashtags": content["hashtags"], "topic": topic, "pool": pool}
     if not publish:
         # Önizleme volume'e kaydedilir: yeniden başlatmada silinmez ve
         # beğenilirse aynen yayınlanabilir (publish_preview)
@@ -224,7 +224,10 @@ def publish_preview() -> dict:
 
 def _publish(out: str, cover: str, data: dict) -> dict:
     from services import instagram
-    from services.ig_content import _upload_youtube
+    from services.ig_content import _upload_youtube, mark_topic_used
+    if data.get("topic"):
+        # Elle verilen/önizlemeden yayınlanan konu da geçmişe girsin
+        mark_topic_used(data["topic"], data.get("pool", ""))
     yt_url = _upload_youtube(out, data, thumbnail_path=cover)
     caption = instagram.build_caption(
         data["title"], data["caption"], data["hashtags"],
