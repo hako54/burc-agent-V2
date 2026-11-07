@@ -1005,6 +1005,34 @@ def weekend_list_publish():
     return jsonify({"status": "publishing"})
 
 
+@app.route("/api/presenter/looks", methods=["GET", "POST"])
+def presenter_looks():
+    """GET: kayıtlı ortamlar. POST {url, name, caption}: adayı kaydedip
+    Telegram'a gönderir."""
+    from services import presenter_looks as pl
+    if request.method == "GET":
+        return jsonify(pl.status())
+    body = request.get_json(silent=True) or {}
+    try:
+        return jsonify(pl.add_candidate(body.get("url", ""), body.get("name", ""),
+                                        body.get("caption", "")))
+    except Exception as e:
+        return jsonify({"error": str(e)[:300]}), 400
+
+
+@app.route("/api/presenter/looks/<name>", methods=["POST", "DELETE"])
+def presenter_look(name):
+    """POST: adayı HeyGen'e yükler. DELETE: ortamı listeden çıkarır."""
+    from services import presenter_looks as pl
+    try:
+        if request.method == "DELETE":
+            pl.remove(name)
+            return jsonify({"removed": name})
+        return jsonify(pl.upload_to_heygen(name))
+    except Exception as e:
+        return jsonify({"error": str(e)[:300]}), 400
+
+
 @app.route("/api/weekend-list/scenes")
 def weekend_list_scenes():
     """Astrolog arka planı adayları (kontrol için): sahne → görsel URL'leri."""
