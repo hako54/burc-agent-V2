@@ -22,12 +22,21 @@ log = logging.getLogger(__name__)
 OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", "output"))
 # Özel videolarda astrolog farklı bir ortamda (aynı kişi, farklı arka
 # plan). Her video için bu sahnelerden biri, Pexels'ten dikey görsel.
+# Astrolog arka planları: içinde insan, yiyecek-içecek ya da masa olmayan
+# sade, mistik sahneler (bulanık/bokeh arka planlar sunucunun arkasında
+# doğal derinlik hissi verir)
 SCENES = [
-    "candle lit mystical room crystals", "starry night sky observatory",
-    "tarot cards table candles", "moonlit balcony night city",
-    "cosmic purple nebula", "cozy library fireplace night",
-    "full moon over sea night", "golden sunset terrace flowers",
+    "starry night sky", "full moon night clouds", "milky way mountains",
+    "purple nebula space", "aurora borealis night sky",
+    "night city lights bokeh", "candle light bokeh dark", "empty library interior",
 ]
+# Pexels açıklamasında bunlardan biri geçen görseller elenir
+SCENE_BLOCK = (
+    "person", "people", "woman", "man ", "men ", "girl", "boy", "child", "hand",
+    "couple", "face", "portrait", "food", "drink", "juice", "coffee", "tea",
+    "cup", "glass", "bottle", "wine", "fruit", "orange", "snack", "cookie",
+    "plate", "table", "breakfast", "dinner", "meal", "cake", "laptop", "phone",
+    "book on", "text", "sign", "logo", "dog", "cat")
 
 # Sabit kapanış: HeyGen klibi bir kez üretilip önbellekten kullanılır
 # Her burcun sembolünü gösteren stok video aramaları (İngilizce)
@@ -68,16 +77,40 @@ Sadece JSON döndür:
 
 def _scene_url() -> str:
     """Bu videonun astrolog ortamı: sırayla dönen sahnelerden dikey bir
-    Pexels görseli (aynı sahne bir sonraki videoda tekrar etmez)."""
+    Pexels görseli; insan, yiyecek-içecek ya da masa içerenler elenir."""
     import random
-    from services.images import _fetch_from_pexels
     n = now_local().toordinal()
     for k in range(len(SCENES)):
-        q = SCENES[(n + k) % len(SCENES)]
-        urls = _fetch_from_pexels(q, count=6)
+        urls = _clean_scenes(SCENES[(n + k) % len(SCENES)])
         if urls:
             return random.choice(urls)
     return ""
+
+
+def _clean_scenes(query: str) -> list:
+    import requests
+    key = os.environ.get("PEXELS_API_KEY")
+    if not key:
+        return []
+    try:
+        r = requests.get("https://api.pexels.com/v1/search",
+                         headers={"Authorization": key},
+                         params={"query": query, "per_page": 30,
+                                 "orientation": "portrait"}, timeout=15)
+        r.raise_for_status()
+        photos = r.json().get("photos", [])
+    except Exception as e:
+        log.warning(f"Sahne araması başarısız ({query}): {e}")
+        return []
+    ok = []
+    for p in photos:
+        alt = f" {(p.get('alt') or '').lower()} "
+        if not alt.strip() or any(b in alt for b in SCENE_BLOCK):
+            continue
+        url = (p.get("src") or {}).get("large2x")
+        if url:
+            ok.append(url)
+    return ok[:8]
 
 
 def _voice_config() -> dict:
