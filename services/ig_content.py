@@ -105,21 +105,39 @@ WEEKDAY_TOPICS = {
 def _list_topic(pool: str = "") -> str:
     """Konuları sırayla dolaştırır; son konular tekrar edilmez.
     pool: "" (hafta sonu), "pazartesi" ya da "carsamba"."""
-    import json
     topics = WEEKDAY_TOPICS.get(pool, LIST_TOPICS)
-    f = Path(os.environ.get("DATA_DIR", "data")) / (
-        f"ig_list_topics_{pool}.json" if pool else "ig_list_topics.json")
-    try:
-        used = json.loads(f.read_text(encoding="utf-8"))
-    except Exception:
-        used = []
+    f = _topics_file(pool)
+    used = _used_topics(f)
     keep = min(20, len(topics) - 4)
     fresh = [t for t in topics if t not in used[-keep:]] or topics
     topic = random.choice(fresh)
+    mark_topic_used(topic, pool)
+    return topic
+
+
+def _topics_file(pool: str = "") -> Path:
+    return Path(os.environ.get("DATA_DIR", "data")) / (
+        f"ig_list_topics_{pool}.json" if pool else "ig_list_topics.json")
+
+
+def _used_topics(f: Path) -> list:
+    import json
+    try:
+        return json.loads(f.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def mark_topic_used(topic: str, pool: str = "") -> None:
+    """Konuyu geçmişe yazar (elle seçilen konular da tekrar edilmesin)."""
+    import json
+    f = _topics_file(pool)
+    used = _used_topics(f)
+    if used and used[-1] == topic:
+        return
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_text(json.dumps((used + [topic])[-40:], ensure_ascii=False),
                  encoding="utf-8")
-    return topic
 
 
 def _list_prompt(topic: str) -> str:
