@@ -1020,6 +1020,21 @@ def presenter_looks():
         return jsonify({"error": str(e)[:300]}), 400
 
 
+@app.route("/api/presenter/looks/generate/<name>", methods=["GET", "POST"])
+def presenter_look_generate(name):
+    """POST {prompt, pose}: HeyGen görünüm üreticisiyle aday üretir
+    (Telegram'a gelir). GET: üretim durumu."""
+    from services import presenter_looks as pl
+    try:
+        if request.method == "GET":
+            return jsonify(pl.generation_status(name))
+        b = request.get_json(silent=True) or {}
+        return jsonify(pl.generate_with_heygen(name, b.get("prompt", ""),
+                                               b.get("pose", "half_body")))
+    except Exception as e:
+        return jsonify({"error": str(e)[:400]}), 400
+
+
 @app.route("/api/presenter/looks/<name>", methods=["POST", "DELETE"])
 def presenter_look(name):
     """POST: adayı HeyGen'e yükler. DELETE: ortamı listeden çıkarır."""
