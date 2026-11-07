@@ -19,7 +19,6 @@ import requests
 
 log = logging.getLogger(__name__)
 
-PHOTO_UPLOAD_URL = "https://upload.heygen.com/v1/talking_photo"
 
 
 def _dir() -> Path:
@@ -68,39 +67,66 @@ def add_candidate(url: str, name: str, caption: str = "") -> dict:
     return {"name": name, "size_kb": len(r.content) // 1024}
 
 
-def upload_to_heygen(name: str) -> dict:
-    """Onaylanan adayı HeyGen'e talking photo olarak yükler."""
-    from services import heygen
+def _jpeg(raw: bytes) -> bytes:
+    import io
+    from PIL import Image
+    im = Image.open(io.BytesIO(raw)).convert("RGB")
+    buf = io.BytesIO()
+    im.save(buf, "JPEG", quality=92)
+    return buf.getvalue()
+
+
+def upload_to_heygen(name: str, group_id: str = "") -> dict:
+    """Onaylanan adayı HeyGen'e yükler. group_id verilirse (varsayılan:
+    asıl Astrolog avatarının grubu) ayrı avatar yerine o gruba "look"
+    olarak eklenir — HeyGen'in fotoğraf avatarı sınırına takılmaz."""
+    from services import heygen, presenter
     name = _safe(name)
     data = _load()
     look = data["looks"].get(name)
     if not look:
         raise ValueError(f"Aday yok: {name}")
-    raw = (_dir() / look["file"]).read_bytes()
-    # HeyGen JPEG/PNG kabul eder; boyutu küçültmek için JPEG'e çevir
-    try:
-        import io
-        from PIL import Image
-        im = Image.open(io.BytesIO(raw)).convert("RGB")
-        buf = io.BytesIO()
-        im.save(buf, "JPEG", quality=92)
-        raw, ctype = buf.getvalue(), "image/jpeg"
-    except Exception:
-        ctype = "image/png"
-    r = requests.post(PHOTO_UPLOAD_URL,
+    raw = _jpeg((_dir() / look["file"]).read_bytes())
+    group_id = group_id or os.environ.get(
+        "HEYGEN_LOOK_GROUP_ID", "") or presenter.avatar_id()
+    # 1) Görseli asset olarak yükle → image_key
+    r = requests.post("https://upload.heygen.com/v1/asset",
                       headers={"X-Api-Key": heygen._api_key(),
-                               "Content-Type": ctype},
+                               "Content-Type": "image/jpeg"},
                       data=raw, timeout=120)
     if r.status_code != 200:
-        raise RuntimeError(f"HeyGen fotoğraf yükleme HTTP {r.status_code}: "
+        raise RuntimeError(f"HeyGen görsel yükleme HTTP {r.status_code}: "
                            f"{r.text[:300]}")
-    tid = (r.json().get("data") or {}).get("talking_photo_id")
+    d = r.json().get("data") or {}
+    key = d.get("image_key")
+    if not key:
+        raise RuntimeError(f"image_key dönmedi: {r.text[:300]}")
+    before = {l["id"] for l in heygen.list_avatar_group_looks(group_id)}
+    # 2) Gruba look olarak ekle
+    r = requests.post(f"{heygen.API_BASE}/v2/photo_avatar/avatar_group/add",
+                      headers=heygen._headers(),
+                      json={"group_id": group_id, "image_keys": [key],
+                            "name": f"Astrolog {name}"}, timeout=60)
+    if r.status_code != 200:
+        raise RuntimeError(f"HeyGen look ekleme HTTP {r.status_code}: "
+                           f"{r.text[:300]}")
+    # 3) Yeni look'un id'sini bul (işlenmesi birkaç saniye sürebilir)
+    import time
+    tid = None
+    for _ in range(12):
+        new = [l["id"] for l in heygen.list_avatar_group_looks(group_id)
+               if l["id"] not in before]
+        if new:
+            tid = new[0]
+            break
+        time.sleep(5)
     if not tid:
-        raise RuntimeError(f"HeyGen yanıtında id yok: {r.text[:300]}")
+        raise RuntimeError(f"Look eklendi ama id bulunamadı: {r.text[:300]}")
     look["heygen_id"] = tid
+    look["group_id"] = group_id
     _save(data)
-    log.info(f"🎭 Ortam HeyGen'e yüklendi: {name} → {tid}")
-    return {"name": name, "heygen_id": tid}
+    log.info(f"🎭 Ortam HeyGen'e look olarak eklendi: {name} → {tid}")
+    return {"name": name, "heygen_id": tid, "group_id": group_id}
 
 
 def remove(name: str) -> None:
