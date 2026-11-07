@@ -791,7 +791,7 @@ def _presenter_label_layer(title: str, subtitle: str, accent_hex: str,
     x0 = (W - box_w) // 2
     y0 = 150 if top else H - box_h - 260
     draw.rounded_rectangle([x0, y0, x0 + box_w, y0 + box_h], radius=36,
-                           fill=(10, 6, 20, 175), outline=ac + (255,),
+                           fill=(10, 6, 20, 238), outline=ac + (255,),
                            width=4)
     draw_text(layer, draw, ((W - tw) // 2, y0 + 30), title, tf,
               (255, 255, 255, 255))

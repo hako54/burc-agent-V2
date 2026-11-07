@@ -144,3 +144,68 @@ def active_ids() -> list:
 
 def status() -> dict:
     return _load()
+
+
+_gen_status = {}
+
+
+def generate_with_heygen(name: str, prompt: str, pose: str = "half_body",
+                         group_id: str = "") -> dict:
+    """HeyGen'in kendi görünüm üreticisiyle (Astrolog grubundan) yeni bir
+    görsel üretir; bitince aday olarak kaydedip Telegram'a gönderir.
+    Arka planda çalışır; durum: generation_status(name)."""
+    import threading
+    from services import heygen, presenter
+    name = _safe(name)
+    group_id = group_id or os.environ.get(
+        "HEYGEN_LOOK_GROUP_ID", "") or presenter.avatar_id()
+    body = {"group_id": group_id, "prompt": prompt[:1000],
+            "orientation": "vertical", "pose": pose, "style": "Realistic"}
+    r = requests.post(f"{heygen.API_BASE}/v2/photo_avatar/look/generate",
+                      headers=heygen._headers(), json=body, timeout=60)
+    if r.status_code != 200:
+        raise RuntimeError(f"HeyGen look üretimi HTTP {r.status_code}: "
+                           f"{r.text[:400]}")
+    gid = (r.json().get("data") or {}).get("generation_id")
+    if not gid:
+        raise RuntimeError(f"generation_id dönmedi: {r.text[:300]}")
+    _gen_status[name] = {"status": "running", "generation_id": gid}
+
+    def poll():
+        import time
+        try:
+            for _ in range(90):
+                time.sleep(10)
+                g = requests.get(
+                    f"{heygen.API_BASE}/v2/photo_avatar/generation/{gid}",
+                    headers=heygen._headers(json_content=False), timeout=30)
+                d = (g.json() or {}).get("data") or {}
+                st = (d.get("status") or "").lower()
+                if st in ("success", "completed"):
+                    urls = d.get("image_url_list") or []
+                    keys = d.get("image_key_list") or []
+                    _gen_status[name].update(status="done", urls=urls,
+                                             keys=keys)
+                    for i, u in enumerate(urls[:4]):
+                        nm = f"{name}{chr(97 + i)}" if len(urls) > 1 else name
+                        add_candidate(u, nm, f"🎭 HeyGen görünüm adayı: {nm}")
+                        if i < len(keys):
+                            data = _load()
+                            data["looks"][nm]["image_key"] = keys[i]
+                            _save(data)
+                    return
+                if st in ("failed", "error"):
+                    _gen_status[name].update(status="error",
+                                             error=str(d)[:300])
+                    return
+            _gen_status[name].update(status="timeout")
+        except Exception as e:
+            log.exception("HeyGen görünüm üretimi")
+            _gen_status[name].update(status="error", error=str(e)[:300])
+
+    threading.Thread(target=poll, daemon=True).start()
+    return {"name": name, "generation_id": gid}
+
+
+def generation_status(name: str) -> dict:
+    return _gen_status.get(_safe(name), {"status": "unknown"})
