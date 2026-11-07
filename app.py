@@ -1020,6 +1020,17 @@ def presenter_looks():
         return jsonify({"error": str(e)[:300]}), 400
 
 
+@app.route("/api/presenter/looks/train", methods=["GET", "POST"])
+def presenter_looks_train():
+    """POST: Astrolog grubunu eğit. GET: eğitim durumu."""
+    from services import presenter_looks as pl
+    try:
+        return jsonify(pl.train_group() if request.method == "POST"
+                       else pl.train_status())
+    except Exception as e:
+        return jsonify({"error": str(e)[:400]}), 400
+
+
 @app.route("/api/presenter/looks/generate/<name>", methods=["GET", "POST"])
 def presenter_look_generate(name):
     """POST {prompt, pose}: HeyGen görünüm üreticisiyle aday üretir
