@@ -180,7 +180,17 @@ def build_content(topic: str, label: str = "Hafta Sonu Özel") -> dict:
     if presenter.enabled():
         content["presenter"] = True
         content["presenter_outro_text"] = OUTRO_LINE
-        if os.environ.get("PRESENTER_SCENES", "1") not in ("0", "false"):
+        looks = []
+        try:
+            from services.presenter_looks import active_ids
+            looks = active_ids()
+        except Exception as e:
+            log.warning(f"Ortam listesi okunamadı: {e}")
+        if looks:
+            # Onaylı ortam fotoğrafları sırayla (her videoda farklı ortam)
+            content["presenter_avatar"] = looks[
+                now_local().toordinal() % len(looks)]
+        elif os.environ.get("PRESENTER_SCENES", "1") not in ("0", "false"):
             content["presenter_background"] = _scene_url()
     return content
 

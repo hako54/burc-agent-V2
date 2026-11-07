@@ -1069,6 +1069,16 @@ def weekend_list_preview():
     return jsonify({"status": "running"})
 
 
+@app.route("/api/instagram/comments")
+def instagram_comments_overview():
+    """Son günlerin yorumları ve otomatik cevap durumu."""
+    from services import ig_comments
+    try:
+        return jsonify(ig_comments.overview(int(request.args.get("days", 3))))
+    except Exception as e:
+        return jsonify({"error": str(e)[:300]}), 500
+
+
 @app.route("/api/instagram/comments/run", methods=["POST"])
 def instagram_comments_run():
     """Yorum cevaplamayı hemen bir kez çalıştırır (test için)."""

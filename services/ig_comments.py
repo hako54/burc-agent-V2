@@ -171,3 +171,34 @@ def process_comments() -> dict:
     finally:
         _lock.release()
     return {"replied": replied, "skipped": skipped}
+
+
+def overview(days: int = 3) -> list:
+    """Son gönderilerdeki yorumlar ve cevap durumu (kontrol için)."""
+    from services import instagram
+    st = _load_state()
+    done = set(st["done"])
+    me = instagram.account_info()
+    uid, my_name = str(me.get("user_id")), me.get("username", "")
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    out = []
+    media = instagram._api("GET", f"{uid}/media", fields="id,timestamp,caption",
+                           limit=25).get("data", [])
+    for m in media:
+        ts = datetime.strptime(m["timestamp"], "%Y-%m-%dT%H:%M:%S%z")
+        if ts < since:
+            continue
+        cs = instagram._api("GET", f"{m['id']}/comments",
+                            fields="id,text,username,timestamp,replies{username,text}",
+                            limit=50).get("data", [])
+        for c in cs:
+            reps = (c.get("replies") or {}).get("data", [])
+            out.append({
+                "post": (m.get("caption") or "")[:40],
+                "user": c.get("username"), "text": (c.get("text") or "")[:120],
+                "mine": c.get("username") == my_name,
+                "processed": c["id"] in done,
+                "my_reply": next((r.get("text", "")[:160] for r in reps
+                                  if r.get("username") == my_name), None),
+                "type": ("burç" if _sign_in(c.get("text", "")) else "?")})
+    return out
