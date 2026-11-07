@@ -209,3 +209,24 @@ def generate_with_heygen(name: str, prompt: str, pose: str = "half_body",
 
 def generation_status(name: str) -> dict:
     return _gen_status.get(_safe(name), {"status": "unknown"})
+
+
+def train_group(group_id: str = "") -> dict:
+    """Astrolog avatar grubunu eğitir (görünüm üretimi için gerekli)."""
+    from services import heygen, presenter
+    group_id = group_id or os.environ.get(
+        "HEYGEN_LOOK_GROUP_ID", "") or presenter.avatar_id()
+    r = requests.post(f"{heygen.API_BASE}/v2/photo_avatar/train",
+                      headers=heygen._headers(), json={"group_id": group_id},
+                      timeout=60)
+    return {"http": r.status_code, "body": r.text[:500]}
+
+
+def train_status(group_id: str = "") -> dict:
+    from services import heygen, presenter
+    group_id = group_id or os.environ.get(
+        "HEYGEN_LOOK_GROUP_ID", "") or presenter.avatar_id()
+    r = requests.get(
+        f"{heygen.API_BASE}/v2/photo_avatar/train/status/{group_id}",
+        headers=heygen._headers(json_content=False), timeout=30)
+    return {"http": r.status_code, "body": r.text[:500]}
