@@ -170,8 +170,8 @@ def _cache_dir() -> Path:
 
 
 def cache_key(part: str, text: str, voice_config: dict = None,
-              background: str = "") -> str:
-    parts = [avatar_id(), _flag("HEYGEN_PRESENTER_AVATAR_IV"),
+              background: str = "", avatar: str = "") -> str:
+    parts = [avatar or avatar_id(), _flag("HEYGEN_PRESENTER_AVATAR_IV"),
              text, voice_config or {}]
     if background:
         parts.append(background)
@@ -226,27 +226,35 @@ def _upload_audio(audio_path: str) -> str:
     return asset_id
 
 
-def start_clip(audio_path: str, title: str, background_url: str = "") -> str:
+def start_clip(audio_path: str, title: str, background_url: str = "",
+               avatar: str = "") -> str:
     """Ses dosyasını yükler ve sunucu videosunu başlatır; video_id döner.
     background_url: aynı sunucu farklı bir ortamda (fotoğrafın arka planı
     kaldırılıp bu görsel konur). HeyGen reddederse arka plansız denenir."""
     asset_id = _upload_audio(audio_path)
     if background_url:
         try:
-            return _generate(asset_id, title, background_url)
+            return _generate(asset_id, title, background_url, avatar)
         except Exception as e:
             log.warning(f"🎭 Arka planlı klip başlatılamadı, normal "
                         f"deneniyor: {e}")
+    if avatar:
+        try:
+            return _generate(asset_id, title, "", avatar)
+        except Exception as e:
+            log.warning(f"🎭 Ortam fotoğrafıyla klip başlatılamadı, asıl "
+                        f"fotoğraf deneniyor: {e}")
     return _generate(asset_id, title, "")
 
 
-def _generate(asset_id: str, title: str, background_url: str) -> str:
+def _generate(asset_id: str, title: str, background_url: str,
+              avatar: str = "") -> str:
     use_iv = _flag("HEYGEN_PRESENTER_AVATAR_IV")
     payload = {
         "video_inputs": [{
             "character": {
                 "type": "talking_photo",
-                "talking_photo_id": avatar_id(),
+                "talking_photo_id": avatar or avatar_id(),
                 "scale": 1.0,
             },
             "voice": {"type": "audio", "audio_asset_id": asset_id},
