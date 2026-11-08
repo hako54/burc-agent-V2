@@ -10,6 +10,7 @@ from .content import (
     get_face_queries,
     get_theme_colors,
     get_intro_text,
+    get_segment_videos,
     get_outro_text,
     get_lucky_card,
     format_title,

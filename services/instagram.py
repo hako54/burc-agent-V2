@@ -250,14 +250,48 @@ def publish_reel(video_url: str, caption: str, cover_url: str = None,
             raise TimeoutError("Instagram video işleme zaman aşımı")
         time.sleep(10)
 
-    media_id = _api("POST", f"{uid}/media_publish",
-                    creation_id=container)["id"]
+    try:
+        media_id = _api("POST", f"{uid}/media_publish",
+                        creation_id=container)["id"]
+    except Exception as e:
+        # Instagram bazen hata (500) döner ama gönderiyi yine de yayınlar;
+        # tekrar denemeden önce yayında olup olmadığına bak (çift gönderi)
+        media_id = _already_published(uid, container, caption, start)
+        if not media_id:
+            raise
+        log.warning(f"Yayın hata döndü ama gönderi yayında ({e}); "
+                    f"tekrar denenmeyecek")
     try:
         link = _api("GET", media_id, fields="permalink").get("permalink")
     except Exception:
         link = ""
     log.info(f"✅ Instagram'da yayında: {link or media_id}")
     return {"id": media_id, "permalink": link}
+
+
+def _already_published(uid: str, container: str, caption: str,
+                       since: float) -> str:
+    """media_publish hata verdiğinde gönderi yine de yayınlandıysa id'sini
+    döner (konteyner PUBLISHED ya da son gönderilerde aynı açıklama)."""
+    for _ in range(4):
+        time.sleep(15)
+        try:
+            st = _api("GET", container, fields="status_code")
+            recent = _api("GET", f"{uid}/media", fields="id,caption,timestamp",
+                          limit=5).get("data", [])
+            head = caption[:2200].strip()[:120]
+            for m in recent:
+                import calendar
+                ts = calendar.timegm(time.strptime(m["timestamp"][:19],
+                                                   "%Y-%m-%dT%H:%M:%S"))
+                if ((m.get("caption") or "").strip()[:120] == head
+                        and ts >= since - 120):
+                    return m["id"]
+            if st.get("status_code") not in ("PUBLISHED", "FINISHED"):
+                return ""
+        except Exception as e:
+            log.warning(f"Yayın kontrolü başarısız: {e}")
+    return ""
 
 
 # ── İmzalı herkese açık bağlantı ─────────────────────────────────────
