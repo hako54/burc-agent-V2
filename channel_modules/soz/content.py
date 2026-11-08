@@ -103,23 +103,29 @@ Aşağıdaki listeden 2-4 etiket seç:
 SADECE JSON döndür (başka hiçbir metin yok, markdown yok):
 {{
   "title": "Çarpıcı YouTube başlığı (40-70 karakter, emojisiz)",
+  "intro_hook": "Videonun ilk cümlesi: merak uyandıran 5-9 kelime, sözü SÖYLEMEDEN (ör. 'Bu sözü duyunca bir an duracaksın.')",
   "hook": "İlk 3 sn — sözün kendisi, çarpıcı, dikkat çekici",
   "segments": [
     {{"time": "0-5s", "section": "hook",
      "text": "Kısa altyazı (3-5 kelime)",
-     "narration": "Sözün kendisi — 1 cümle, vurgulu"}},
+     "narration": "Sözün kendisi — 1 cümle, vurgulu",
+     "video_query": "Bu bölümü anlatan İngilizce sinematik stok video araması (insan yüzü/yazı yok, ör. \'autumn leaves falling slow motion\')"}},
     {{"time": "5-20s", "section": "acilim",
      "text": "Kısa altyazı",
-     "narration": "Sözün ne dediğini açıkla — 2-3 cümle"}},
+     "narration": "Sözün ne dediğini açıkla — 2-3 cümle",
+     "video_query": "Bu bölümü anlatan İngilizce sinematik stok video araması (insan yüzü/yazı yok, ör. \'autumn leaves falling slow motion\')"}},
     {{"time": "20-35s", "section": "ornek",
      "text": "Kısa altyazı",
-     "narration": "Somut bir örnek veya metafor — 2 cümle"}},
+     "narration": "Somut bir örnek veya metafor — 2 cümle",
+     "video_query": "Bu bölümü anlatan İngilizce sinematik stok video araması (insan yüzü/yazı yok, ör. \'autumn leaves falling slow motion\')"}},
     {{"time": "35-50s", "section": "icin",
      "text": "Kısa altyazı",
-     "narration": "İçselleştirme — okuyucuya/dinleyiciye dön, 'sen' kullan"}},
+     "narration": "İçselleştirme — okuyucuya/dinleyiciye dön, 'sen' kullan",
+     "video_query": "Bu bölümü anlatan İngilizce sinematik stok video araması (insan yüzü/yazı yok, ör. \'autumn leaves falling slow motion\')"}},
     {{"time": "50-60s", "section": "kapanis",
      "text": "Kısa altyazı",
-     "narration": "Sözü farklı bir açıyla tekrarla veya genişlet — 1 güçlü cümle"}}
+     "narration": "Sözü farklı bir açıyla tekrarla veya genişlet — 1 güçlü cümle",
+     "video_query": "Bu bölümü anlatan İngilizce sinematik stok video araması (insan yüzü/yazı yok, ör. \'autumn leaves falling slow motion\')"}}
   ],
   "full_narration": "Tüm anlatım akıcı tek metin (130-180 kelime, ses için).",
   "key_message": "Söz'ün KENDISI tek satırda (lucky_card'da gösterilecek, 60-100 karakter)",
@@ -222,10 +228,38 @@ def get_theme_colors(topic_key: str, content: dict = None) -> dict:
     }
 
 
+_INTRO_HOOKS = [
+    "Bu sözü duyunca bir an duracaksın.",
+    "Bugünün sözü tam sana göre.",
+    "Bu cümle bugün aklından çıkmayacak.",
+    "Bir dakikanı ayır, bu sözü dinle.",
+]
+
+
 def get_intro_text(topic_key: str, content: dict = None) -> str:
-    """Intro'da gösterilecek metin — tema ismi."""
+    """Açılışta seslendirilen cümle: merak uyandıran kısa bir giriş
+    (sahne/tema adı okunmaz)."""
+    hook = ((content or {}).get("intro_hook") or "").strip()
+    if 3 <= len(hook.split()) <= 14:
+        return hook
+    import random
+    return random.choice(_INTRO_HOOKS)
+
+
+def get_segment_videos(topic_key: str, content: dict, prefix: str) -> list:
+    """Her bölüm için hareketli stok video (önce bölümün kendi araması,
+    olmazsa temanın sahneleri). Bulunamayan bölüm görselle kalır."""
+    from services.images import fetch_video_file
     theme = _resolve_theme(topic_key, content)
-    return theme.get("name", "Günün Sözü")
+    tq = list(theme.get("visual_queries", []))
+    used, out = set(), []
+    for i, seg in enumerate(content.get("segments", [])[:6]):
+        path = ""
+        for q in (seg.get("video_query"), tq[i % len(tq)] if tq else None):
+            if q and not path:
+                path = fetch_video_file(q, f"{prefix}_b{i}.mp4", used)
+        out.append(path)
+    return out
 
 
 def get_outro_text(topic_key: str, content: dict = None) -> str:

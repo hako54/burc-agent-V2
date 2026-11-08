@@ -345,6 +345,19 @@ def produce_content(
             content["main_label"] = (content.get("theme") or "Söz")[:30]
             content["main_icon"] = "💭"
             content["face_queries"] = []
+            # Hareketli arka plan: her bölüme sinematik stok video
+            if (hasattr(module, "get_segment_videos")
+                    and os.environ.get("SOZ_VIDEO_BROLL", "1") != "0"):
+                try:
+                    pre = str(OUTPUT_DIR / f"soz_{datetime.now():%Y%m%d_%H%M%S}")
+                    vids = module.get_segment_videos(topic_key, content, pre)
+                    if any(vids):
+                        content["segment_videos"] = vids
+                        content["crossfade"] = 0.5
+                    log.info(f"🎞️ Söz stok videoları: "
+                             f"{sum(1 for v in vids if v)}/{len(vids)}")
+                except Exception as e:
+                    log.warning(f"Söz stok videoları alınamadı: {e}")
             content["sign_name"] = ""
             content["sign_symbol"] = ""
             content["lucky_number"] = ""
