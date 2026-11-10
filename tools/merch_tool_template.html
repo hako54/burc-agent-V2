@@ -88,6 +88,7 @@
 </div>
 
 <script id="xlsxlib">@@TOOL_XLSX_JS@@</script>
+<script id="fflatelib">@@TOOL_FFLATE@@</script>
 <script id="core">
 // ── Çekirdek: arka plan işçisinde (Web Worker), işçi açılamazsa sayfada çalışır ──
 const FIELDS = @@TOOL_FIELDS@@;            // [key, etiket, Excel başlığı]
@@ -214,6 +215,13 @@ const $ = id => document.getElementById(id);
 const status = (msg, cls = '') => { $('status').textContent = msg; $('status').className = cls; };
 const escHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const js = v => JSON.stringify(v).replace(/<\//g, '<\\/');
+// Rapor verisi sıkıştırılır (deflate + base64); raporda unpack() ile açılır
+function pack(v) {
+  const u8 = fflate.deflateSync(fflate.strToU8(JSON.stringify(v)), {level: 9});
+  let bin = '';
+  for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
 const normV = v => String(v ?? '').trim().toLocaleLowerCase('tr');
 // Arama: Türkçe harf/aksan duyarsız ("hirka" → "HIRKA")
 const fold = v => normV(v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ı/g, 'i');
@@ -428,10 +436,10 @@ function buildReport() {
   const html = REPORT_TEMPLATE
     .replace(/__TITLE__/g, escHtml(title))
     .replace('__SUBTITLE__', escHtml(subtitle))
-    .replace('__DATA__', () => js(data))
+    .replace('__DATA__', () => pack(data))
     .replace('__FIELDS__', () => js(FIELDS.map(([k, l]) => [k, l])))
     .replace('__HIDDEN__', '[]')
-    .replace('__WARNINGS__', () => js(warnings))
+    .replace('__WARNINGS__', () => pack(warnings))
     .replace('__DEFAULT_ON__', () => js(defaultOn))
     .replace('__COLORS__', () => js(DURUM_COLORS))
     .replace('__ORDER__', () => js(DURUM_ORDER));

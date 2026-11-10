@@ -1027,14 +1027,21 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
 <div class="stats" id="stats"></div>
 <main id="main"></main>
 <section id="ozet" hidden></section>
+<script>__FFLATE__</script>
 <script>
-const DATA = __DATA__;
+// Veri sıkıştırılmış gömülür (deflate + base64): dosya küçük, açılış hızlı
+function unpack(b64) {
+  const bin = atob(b64), u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  return JSON.parse(fflate.strFromU8(fflate.inflateSync(u8)));
+}
+const DATA = unpack("__DATA__");
 const FIELDS = __FIELDS__;
 const HIDDEN = new Set(__HIDDEN__);
 const DURUM_COLORS = __COLORS__;
 const DURUM_ORDER = __ORDER__;
 // Kumaş / Ana Kumaş sadece Excel'de varsa gösterilir
-const WARNINGS = __WARNINGS__;
+const WARNINGS = unpack("__WARNINGS__");
 // RANGE dosyası yüklüyse Kumaş / Bitim İşlemi / Paça Detayı / Yaka Tipi gösterilir
 const HAS_RANGE = DATA.some(i => i.range_need);
 const RANGE_KEYS = ['kumas', 'bitim', 'paca', 'yaka'];
@@ -1061,11 +1068,14 @@ for (const [k, [, vals]] of Object.entries(FILTERS)) {
   const hit = vals.filter(v => want.has(normV(v)));
   OFF[k] = new Set(hit.length ? vals.filter(v => !want.has(normV(v))) : []);
 }
-const fmt = (v, d) => v == null ? '-' : v.toLocaleString('tr-TR', {minimumFractionDigits: d, maximumFractionDigits: d});
+// Sayı biçimlendirici önbellekte (toLocaleString her çağrıda yeniden kurulur, binlerce kartta yavaş)
+const NF = {};
+const fmt = (v, d) => v == null ? '-' : (NF[d] || (NF[d] = new Intl.NumberFormat('tr-TR', {minimumFractionDigits: d, maximumFractionDigits: d}))).format(v);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const search = code => 'https://www.lcw.com/arama?q=' + encodeURIComponent(code);
 
-// Kartta Excel'deki 600x800 görsel (hızlı), olmazsa diğer boyutlar; 🔍 yüksek çözünürlük
+// Kartta önce küçük (400x533) görsel: kart ~200px genişliğinde, büyüğü gereksiz yük.
+// Olmazsa Excel'deki 600x800 ve diğer boyutlar denenir; 🔍 yüksek çözünürlük
 const CDN = 'https://img-lcwaikiki.mncdn.com';
 const CDN_RE = /^https?:\/\/img-lcwaikiki\.mncdn\.com\/(?:mn\w+\/\d+\/\d+\/(?:[0-9a-fA-F]{6}\/)?)?(pim\/productimages\/[^\s"'<>?]+?\.(?:jpe?g|png|webp))/i;
 function imgUrls(u) {
@@ -1073,7 +1083,8 @@ function imgUrls(u) {
   const m = CDN_RE.exec(u);
   if (!m) return {card: [u], big: u};
   const big = `${CDN}/mnpadding/1200/1600/ffffff/${m[1]}`;
-  return {card: [...new Set([u, `${CDN}/mnpadding/600/800/ffffff/${m[1]}`, big, `${CDN}/${m[1]}`])], big};
+  return {card: [...new Set([`${CDN}/mnpadding/400/533/ffffff/${m[1]}`, u, `${CDN}/mnpadding/600/800/ffffff/${m[1]}`,
+                             big, `${CDN}/${m[1]}`])], big};
 }
 // Görsel sırayla denenir; hepsi başarısızsa "lcw.com'da ara" gösterilir
 function imgFail(el) {
@@ -1326,6 +1337,18 @@ render();
 """
 
 
+FFLATE_JS = Path(__file__).resolve().parent.parent / "tools" / "vendor" / "fflate.min.js"
+
+
+def pack(v) -> str:
+    """JSON → ham deflate → base64 (rapordaki unpack() ile açılır)."""
+    import base64
+    import zlib
+    co = zlib.compressobj(9, zlib.DEFLATED, -15)
+    raw = co.compress(json.dumps(v, ensure_ascii=False, separators=(",", ":")).encode()) + co.flush()
+    return base64.b64encode(raw).decode("ascii")
+
+
 def render_html(items, hidden, title, subtitle, out_path, warnings=None, varsayilan=None):
     """Tek dosyalık HTML rapor. Görseller açan kişinin tarayıcısında
     lcw.com sunucusundan yüklenir; önce yüksek çözünürlük, olmazsa
@@ -1345,12 +1368,13 @@ def render_html(items, hidden, title, subtitle, out_path, warnings=None, varsayi
 
     from html import escape
     html = (_HTML_TEMPLATE
+            .replace("__FFLATE__", FFLATE_JS.read_text(encoding="utf-8"))
             .replace("__TITLE__", escape(title))
             .replace("__SUBTITLE__", escape(subtitle))
-            .replace("__DATA__", js(data))
+            .replace("__DATA__", pack(data))
             .replace("__FIELDS__", js([[k, v[0]] for k, v in FIELDS.items()]))
             .replace("__HIDDEN__", js(list(hidden)))
-            .replace("__WARNINGS__", js(warnings or []))
+            .replace("__WARNINGS__", pack(warnings or []))
             .replace("__DEFAULT_ON__", js(varsayilan or {}))
             .replace("__COLORS__", js(DURUM_COLORS))
             .replace("__ORDER__", js(DURUM_ORDER)))

@@ -28,6 +28,7 @@ def js(v):
 def build(out_path=TOOLS / "Merch_Rapor_Olusturucu.html"):
     tpl = (TOOLS / "merch_tool_template.html").read_text(encoding="utf-8")
     xlsx_js = (TOOLS / "vendor" / "xlsx.full.min.js").read_text(encoding="utf-8")
+    fflate_js = (TOOLS / "vendor" / "fflate.min.js").read_text(encoding="utf-8")
     defaults = {"rapor_varsayilan": m.DEFAULT_SETTINGS["rapor_varsayilan"]}
     parts = {
         "@@TOOL_FIELDS@@": js([[k, lab, col] for k, (lab, col) in m.FIELDS.items()]),
@@ -37,7 +38,8 @@ def build(out_path=TOOLS / "Merch_Rapor_Olusturucu.html"):
         "@@TOOL_BUYER_COL@@": js(m.BUYER_COL),
         # Rapor şablonu ve kütüphane en son: içerikleri başka yer tutucu
         # gibi görünen metin barındırabilir, tekrar taranmasınlar
-        "@@TOOL_REPORT_TEMPLATE@@": js(m._HTML_TEMPLATE),
+        "@@TOOL_REPORT_TEMPLATE@@": js(m._HTML_TEMPLATE.replace("__FFLATE__", fflate_js)),
+        "@@TOOL_FFLATE@@": fflate_js,
         "@@TOOL_XLSX_JS@@": xlsx_js.replace("</script", "<\\/script"),
     }
     for key, val in parts.items():
