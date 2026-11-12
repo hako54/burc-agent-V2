@@ -980,6 +980,21 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
   table.sum td.good { color:var(--ok, #0f7b3f); }
   table.sum tr.tot td { background:var(--soft); font-weight:700; border-top:2px solid var(--brand); }
   table.sum .z { color:var(--line); }
+  table.plist td { vertical-align:middle; white-space:nowrap; }
+  table.plist th[data-sort] { cursor:pointer; user-select:none; white-space:nowrap; }
+  table.plist th[data-sort]:hover { text-decoration:underline; }
+  table.plist td.th { width:46px; padding:2px 4px; }
+  table.plist td.th img { width:40px; height:53px; object-fit:contain; display:block; background:var(--soft); }
+  table.plist td.th a.err img { visibility:hidden; }
+  table.plist td.wrap { white-space:normal; min-width:140px; max-width:240px; }
+  table.plist td.red { color:var(--accent); font-weight:700; }
+  table.plist .badge.st { position:static; display:inline-block; white-space:nowrap; }
+  table.plist tbody tr:nth-child(even) td { background:#fafbfd; }
+  .tbar { display:flex; justify-content:space-between; align-items:center; margin:6px 0 8px; font-size:13px; color:var(--muted); }
+  .tbar button, #main .more button { background:#fff; color:var(--brand); border:1px solid var(--brand); border-radius:6px;
+                                     padding:5px 12px; font-weight:600; cursor:pointer; }
+  #main .more { text-align:center; margin:10px 0; }
+  @media print { .tbar button, #main .more { display:none; } table.plist { font-size:9px; } }
   .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:4px; vertical-align:middle; }
   .warn { margin:16px 20px 0; border:2px solid var(--accent); border-radius:8px; overflow:hidden; }
   .warn h4 { background:var(--accent); color:#fff; padding:9px 12px; font-size:15px;
@@ -1022,7 +1037,7 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
   <b>Gizle:</b>
   <span id="toggles" class="chk"></span>
 </div>
-<nav class="tabs" id="tabs"><button type="button" data-v="urun" class="on">Ürünler</button><button type="button" data-v="ozet">Özet</button></nav>
+<nav class="tabs" id="tabs"><button type="button" data-v="urun" class="on">Ürünler</button><button type="button" data-v="tablo">Tablo</button><button type="button" data-v="ozet">Özet</button></nav>
 <div id="warn"></div>
 <div class="stats" id="stats"></div>
 <main id="main"></main>
@@ -1131,7 +1146,7 @@ function card(it) {
   </div></div>`;
 }
 
-// Sekmeler: Ürünler (kartlar) / Özet (Buyer Grup ve Klasman × Durum tabloları)
+// Sekmeler: Ürünler (kartlar) / Tablo (aynı ürünler satır satır) / Özet (Buyer Grup ve Klasman × Durum)
 let VIEW = 'urun';
 document.getElementById('tabs').addEventListener('click', e => {
   const v = e.target.dataset.v;
@@ -1152,6 +1167,7 @@ function render() {
   const shown = DATA.filter(i => passMin(i) && Object.keys(FILTERS).every(k => !OFF[k].has(i[k] || '-')));
   renderStats(shown);
   renderWarn(shown);
+  if (VIEW === 'tablo') { renderTable(shown); return; }
   const items = shown.sort((a, b) =>
     keys.map(k => a[k].localeCompare(b[k], 'tr')).find(x => x) ||
     (b.stok || 0) - (a.stok || 0));  // grup içinde stok adedi büyükten küçüğe
@@ -1222,6 +1238,78 @@ function renderSummary() {
     summaryTable(base, 'buyer', 'Buyer Grup › Durum') +
     summaryTable(base, 'klasman', 'Klasman › Durum', ['buyer', 'Buyer Grup']);
 }
+
+// ── Tablo: filtrelere (Durum dahil) uyan ürünler; başlığa tıklayınca sıralanır ──
+const TCOLS = [
+  // [alan, başlık, sayı mı, ondalık]
+  ['option_kod', 'Option Kod'], ['urun_ad', 'Ürün Ad'], ['renk', 'Renk Tanım'], ['durum', 'Durum'],
+  ['buyer', 'Buyer Grup'], ['merch_alt_grup', 'Merch Alt Grup'], ['klasman', 'Klasman'], ['cluster', 'Cluster'],
+  ['stok', 'Gün Sonu Reyon Stok Ort.', 1, 0], ['satis', 'Satış Adet', 1, 0], ['devir', 'Devir Hızı', 1, 2],
+  ['indirim', 'İndirim Oranı', 1, 1], ['kumas', 'Kumaş'], ['bitim', 'Bitim İşlemi'], ['paca', 'Paça Detayı'], ['yaka', 'Yaka Tipi'],
+];
+let TSORT = null;          // {k, dir}; null = Merch Alt Grup › Klasman › stok (kartlarla aynı sıra)
+let TLIMIT = 500;          // çok satırda ilk 500, gerisi "Tümünü göster"
+let TROWS = [];
+const tcols = () => TCOLS.filter(([k]) => !HIDDEN.has(k) && (HAS_RANGE || !RANGE_KEYS.includes(k)));
+function tval(it, k) {
+  if (k === 'indirim') return it.indirim == null ? '-' : '%' + fmt(it.indirim * 100, 1);
+  const c = TCOLS.find(x => x[0] === k);
+  if (c[2]) return fmt(it[k], c[3]);
+  if (RANGE_KEYS.includes(k) && (it.range_eksik || []).includes(k)) return 'EKSİK';
+  return it[k] || '-';
+}
+function renderTable(shown) {
+  const cols = tcols();
+  TROWS = shown.slice().sort(TSORT
+    ? (a, b) => {
+        const c = TCOLS.find(x => x[0] === TSORT.k), x = a[TSORT.k], y = b[TSORT.k];
+        if (c[2]) return ((x ?? -Infinity) - (y ?? -Infinity)) * TSORT.dir;
+        return String(x || '').localeCompare(String(y || ''), 'tr') * TSORT.dir;
+      }
+    : (a, b) => a.merch_alt_grup.localeCompare(b.merch_alt_grup, 'tr') ||
+                a.klasman.localeCompare(b.klasman, 'tr') || (b.stok || 0) - (a.stok || 0));
+  const rows = TROWS.slice(0, TLIMIT);
+  const img = !HIDDEN.has('resim');
+  const head = (img ? '<th></th>' : '') + cols.map(([k, l, n]) =>
+    `<th class="${n ? 'num' : ''}" data-sort="${k}">${esc(l)}${TSORT && TSORT.k === k ? (TSORT.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('');
+  const body = rows.map(it => {
+    const u = imgUrls(it.img);
+    return '<tr>' + (img ? `<td class="th">${u.card.length ? `<a href="${esc(search(it.option_kod))}" target="_blank" rel="noopener"><img loading="lazy" decoding="async" src="${esc(u.card[0])}" data-urls='${esc(JSON.stringify(u.card))}' onerror="imgFail(this)" alt=""></a>` : ''}</td>` : '') +
+      cols.map(([k, , n]) => {
+        const v = tval(it, k);
+        if (k === 'option_kod') return `<td><a class="code" href="${esc(search(it.option_kod))}" target="_blank" rel="noopener">${esc(v)}</a></td>`;
+        if (k === 'klasman' || k === 'urun_ad') return `<td class="wrap">${esc(v)}</td>`;
+        if (k === 'durum') return `<td><span class="badge st" style="background:${DURUM_COLORS[it.durum] || '#555'}">${esc(v)}</span></td>`;
+        const red = (k === 'indirim' && it.indirim > INDIRIM_ESIK) || v === 'EKSİK';
+        return `<td class="${n ? 'num' : ''}${red ? ' red' : ''}">${esc(v)}</td>`;
+      }).join('') + '</tr>';
+  }).join('');
+  document.getElementById('main').innerHTML =
+    `<div class="tbar"><span>${TROWS.length.toLocaleString('tr-TR')} ürün${TROWS.length > rows.length ? ` · ilk ${rows.length} gösteriliyor` : ''}</span>
+       <button type="button" id="tcsv">Excel'e aktar (CSV)</button></div>
+     <div class="tblw"><table class="sum plist"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>` +
+    (TROWS.length > rows.length ? `<p class="more"><button type="button" id="tall">Tümünü göster (${TROWS.length.toLocaleString('tr-TR')})</button></p>` : '');
+}
+document.getElementById('main').addEventListener('click', e => {
+  const th = e.target.closest('th[data-sort]');
+  if (th) {
+    const k = th.dataset.sort, num = (TCOLS.find(x => x[0] === k) || [])[2];
+    TSORT = TSORT && TSORT.k === k ? {k, dir: -TSORT.dir} : {k, dir: num ? -1 : 1};
+    render(); return;
+  }
+  if (e.target.id === 'tall') { TLIMIT = Infinity; render(); return; }
+  if (e.target.id === 'tcsv') {
+    // Görünen sırayla, filtreye uyan tüm satırlar (Excel Türkçe ayarı için ; ayraç + BOM)
+    const cols = tcols();
+    const cell = v => /[";\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+    const lines = [cols.map(c => c[1]).join(';')].concat(TROWS.map(it => cols.map(([k]) => cell(String(tval(it, k)))).join(';')));
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob(['\ufeff' + lines.join('\r\n')], {type: 'text/csv'}));
+    a.download = 'merch_urun_listesi.csv';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }
+});
 
 function renderStats(rows) {
   const cnt = {}; rows.forEach(i => cnt[i.durum] = (cnt[i.durum] || 0) + 1);
