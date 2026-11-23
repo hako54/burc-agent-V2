@@ -115,15 +115,46 @@ def _looks_like_name(comment: str) -> bool:
     return not any(tr_lower(w) in _NOT_NAMES for w in words)
 
 
+def _general_reply(comment: str) -> str:
+    """Burç/isim dışındaki yorumlara kısa, samimi teşekkür (yorumun
+    içeriğine uygun). Spam, reklam, link ya da kaba yorumlara cevap yok."""
+    if os.environ.get("IG_COMMENT_THANKS", "1") in ("0", "false"):
+        return None
+    text = (comment or "").strip()
+    if not text or "http" in text.lower() or "www." in text.lower():
+        return None
+    from services.content import call_llm_with_fallback
+    try:
+        out, _ = call_llm_with_fallback(
+            f"""Bir burç/astroloji Instagram hesabının videosuna şu yorum
+yapıldı: "{text[:300]}"
+Hesap adına yorumun altına yazılacak KISA bir cevap yaz: en fazla 8 kelime,
+samimi, yoruma uygun (emoji/övgü → teşekkür; dua → "Amin 🤲" tarzı;
+soru → kısa, nazik cevap). 1 emoji kullanabilirsin. Kendinden ya da yapay
+zekâdan bahsetme. Yorum spam, reklam, hakaret, kaba ya da alakasızsa
+sadece SKIP yaz. Sadece cevap metnini yaz.""", max_tokens=60)
+    except Exception as e:
+        log.warning(f"Teşekkür cevabı üretilemedi: {e}")
+        return None
+    out = out.strip().strip('"')
+    if not out or "SKIP" in out.upper() or len(out) > 120:
+        return None
+    return out
+
+
 def _reply_text(comment: str, st: dict):
+    """(metin, tür) döner; tür: "analiz" (DM'e gider) ya da "tesekkur"
+    (yalnızca yorumun altına)."""
     key = _sign_in(comment)
     if key:
-        return _sign_message(key, st)
+        return _sign_message(key, st), "analiz"
     if not _looks_like_name(comment):
-        return None
+        return _general_reply(comment), "tesekkur"
     from services.name_analysis import analyze, NOT_A_NAME
     text = analyze(comment, strict=True)
-    return None if text == NOT_A_NAME else text
+    if text == NOT_A_NAME:
+        return _general_reply(comment), "tesekkur"
+    return text, "analiz"
 
 
 _THANKS = [
@@ -195,18 +226,19 @@ def process_comments() -> dict:
                 cid = c["id"]
                 if cid in done or c.get("username") == my_name:
                     continue
-                text = _reply_text(c.get("text", ""), st)
+                text, kind = _reply_text(c.get("text", ""), st)
                 if text:
                     who = c.get("username")
                     sent_dm = False
-                    if _dm_enabled():
+                    if kind == "analiz" and _dm_enabled():
                         try:
                             instagram.send_private_reply(uid, cid, text)
                             sent_dm = True
                         except Exception as e:
                             log.warning(f"DM gönderilemedi, yoruma "
                                         f"yazılıyor: {e}")
-                    public = (_thanks() if sent_dm else _short(text))
+                    public = (_thanks() if sent_dm
+                              else text if kind == "tesekkur" else _short(text))
                     msg = f"@{who} {public}" if who else public
                     instagram._api("POST", f"{cid}/replies",
                                    message=msg[:1000])
