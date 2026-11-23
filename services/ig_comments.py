@@ -302,5 +302,6 @@ def forget(comment_id: str) -> bool:
     st = _load_state()
     had = comment_id in st["done"]
     st["done"] = [c for c in st["done"] if c != comment_id]
+    st["counts"] = {}  # gönderiler yeniden taransın
     _save_state(st)
     return had
