@@ -266,6 +266,34 @@ def opt_val(row, c) -> str:
     return f"{m}-{r}" if m and r else ""
 
 
+# Alternatif başlık adları (ilk bulunan kullanılır; araçtaki ALIASES ile aynı)
+COL_ALIASES = {
+    "resim": ["Ürün Resim Linki", "Resim Linki", "Ürün Görsel Linki", "Görsel Linki", "Resim URL",
+              "Görsel URL", "Image URL", "Görsel", "Resim"],
+    "urun_ad": ["Ürün Ad", "Ürün Adı", "Ürün İsmi", "Ürün Tanım", "Ürün Tanımı", "Model Adı", "Model Ad"],
+    "renk": ["Renk Tanım", "Renk Tanımı", "Renk Adı", "Renk Ad", "Ana Renk Tanım", "Renk"],
+    "stok": ["Gün Sonu Reyon Stok Ortalaması", "Gün Sonu Reyon Stok Ortalaması2",
+             "Reyon Stok Ortalaması", "Stok Ortalaması", "Reyon Stok"],
+    "satis": ["Satış Adet", "Satış Adet2", "Satış Adedi", "Satış"],
+    "devir": ["Devir Hızı", "Devir"],
+    "indirim": ["İndirim Oranı", "İndirim Oran", "İndirim %", "İndirim"],
+    "merch_alt_grup": ["Merch Alt Grup", "Gelecek Dönem Merch Alt Grup", "Merch Alt Grubu"],
+    "klasman": ["Gelecek Dönem Ürün Klasman", "Ürün Klasman", "Klasman"],
+}
+_IMG_RE = re.compile(r"^https?://\S*(?:mncdn\.com|lcw\.com|lcwaikiki)\S*$", re.I)
+
+
+def _img_of(row, value) -> str:
+    """Görsel sütunu link değilse ('Resim Gör' gibi) satırdaki ilk lcw görsel linkini bulur."""
+    v = str(value or "").strip()
+    if v.lower().startswith("http"):
+        return v
+    for c in row:
+        if isinstance(c, str) and _IMG_RE.match(c.strip()):
+            return c.strip()
+    return ""
+
+
 def read_options(xlsx_path, durumlar, buyer_gruplar=None, klasman_kelimeler=None,
                  clusterlar=None) -> list:
     wb = load_workbook(xlsx_path, read_only=True, data_only=True)
@@ -289,7 +317,8 @@ def read_options(xlsx_path, durumlar, buyer_gruplar=None, klasman_kelimeler=None
 
     idx = {}
     for key, (_, col) in FIELDS.items():
-        idx[key] = header.index(_hnorm(col)) if _hnorm(col) in header else None
+        idx[key] = next((header.index(_hnorm(n)) for n in COL_ALIASES.get(key, [col])
+                         if _hnorm(n) in header), None)
     oc = opt_cols(header)
     missing = (([] if oc["ok"] else ["Option Kod (ya da Model Kod + Renk Kod)"])
                + ([] if idx["durum"] is not None else [FIELDS["durum"][1]]))
@@ -325,7 +354,7 @@ def read_options(xlsx_path, durumlar, buyer_gruplar=None, klasman_kelimeler=None
         if wanted_cluster and _norm(g("cluster")) not in wanted_cluster:
             continue
         items.append({
-            "resim": str(g("resim") or "").strip(),
+            "resim": _img_of(r, g("resim")),
             "option_kod": kod,
             "urun_ad": str(g("urun_ad") or "").strip(),
             "renk": str(g("renk") or "").strip(),
