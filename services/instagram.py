@@ -144,8 +144,8 @@ def refresh_token_if_needed(force: bool = False) -> bool:
 def _api(method: str, path: str, **params) -> dict:
     params["access_token"] = _token()
     r = requests.request(method, f"{GRAPH}/{path}",
-                         params=params if method == "GET" else None,
-                         data=params if method != "GET" else None,
+                         params=params if method in ("GET", "DELETE") else None,
+                         data=params if method not in ("GET", "DELETE") else None,
                          timeout=60)
     try:
         data = r.json()

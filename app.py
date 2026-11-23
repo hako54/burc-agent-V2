@@ -1105,6 +1105,23 @@ def instagram_comments_overview():
         return jsonify({"error": str(e)[:300]}), 500
 
 
+@app.route("/api/instagram/object/<obj_id>", methods=["DELETE"])
+def instagram_delete_object(obj_id):
+    """Instagram gönderisini ya da yorumu siler (geri alınamaz)."""
+    from services import instagram
+    try:
+        return jsonify(instagram._api("DELETE", obj_id))
+    except Exception as e:
+        return jsonify({"error": str(e)[:400]}), 400
+
+
+@app.route("/api/instagram/comments/forget/<comment_id>", methods=["POST"])
+def instagram_comment_forget(comment_id):
+    """Yorumu yeniden cevaplanmak üzere işlenmemiş say."""
+    from services import ig_comments
+    return jsonify({"forgotten": ig_comments.forget(comment_id)})
+
+
 @app.route("/api/instagram/comments/run", methods=["POST"])
 def instagram_comments_run():
     """Yorum cevaplamayı hemen bir kez çalıştırır (test için)."""
