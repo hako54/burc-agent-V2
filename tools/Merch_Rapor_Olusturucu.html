@@ -22,6 +22,8 @@
           color:var(--muted); display:block; min-height:96px; }
   .drop.over { border-color:var(--brand); background:#eef3fb; }
   .drop.done { border-style:solid; border-color:var(--ok); background:#f1f9f4; color:var(--text); }
+  .drop.err { border-style:solid; border-color:var(--accent); background:#fdecee; }
+  .drop.err small { color:var(--accent); font-weight:600; font-size:13px; }
   .drop.busy { border-style:solid; border-color:#d9a400; background:#fffaeb; }
   .drop b { display:block; color:var(--text); font-size:15px; margin-bottom:2px; }
   .drop small { display:block; margin-top:4px; }
@@ -137,12 +139,24 @@ function sheetRows(ws) {
 
 // ── Haftalık Excel: tüm satırlar (filtreleme raporda) ──
 function readWeekly(wb) {
-  const rows = sheetRows(wb.Sheets[wb.SheetNames[0]]);
+  // Başlık satırı: herhangi bir sayfada, ilk 30 satır içinde "Option Kod" + "DURUM" olan satır
+  let rows = null, hi = -1;
+  for (const name of wb.SheetNames) {
+    const r = sheetRows(wb.Sheets[name]);
+    const i = r.slice(0, 30).findIndex(x => x && x.map(norm).includes(norm(COL.option_kod)) && x.map(norm).includes(norm(COL.durum)));
+    if (i >= 0) { rows = r; hi = i; break; }
+  }
+  if (!rows) {
+    const first = sheetRows(wb.Sheets[wb.SheetNames[0]]);
+    rows = first; hi = 0;
+  }
+  rows = rows.slice(hi);
   const header = (rows[0] || []).map(norm);
   const idx = {};
   for (const [k, , col] of FIELDS) { const i = header.indexOf(norm(col)); idx[k] = i < 0 ? null : i; }
   const missing = ['option_kod', 'durum'].filter(k => idx[k] === null).map(k => COL[k]);
-  if (missing.length) throw new Error(`Haftalık Excel'de beklenen sütun yok: ${missing.join(', ')}`);
+  if (missing.length) throw new Error(`Haftalık Excel'de "${missing.join('", "')}" başlığı bulunamadı. ` +
+    'Doğru dosyayı (haftalık option listesi) seçtiğinizden emin olun.');
   const bi = header.indexOf(norm(BUYER_COL));
   const items = [];
   for (const r of rows.slice(1)) {
@@ -214,7 +228,7 @@ function applyRange(items, rng) {
 const STATE = {items: null, rng: null};
 function handle(msg) {
   const t0 = Date.now();
-  if (msg.type === 'weekly') STATE.items = readWeekly(readBook(msg.buf, true));
+  if (msg.type === 'weekly') STATE.items = readWeekly(readBook(msg.buf, false));
   if (msg.type === 'range') STATE.rng = readRange(readBook(msg.buf, false));
   const sure = (Date.now() - t0) / 1000;
   if (!STATE.items) return {kind: msg.type, sure, pending: true};
@@ -380,26 +394,44 @@ function updateCount() {
 
 // ── Arka plan okuma (Web Worker); işçi açılamazsa sayfada ──
 let worker = null, busy = 0;
+let watchdog = null;
 function getWorker() {
   if (worker !== null) return worker;
   try {
     const src = $('xlsxlib').textContent + '\n' + $('core').textContent +
       '\nonmessage = e => { try { postMessage(handle(e.data)); } catch (err) { postMessage({kind: e.data.type, error: err.message}); } };';
     worker = new Worker(URL.createObjectURL(new Blob([src], {type: 'text/javascript'})));
-    worker.onmessage = e => onResult(e.data);
+    worker.onmessage = e => {
+      clearTimeout(watchdog);
+      onResult(e.data);
+      if (busy > 0) watchdog = setTimeout(workerFailed, 180000);  // sıradaki dosya için
+    };
+    // İşçi çökerse (bellek yetmezliği, tarayıcı/şirket kısıtı) sessiz kalma: sayfada yeniden oku
+    worker.onerror = e => { if (e.preventDefault) e.preventDefault(); workerFailed(); };
   } catch (e) { worker = false; }
   return worker;
+}
+function workerFailed() {
+  clearTimeout(watchdog);
+  if (worker) { try { worker.terminate(); } catch (e) {} }
+  worker = false;
+  busy = 0;
+  status('Arka planda okunamadı, sayfa içinde tekrar okunuyor…');
+  // İşçideki okunmuş durum kayboldu: bırakılan dosyaları sayfada baştan oku
+  if (FILES.range) load('range', FILES.range);
+  if (FILES.weekly) load('weekly', FILES.weekly);
+}
+function showError(kind, msg) {
+  const el = $(kind === 'weekly' ? 'dropW' : 'dropR');
+  el.classList.remove('busy', 'done'); el.classList.add('err');
+  el.querySelector('small').textContent = '✗ ' + msg;
+  status('Hata: ' + msg, 'err');
 }
 function onResult(r) {
   busy--;
   const el = $(r.kind === 'weekly' ? 'dropW' : 'dropR');
   el.classList.remove('busy');
-  if (r.error) {
-    el.classList.remove('done');
-    el.querySelector('small').textContent = '✗ ' + r.error;
-    status('Hata: ' + r.error, 'err');
-    return;
-  }
+  if (r.error) { showError(r.kind, r.error); return; }
   el.classList.add('done');
   el.querySelector('small').textContent = `✓ ${el.dataset.info} · okundu (${r.sure.toFixed(1)} sn)`;
   if (r.pending) { status('RANGE okundu; haftalık Excel bekleniyor.'); return; }
@@ -411,17 +443,30 @@ function onResult(r) {
     '. Seçimleri yapıp "Raporu Oluştur"a basın.', 'ok');
   if (pendingOpen) { const w = pendingOpen; pendingOpen = null; openReport(w); }
 }
+const FILES = {};
 async function load(kind, file) {
   const el = $(kind === 'weekly' ? 'dropW' : 'dropR');
-  el.classList.remove('done'); el.classList.add('busy');
+  FILES[kind] = file;
+  el.classList.remove('done', 'err'); el.classList.add('busy');
   el.dataset.info = `${file.name} · ${(file.size / 1e6).toFixed(1)} MB`;
   el.querySelector('small').textContent = el.dataset.info + ' · okunuyor…';
   if (kind === 'weekly') fileName = file.name; else rangeName = file.name;
   status('Dosya arka planda okunuyor…');
   busy++;
-  const buf = await file.arrayBuffer();
+  let buf;
+  try { buf = await file.arrayBuffer(); }
+  catch (e) {
+    busy--;
+    showError(kind, 'Dosya açılamadı. Excel\'de açıksa kapatıp tekrar deneyin ya da dosyayı bilgisayarınıza kaydedip oradan seçin.');
+    return;
+  }
   const wk = getWorker();
-  if (wk) wk.postMessage({type: kind, buf}, [buf]);
+  if (wk) {
+    // 3 dakikada yanıt yoksa işçiyi bırak, sayfada oku
+    clearTimeout(watchdog);
+    watchdog = setTimeout(workerFailed, 180000);
+    wk.postMessage({type: kind, buf}, [buf]);
+  }
   else setTimeout(() => { try { onResult(handle({type: kind, buf})); } catch (err) { onResult({kind, error: err.message}); } }, 20);
 }
 
@@ -435,6 +480,7 @@ function setupDrop(id, kind) {
     if (ev === 'drop' && e.dataTransfer.files[0]) load(kind, e.dataTransfer.files[0]);
   }));
 }
+['dragover', 'drop'].forEach(ev => window.addEventListener(ev, e => e.preventDefault()));
 setupDrop('dropW', 'weekly');
 setupDrop('dropR', 'range');
 

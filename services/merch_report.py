@@ -237,9 +237,23 @@ def _register_fonts():
 def read_options(xlsx_path, durumlar, buyer_gruplar=None, klasman_kelimeler=None,
                  clusterlar=None) -> list:
     wb = load_workbook(xlsx_path, read_only=True, data_only=True)
-    ws = wb.worksheets[0]
-    rows = ws.iter_rows(values_only=True)
-    header = [_norm(h) for h in next(rows)]
+    # Başlık satırı: herhangi bir sayfada, ilk 30 satır içinde Option Kod + DURUM
+    rows, header = None, None
+    for ws in wb.worksheets:
+        it = ws.iter_rows(values_only=True)
+        for _ in range(30):
+            row = next(it, None)
+            if row is None:
+                break
+            h = [_norm(c) for c in row]
+            if _norm(FIELDS["option_kod"][1]) in h and _norm(FIELDS["durum"][1]) in h:
+                rows, header = it, h
+                break
+        if rows is not None:
+            break
+    if rows is None:
+        rows = wb.worksheets[0].iter_rows(values_only=True)
+        header = [_norm(h) for h in next(rows, [])]
 
     idx = {}
     for key, (_, col) in FIELDS.items():
