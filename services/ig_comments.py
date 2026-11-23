@@ -78,21 +78,22 @@ def _sign_message(key: str, st: dict) -> str:
     today = now_local().strftime("%Y-%m-%d")
     cache = st.setdefault("sign_msgs", {})
     if (cache.get(key, {}).get("date") == today
-            and cache[key].get("v") == 2):
+            and cache[key].get("v") == 3):
         return cache[key]["text"]
     info = get_sign(key)
     from services.content import call_llm_with_fallback
     text, _ = call_llm_with_fallback(
         f"""Sen "Günlük Burç" Instagram hesabının astroloğusun. Bir takipçin
 bir videonun altına sadece burcunu yazdı: {info['name']}. Ona yorumun altında
-cevap olarak {tr_date()} günü için {info['name']} burcuna özel 2-3 kısa, sıcak
-ve somut astroloji yorumu yaz: bugün neyi fark edebilir, neye dikkat etmeli.
+cevap olarak {tr_date()} günü için {info['name']} burcuna özel EN FAZLA 2 kısa
+cümlelik (toplam 25 kelimeyi geçmesin), net ve vurucu bir astroloji yorumu
+yaz: bugün neye dikkat etmeli.
 Kurallar: takipçiye "sen" diye hitap et; teşekkür etme; kendinden, hesaptan
 ya da yapay zekâdan bahsetme; takipçinin ağzından yazma. Sonuna "Günlük
 yorumun için takipte kal 💫" ekle. Sadece cevap metnini yaz.""",
         max_tokens=300)
     text = text.strip().strip('"')
-    cache[key] = {"date": today, "text": text, "v": 2}
+    cache[key] = {"date": today, "text": text, "v": 3}
     return text
 
 
@@ -103,6 +104,28 @@ def _reply_text(comment: str, st: dict):
     from services.name_analysis import analyze, NOT_A_NAME
     text = analyze(comment, strict=True)
     return None if text == NOT_A_NAME else text
+
+
+_THANKS = [
+    "Teşekkürler 💜 Sana özel yorumunu DM'den gönderdim ✨",
+    "Yorumun için teşekkürler 🌙 Cevabın DM kutunda 💌",
+    "Teşekkür ederiz 💫 Sana özel mesajı DM'ine bıraktım ✨",
+]
+
+
+def _thanks() -> str:
+    import random
+    return random.choice(_THANKS)
+
+
+def _short(text: str, max_sentences: int = 2) -> str:
+    """Herkese açık cevap kısa olsun: ilk 2 cümle (+ takip çağrısı)."""
+    import re
+    parts = re.split(r"(?<=[.!?…])\s+", text.strip())
+    out = " ".join(parts[:max_sentences]).strip()
+    if "takipte" not in out.lower():
+        out += " 💫"
+    return out
 
 
 def _alert_once(st: dict, msg: str) -> None:
@@ -156,8 +179,7 @@ def process_comments() -> dict:
                         except Exception as e:
                             log.warning(f"DM gönderilemedi, yoruma "
                                         f"yazılıyor: {e}")
-                    public = ("DM'ine gönderdim 💌 Kutunu kontrol et ✨"
-                              if sent_dm else text)
+                    public = (_thanks() if sent_dm else _short(text))
                     msg = f"@{who} {public}" if who else public
                     instagram._api("POST", f"{cid}/replies",
                                    message=msg[:1000])
