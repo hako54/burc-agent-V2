@@ -77,17 +77,22 @@ def _sign_message(key: str, st: dict) -> str:
     from services.tr_locale import tr_date, now_local
     today = now_local().strftime("%Y-%m-%d")
     cache = st.setdefault("sign_msgs", {})
-    if cache.get(key, {}).get("date") == today:
+    if (cache.get(key, {}).get("date") == today
+            and cache[key].get("v") == 2):
         return cache[key]["text"]
     info = get_sign(key)
     from services.content import call_llm_with_fallback
     text, _ = call_llm_with_fallback(
-        f"""Instagram'da {info['name']} burcundan biri yorum yaptı. Ona
-yorumun altında cevap olarak bugüne ({tr_date()}) özel 2-3 kısa, sıcak,
-somut cümle yaz ("sen" diliyle). Sonuna "Günlük yorumun için takipte
-kal 💫" ekle. Sadece mesajı yaz.""", max_tokens=300)
+        f"""Sen "Günlük Burç" Instagram hesabının astroloğusun. Bir takipçin
+bir videonun altına sadece burcunu yazdı: {info['name']}. Ona yorumun altında
+cevap olarak {tr_date()} günü için {info['name']} burcuna özel 2-3 kısa, sıcak
+ve somut astroloji yorumu yaz: bugün neyi fark edebilir, neye dikkat etmeli.
+Kurallar: takipçiye "sen" diye hitap et; teşekkür etme; kendinden, hesaptan
+ya da yapay zekâdan bahsetme; takipçinin ağzından yazma. Sonuna "Günlük
+yorumun için takipte kal 💫" ekle. Sadece cevap metnini yaz.""",
+        max_tokens=300)
     text = text.strip().strip('"')
-    cache[key] = {"date": today, "text": text}
+    cache[key] = {"date": today, "text": text, "v": 2}
     return text
 
 
