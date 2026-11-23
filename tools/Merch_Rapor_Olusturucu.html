@@ -137,13 +137,31 @@ function sheetRows(ws) {
   return XLSX.utils.sheet_to_json(ws, {header: 1, raw: true, defval: null, blankrows: false});
 }
 
+// ── Option kod: tek sütunda (birleşik, tireli/tiresiz) ya da model + renk kodu ayrı sütunlarda ──
+const OPT_NAMES = ['Option Kod', 'Option Kodu', 'Opsiyon Kod', 'Opsiyon Kodu', 'Option', 'Option Code'].map(norm);
+const MODEL_NAMES = ['Özel Kod 1', 'Model Kod', 'Model Kodu', 'Model', 'Ürün Kod', 'Ürün Kodu', 'Özel Kod'].map(norm);
+const RENK_NAMES = ['Renk Kod', 'Renk Kodu', 'Renk Code'].map(norm);
+function optCols(h) {
+  const f = names => { for (const n of names) { const i = h.indexOf(n); if (i >= 0) return i; } return -1; };
+  const c = {o: f(OPT_NAMES), m: f(MODEL_NAMES), r: f(RENK_NAMES)};
+  c.ok = c.o >= 0 || (c.m >= 0 && c.r >= 0);
+  return c;
+}
+// Birleşik sütun doluysa onu, değilse model + "-" + renk kodunu kullanır
+function optVal(row, c) {
+  const o = c.o >= 0 ? str(row[c.o]) : '';
+  if (o) return o;
+  const m = c.m >= 0 ? str(row[c.m]) : '', r = c.r >= 0 ? str(row[c.r]) : '';
+  return m && r ? `${m}-${r}` : '';
+}
+
 // ── Haftalık Excel: tüm satırlar (filtreleme raporda) ──
 function readWeekly(wb) {
   // Başlık satırı: herhangi bir sayfada, ilk 30 satır içinde "Option Kod" + "DURUM" olan satır
   let rows = null, hi = -1;
   for (const name of wb.SheetNames) {
     const r = sheetRows(wb.Sheets[name]);
-    const i = r.slice(0, 30).findIndex(x => x && x.map(norm).includes(norm(COL.option_kod)) && x.map(norm).includes(norm(COL.durum)));
+    const i = r.slice(0, 30).findIndex(x => x && optCols(x.map(norm)).ok && x.map(norm).includes(norm(COL.durum)));
     if (i >= 0) { rows = r; hi = i; break; }
   }
   if (!rows) {
@@ -154,16 +172,18 @@ function readWeekly(wb) {
   const header = (rows[0] || []).map(norm);
   const idx = {};
   for (const [k, , col] of FIELDS) { const i = header.indexOf(norm(col)); idx[k] = i < 0 ? null : i; }
-  const missing = ['option_kod', 'durum'].filter(k => idx[k] === null).map(k => COL[k]);
+  const oc = optCols(header);
+  const missing = [...(oc.ok ? [] : ['Option Kod (ya da Model Kod + Renk Kod)']), ...(idx.durum === null ? [COL.durum] : [])];
   if (missing.length) throw new Error(`Haftalık Excel'de "${missing.join('", "')}" başlığı bulunamadı. ` +
     'Doğru dosyayı (haftalık option listesi) seçtiğinizden emin olun.');
   const bi = header.indexOf(norm(BUYER_COL));
   const items = [];
   for (const r of rows.slice(1)) {
     const g = k => idx[k] === null ? null : r[idx[k]];
-    if (!g('option_kod')) continue;
+    const kod = optVal(r, oc);
+    if (!kod) continue;
     items.push({
-      img: str(g('resim')), option_kod: str(g('option_kod')), urun_ad: str(g('urun_ad')),
+      img: str(g('resim')), option_kod: kod, urun_ad: str(g('urun_ad')),
       renk: str(g('renk')), durum: str(g('durum')), cluster: str(g('cluster')),
       buyer: bi < 0 ? '' : str(r[bi]),
       stok: num(g('stok')), satis: num(g('satis')), devir: num(g('devir')), indirim: num(g('indirim')),
@@ -180,19 +200,18 @@ function readRange(wb) {
   let found = false;
   for (const name of wb.SheetNames) {
     const rows = sheetRows(wb.Sheets[name]);
-    const hi = rows.slice(0, 40).findIndex(r => r && r.map(norm).includes(norm('Option Kod'))
-                                                  && r.map(norm).includes(norm(COL.kumas)));
+    const hi = rows.slice(0, 40).findIndex(r => r && optCols(r.map(norm)).ok && r.map(norm).includes(norm(COL.kumas)));
     if (hi < 0) continue;
     found = true;
-    const h = rows[hi].map(norm), oi = h.indexOf(norm('Option Kod'));
+    const h = rows[hi].map(norm), oc = optCols(h);
     const cols = Object.fromEntries(RANGE_KEYS.map(k => [k, h.indexOf(norm(COL[k]))]));
     for (const r of rows.slice(hi + 1)) {
-      const key = optKey(r[oi]);
+      const key = optKey(optVal(r, oc));
       if (!key) continue;  // pivot ara toplam / boş satır
       out[key] = Object.fromEntries(RANGE_KEYS.map(k => [k, cols[k] < 0 ? '' : str(r[cols[k]])]));
     }
   }
-  if (!found) throw new Error("RANGE dosyasında 'Option Kod' ve 'KUMAŞ-MALZEME TİPİ' başlıkları bulunamadı");
+  if (!found) throw new Error("RANGE dosyasında 'Option Kod' (ya da Model Kod + Renk Kod) ve 'KUMAŞ-MALZEME TİPİ' başlıkları bulunamadı");
   return out;
 }
 

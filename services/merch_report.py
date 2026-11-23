@@ -234,6 +234,32 @@ def _register_fonts():
 
 # ── Excel okuma ──────────────────────────────────────────────────
 
+# Option kod: tek sütunda (birleşik, tireli/tiresiz) ya da model + renk kodu ayrı sütunlarda
+OPT_NAMES = ["Option Kod", "Option Kodu", "Opsiyon Kod", "Opsiyon Kodu", "Option", "Option Code"]
+MODEL_NAMES = ["Özel Kod 1", "Model Kod", "Model Kodu", "Model", "Ürün Kod", "Ürün Kodu", "Özel Kod"]
+RENK_NAMES = ["Renk Kod", "Renk Kodu", "Renk Code"]
+
+
+def opt_cols(header) -> dict:
+    """Normalize başlık listesinde option kod sütun(lar)ını bulur."""
+    def find(names):
+        return next((header.index(_norm(n)) for n in names if _norm(n) in header), None)
+    c = {"o": find(OPT_NAMES), "m": find(MODEL_NAMES), "r": find(RENK_NAMES)}
+    c["ok"] = c["o"] is not None or (c["m"] is not None and c["r"] is not None)
+    return c
+
+
+def opt_val(row, c) -> str:
+    """Birleşik sütun doluysa onu, değilse model + '-' + renk kodunu döner."""
+    def cell(i):
+        return str(row[i]).strip() if i is not None and i < len(row) and row[i] not in (None, "") else ""
+    o = cell(c["o"])
+    if o:
+        return o
+    m, r = cell(c["m"]), cell(c["r"])
+    return f"{m}-{r}" if m and r else ""
+
+
 def read_options(xlsx_path, durumlar, buyer_gruplar=None, klasman_kelimeler=None,
                  clusterlar=None) -> list:
     wb = load_workbook(xlsx_path, read_only=True, data_only=True)
@@ -246,7 +272,7 @@ def read_options(xlsx_path, durumlar, buyer_gruplar=None, klasman_kelimeler=None
             if row is None:
                 break
             h = [_norm(c) for c in row]
-            if _norm(FIELDS["option_kod"][1]) in h and _norm(FIELDS["durum"][1]) in h:
+            if opt_cols(h)["ok"] and _norm(FIELDS["durum"][1]) in h:
                 rows, header = it, h
                 break
         if rows is not None:
@@ -258,7 +284,9 @@ def read_options(xlsx_path, durumlar, buyer_gruplar=None, klasman_kelimeler=None
     idx = {}
     for key, (_, col) in FIELDS.items():
         idx[key] = header.index(_norm(col)) if _norm(col) in header else None
-    missing = [FIELDS[k][1] for k in ("option_kod", "durum") if idx[k] is None]
+    oc = opt_cols(header)
+    missing = (([] if oc["ok"] else ["Option Kod (ya da Model Kod + Renk Kod)"])
+               + ([] if idx["durum"] is not None else [FIELDS["durum"][1]]))
     if missing:
         wb.close()
         raise ValueError(f"Excel'de beklenen sütun yok: {', '.join(missing)}")
@@ -277,7 +305,8 @@ def read_options(xlsx_path, durumlar, buyer_gruplar=None, klasman_kelimeler=None
             i = idx[k]
             return r[i] if i is not None and i < len(r) else None
 
-        if not g("option_kod"):
+        kod = opt_val(r, oc)
+        if not kod:
             continue
         durum = str(g("durum") or "").strip()
         if _norm(durum) not in wanted:
@@ -291,7 +320,7 @@ def read_options(xlsx_path, durumlar, buyer_gruplar=None, klasman_kelimeler=None
             continue
         items.append({
             "resim": str(g("resim") or "").strip(),
-            "option_kod": str(g("option_kod")).strip(),
+            "option_kod": kod,
             "urun_ad": str(g("urun_ad") or "").strip(),
             "renk": str(g("renk") or "").strip(),
             "durum": durum,
@@ -322,7 +351,7 @@ def _range_header(ws, max_scan=40):
     """Başlık satırını (Option Kod + KUMAŞ-MALZEME TİPİ) bulur."""
     for i, row in enumerate(ws.iter_rows(max_row=max_scan, values_only=True)):
         h = [_norm(c) for c in row]
-        if _norm("Option Kod") in h and _norm(FIELDS["kumas"][1]) in h:
+        if opt_cols(h)["ok"] and _norm(FIELDS["kumas"][1]) in h:
             return i, h
     return None, None
 
@@ -347,9 +376,9 @@ def load_range(path) -> dict:
             continue
         cols = {k: h.index(_norm(FIELDS[k][1])) if _norm(FIELDS[k][1]) in h else None
                 for k in RANGE_KEYS}
-        oi = h.index(_norm("Option Kod"))
+        oc = opt_cols(h)
         for r in ws.iter_rows(min_row=hi + 2, values_only=True):
-            key = _opt_key(r[oi] if oi < len(r) else None)
+            key = _opt_key(opt_val(r, oc))
             if not key:
                 continue  # pivot ara toplam / boş satır
             out[key] = {k: (str(r[i]).strip() if i is not None and i < len(r)
