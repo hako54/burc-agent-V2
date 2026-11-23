@@ -194,16 +194,29 @@ def overview(days: int = 3) -> list:
         if ts < since:
             continue
         cs = instagram._api("GET", f"{m['id']}/comments",
-                            fields="id,text,username,timestamp,replies{username,text}",
+                            fields="id,text,username,timestamp,replies{id,username,text}",
                             limit=50).get("data", [])
         for c in cs:
             reps = (c.get("replies") or {}).get("data", [])
             out.append({
+                "id": c["id"], "media_id": m["id"],
                 "post": (m.get("caption") or "")[:40],
                 "user": c.get("username"), "text": (c.get("text") or "")[:120],
                 "mine": c.get("username") == my_name,
                 "processed": c["id"] in done,
+                "my_reply_id": next((r.get("id") for r in reps
+                                     if r.get("username") == my_name), None),
                 "my_reply": next((r.get("text", "")[:160] for r in reps
                                   if r.get("username") == my_name), None),
                 "type": ("burç" if _sign_in(c.get("text", "")) else "?")})
     return out
+
+
+def forget(comment_id: str) -> bool:
+    """Yorumu 'işlendi' listesinden çıkarır (bir sonraki turda yeniden
+    cevaplanır)."""
+    st = _load_state()
+    had = comment_id in st["done"]
+    st["done"] = [c for c in st["done"] if c != comment_id]
+    _save_state(st)
+    return had
