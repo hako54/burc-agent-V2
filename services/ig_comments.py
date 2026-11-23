@@ -97,10 +97,30 @@ yorumun için takipte kal 💫" ekle. Sadece cevap metnini yaz.""",
     return text
 
 
+_NOT_NAMES = {"ya", "allah", "allahım", "allahim", "amin", "amen",
+              "elhamdulillah", "maşallah", "masallah", "inşallah", "insallah",
+              "rabbim", "şükür", "sukur", "harika", "süper", "super", "teşekkürler",
+              "tesekkurler", "çok", "cok", "güzel", "guzel", "bravo", "evet"}
+
+
+def _looks_like_name(comment: str) -> bool:
+    """İsim yorumu kısa olur: 'Hakan', 'benim adım Ayşe'. Uzun ya da dua/övgü
+    içeren yorumlara isim analizi yazılmaz."""
+    import re
+    from services.tr_locale import tr_lower
+    t = re.sub(r"(?i)\b(benim|adım|adim|ismim|ben)\b", " ", comment or "")
+    words = re.findall(r"[A-Za-zÇĞİÖŞÜçğıöşüÂâÎîÛû]{2,20}", t)
+    if not 1 <= len(words) <= 2:
+        return False
+    return not any(tr_lower(w) in _NOT_NAMES for w in words)
+
+
 def _reply_text(comment: str, st: dict):
     key = _sign_in(comment)
     if key:
         return _sign_message(key, st)
+    if not _looks_like_name(comment):
+        return None
     from services.name_analysis import analyze, NOT_A_NAME
     text = analyze(comment, strict=True)
     return None if text == NOT_A_NAME else text
@@ -152,12 +172,19 @@ def process_comments() -> dict:
         me = instagram.account_info()
         uid, my_name = str(me.get("user_id")), me.get("username", "")
         since = datetime.now(timezone.utc) - timedelta(days=LOOKBACK_DAYS)
+        # Son 7 günün tüm gönderileri (günde ~8 gönderi); yalnızca yorum
+        # sayısı değişenlerin yorumları okunur (API çağrısı tasarrufu)
         media = instagram._api("GET", f"{uid}/media",
-                               fields="id,timestamp", limit=15).get("data", [])
+                               fields="id,timestamp,comments_count",
+                               limit=80).get("data", [])
         done = set(st["done"])
+        counts = st.setdefault("counts", {})
         for m in media:
             ts = datetime.strptime(m["timestamp"], "%Y-%m-%dT%H:%M:%S%z")
             if ts < since:
+                continue
+            n = m.get("comments_count", 0)
+            if not n or counts.get(m["id"]) == n:
                 continue
             comments = instagram._api(
                 "GET", f"{m['id']}/comments",
@@ -189,6 +216,9 @@ def process_comments() -> dict:
                     skipped += 1
                 st["done"].append(cid)
                 done.add(cid)
+                _save_state(st)
+            if replied < MAX_PER_RUN:
+                counts[m["id"]] = n
                 _save_state(st)
     except Exception as e:
         log.warning(f"Yorum cevaplama hatası: {e}")
