@@ -188,6 +188,12 @@ def save_settings(durumlar=None, gizli_alanlar=None, buyer_gruplar=None,
 
 # ── Yardımcılar ──────────────────────────────────────────────────
 
+def _hnorm(s) -> str:
+    """Başlık eşleştirme: _norm + boşluk/alt çizgi/nokta/tire yok sayılır
+    (" OptionKod" = "Option Kod")."""
+    return re.sub(r"[\s_.\-]+", "", _norm(s))
+
+
 def _norm(s) -> str:
     """Türkçe harf duyarsız başlık karşılaştırması."""
     s = str(s or "").strip().replace("İ", "i").replace("I", "ı")
@@ -243,7 +249,7 @@ RENK_NAMES = ["Renk Kod", "Renk Kodu", "Renk Code"]
 def opt_cols(header) -> dict:
     """Normalize başlık listesinde option kod sütun(lar)ını bulur."""
     def find(names):
-        return next((header.index(_norm(n)) for n in names if _norm(n) in header), None)
+        return next((header.index(_hnorm(n)) for n in names if _hnorm(n) in header), None)
     c = {"o": find(OPT_NAMES), "m": find(MODEL_NAMES), "r": find(RENK_NAMES)}
     c["ok"] = c["o"] is not None or (c["m"] is not None and c["r"] is not None)
     return c
@@ -271,26 +277,26 @@ def read_options(xlsx_path, durumlar, buyer_gruplar=None, klasman_kelimeler=None
             row = next(it, None)
             if row is None:
                 break
-            h = [_norm(c) for c in row]
-            if opt_cols(h)["ok"] and _norm(FIELDS["durum"][1]) in h:
+            h = [_hnorm(c) for c in row]
+            if opt_cols(h)["ok"] and _hnorm(FIELDS["durum"][1]) in h:
                 rows, header = it, h
                 break
         if rows is not None:
             break
     if rows is None:
         rows = wb.worksheets[0].iter_rows(values_only=True)
-        header = [_norm(h) for h in next(rows, [])]
+        header = [_hnorm(h) for h in next(rows, [])]
 
     idx = {}
     for key, (_, col) in FIELDS.items():
-        idx[key] = header.index(_norm(col)) if _norm(col) in header else None
+        idx[key] = header.index(_hnorm(col)) if _hnorm(col) in header else None
     oc = opt_cols(header)
     missing = (([] if oc["ok"] else ["Option Kod (ya da Model Kod + Renk Kod)"])
                + ([] if idx["durum"] is not None else [FIELDS["durum"][1]]))
     if missing:
         wb.close()
         raise ValueError(f"Excel'de beklenen sütun yok: {', '.join(missing)}")
-    buyer_i = header.index(_norm(BUYER_COL)) if _norm(BUYER_COL) in header else None
+    buyer_i = header.index(_hnorm(BUYER_COL)) if _hnorm(BUYER_COL) in header else None
     if buyer_gruplar and buyer_i is None:
         wb.close()
         raise ValueError(f"Excel'de beklenen sütun yok: {BUYER_COL}")
@@ -350,8 +356,8 @@ def _opt_key(code) -> str:
 def _range_header(ws, max_scan=40):
     """Başlık satırını (Option Kod + KUMAŞ-MALZEME TİPİ) bulur."""
     for i, row in enumerate(ws.iter_rows(max_row=max_scan, values_only=True)):
-        h = [_norm(c) for c in row]
-        if opt_cols(h)["ok"] and _norm(FIELDS["kumas"][1]) in h:
+        h = [_hnorm(c) for c in row]
+        if opt_cols(h)["ok"] and _hnorm(FIELDS["kumas"][1]) in h:
             return i, h
     return None, None
 
@@ -374,7 +380,7 @@ def load_range(path) -> dict:
         hi, h = _range_header(ws)
         if hi is None:
             continue
-        cols = {k: h.index(_norm(FIELDS[k][1])) if _norm(FIELDS[k][1]) in h else None
+        cols = {k: h.index(_hnorm(FIELDS[k][1])) if _hnorm(FIELDS[k][1]) in h else None
                 for k in RANGE_KEYS}
         oc = opt_cols(h)
         for r in ws.iter_rows(min_row=hi + 2, values_only=True):

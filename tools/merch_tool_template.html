@@ -101,6 +101,8 @@ const LABEL = Object.fromEntries(FIELDS.map(([k, l]) => [k, l]));
 
 // Türkçe harf duyarsız karşılaştırma (Python tarafındaki _norm ile aynı)
 function norm(s) { return String(s ?? '').trim().replace(/İ/g, 'i').replace(/I/g, 'ı').toLowerCase().replace(/\s+/g, ' '); }
+// Başlık eşleştirme: ayrıca boşluk/alt çizgi/nokta/tire yok sayılır (" OptionKod" = "Option Kod")
+function hnorm(s) { return norm(s).replace(/[\s_.\-]+/g, ''); }
 function optKey(s) { return String(s ?? '').toUpperCase().replace(/[^0-9A-Z]/g, ''); }
 function num(v) { return (v === null || v === '' || isNaN(+v)) ? null : +v; }
 function str(v) { return (v === null || v === undefined) ? '' : String(v).trim(); }
@@ -116,9 +118,9 @@ function sheetRows(ws) {
 }
 
 // ── Option kod: tek sütunda (birleşik, tireli/tiresiz) ya da model + renk kodu ayrı sütunlarda ──
-const OPT_NAMES = ['Option Kod', 'Option Kodu', 'Opsiyon Kod', 'Opsiyon Kodu', 'Option', 'Option Code'].map(norm);
-const MODEL_NAMES = ['Özel Kod 1', 'Model Kod', 'Model Kodu', 'Model', 'Ürün Kod', 'Ürün Kodu', 'Özel Kod'].map(norm);
-const RENK_NAMES = ['Renk Kod', 'Renk Kodu', 'Renk Code'].map(norm);
+const OPT_NAMES = ['Option Kod', 'Option Kodu', 'Opsiyon Kod', 'Opsiyon Kodu', 'Option', 'Option Code'].map(hnorm);
+const MODEL_NAMES = ['Özel Kod 1', 'Model Kod', 'Model Kodu', 'Model', 'Ürün Kod', 'Ürün Kodu', 'Özel Kod'].map(hnorm);
+const RENK_NAMES = ['Renk Kod', 'Renk Kodu', 'Renk Code'].map(hnorm);
 function optCols(h) {
   const f = names => { for (const n of names) { const i = h.indexOf(n); if (i >= 0) return i; } return -1; };
   const c = {o: f(OPT_NAMES), m: f(MODEL_NAMES), r: f(RENK_NAMES)};
@@ -139,7 +141,7 @@ function readWeekly(wb) {
   let rows = null, hi = -1;
   for (const name of wb.SheetNames) {
     const r = sheetRows(wb.Sheets[name]);
-    const i = r.slice(0, 30).findIndex(x => x && optCols(x.map(norm)).ok && x.map(norm).includes(norm(COL.durum)));
+    const i = r.slice(0, 30).findIndex(x => x && optCols(x.map(hnorm)).ok && x.map(hnorm).includes(hnorm(COL.durum)));
     if (i >= 0) { rows = r; hi = i; break; }
   }
   if (!rows) {
@@ -147,14 +149,14 @@ function readWeekly(wb) {
     rows = first; hi = 0;
   }
   rows = rows.slice(hi);
-  const header = (rows[0] || []).map(norm);
+  const header = (rows[0] || []).map(hnorm);
   const idx = {};
-  for (const [k, , col] of FIELDS) { const i = header.indexOf(norm(col)); idx[k] = i < 0 ? null : i; }
+  for (const [k, , col] of FIELDS) { const i = header.indexOf(hnorm(col)); idx[k] = i < 0 ? null : i; }
   const oc = optCols(header);
   const missing = [...(oc.ok ? [] : ['Option Kod (ya da Model Kod + Renk Kod)']), ...(idx.durum === null ? [COL.durum] : [])];
   if (missing.length) throw new Error(`Haftalık Excel'de "${missing.join('", "')}" başlığı bulunamadı. ` +
     'Doğru dosyayı (haftalık option listesi) seçtiğinizden emin olun.');
-  const bi = header.indexOf(norm(BUYER_COL));
+  const bi = header.indexOf(hnorm(BUYER_COL));
   const items = [];
   for (const r of rows.slice(1)) {
     const g = k => idx[k] === null ? null : r[idx[k]];
@@ -178,11 +180,11 @@ function readRange(wb) {
   let found = false;
   for (const name of wb.SheetNames) {
     const rows = sheetRows(wb.Sheets[name]);
-    const hi = rows.slice(0, 40).findIndex(r => r && optCols(r.map(norm)).ok && r.map(norm).includes(norm(COL.kumas)));
+    const hi = rows.slice(0, 40).findIndex(r => r && optCols(r.map(hnorm)).ok && r.map(hnorm).includes(hnorm(COL.kumas)));
     if (hi < 0) continue;
     found = true;
-    const h = rows[hi].map(norm), oc = optCols(h);
-    const cols = Object.fromEntries(RANGE_KEYS.map(k => [k, h.indexOf(norm(COL[k]))]));
+    const h = rows[hi].map(hnorm), oc = optCols(h);
+    const cols = Object.fromEntries(RANGE_KEYS.map(k => [k, h.indexOf(hnorm(COL[k]))]));
     for (const r of rows.slice(hi + 1)) {
       const key = optKey(optVal(r, oc));
       if (!key) continue;  // pivot ara toplam / boş satır
