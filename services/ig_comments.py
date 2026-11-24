@@ -78,7 +78,7 @@ def _sign_message(key: str, st: dict) -> str:
     today = now_local().strftime("%Y-%m-%d")
     cache = st.setdefault("sign_msgs", {})
     if (cache.get(key, {}).get("date") == today
-            and cache[key].get("v") == 3):
+            and cache[key].get("v") == 4):
         return cache[key]["text"]
     info = get_sign(key)
     from services.content import call_llm_with_fallback
@@ -86,14 +86,16 @@ def _sign_message(key: str, st: dict) -> str:
         f"""Sen "Günlük Burç" Instagram hesabının astroloğusun. Bir takipçin
 bir videonun altına sadece burcunu yazdı: {info['name']}. Ona yorumun altında
 cevap olarak {tr_date()} günü için {info['name']} burcuna özel EN FAZLA 2 kısa
-cümlelik (toplam 25 kelimeyi geçmesin), net ve vurucu bir astroloji yorumu
-yaz: bugün neye dikkat etmeli.
+cümlelik (toplam 25 kelimeyi geçmesin), net, NEŞELİ ve MOTİVE EDİCİ bir
+astroloji yorumu yaz: bugün onu bekleyen güzel bir şeyi ve içindeki gücü
+hatırlat; okuyan gülümsesin, kendini iyi hissetsin. Uyarı, korkutma ya da
+olumsuzluk yok. 1-2 emoji kullan.
 Kurallar: takipçiye "sen" diye hitap et; teşekkür etme; kendinden, hesaptan
 ya da yapay zekâdan bahsetme; takipçinin ağzından yazma. Sonuna "Günlük
 yorumun için takipte kal 💫" ekle. Sadece cevap metnini yaz.""",
         max_tokens=300)
     text = text.strip().strip('"')
-    cache[key] = {"date": today, "text": text, "v": 3}
+    cache[key] = {"date": today, "text": text, "v": 4}
     return text
 
 
@@ -129,7 +131,7 @@ def _general_reply(comment: str) -> str:
             f"""Bir burç/astroloji Instagram hesabının videosuna şu yorum
 yapıldı: "{text[:300]}"
 Hesap adına yorumun altına yazılacak KISA bir cevap yaz: en fazla 8 kelime,
-samimi, yoruma uygun (emoji/övgü → teşekkür; dua → "Amin 🤲" tarzı;
+çok sıcak, neşeli ve içten, yoruma uygun (emoji/övgü → teşekkür; dua → "Amin 🤲" tarzı;
 soru → kısa, nazik cevap). 1 emoji kullanabilirsin. Kendinden ya da yapay
 zekâdan bahsetme. Yorum spam, reklam, hakaret, kaba ya da alakasızsa
 sadece SKIP yaz. Sadece cevap metnini yaz.""", max_tokens=60)
@@ -157,10 +159,56 @@ def _reply_text(comment: str, st: dict):
     return text, "analiz"
 
 
+def _card_text(text: str) -> str:
+    """Kart için takip çağrısı cümlesini çıkarır."""
+    import re
+    out = re.sub(r"\s*(Günlük\s+(burç\s+)?yorum\w*\s+için\s+)?takipte\s+"
+                 r"kal\w*[\s.!💫✨]*$", "", text, flags=re.I).strip()
+    return out or text
+
+
+def _card_title(comment: str) -> str:
+    from zodiac import get_sign
+    key = _sign_in(comment)
+    if key:
+        info = get_sign(key)
+        return f"{info['symbol']} {info['name']}"
+    from services.name_analysis import extract_name
+    return extract_name(comment) or "Sana Özel"
+
+
+def _send_dm(instagram, uid: str, cid: str, text: str, comment: str,
+             handle: str) -> bool:
+    """Önce hikâyede paylaşılabilir görsel kart, olmazsa yazı gönderir.
+    IG_COMMENT_CARD=0 ise yalnızca yazı."""
+    if os.environ.get("IG_COMMENT_CARD", "1") not in ("0", "false"):
+        try:
+            from services.story_card import make_card
+            qd = instagram._queue_dir()
+            for old in qd.glob("card_*.jpg"):
+                if time.time() - old.stat().st_mtime > 3 * 86400:
+                    old.unlink(missing_ok=True)
+            name = f"card_{cid}.jpg"
+            make_card(_card_title(comment), _card_text(text),
+                      str(qd / name), handle=handle)
+            instagram.send_private_reply(uid, cid,
+                                         image_url=instagram._public_url(name))
+            log.info(f"🖼️ Hikâye kartı DM ile gönderildi: {cid}")
+            return True
+        except Exception as e:
+            log.warning(f"Kart DM gönderilemedi, yazı deneniyor: {e}")
+    try:
+        instagram.send_private_reply(uid, cid, text)
+        return True
+    except Exception as e:
+        log.warning(f"DM gönderilemedi, yoruma yazılıyor: {e}")
+        return False
+
+
 _THANKS = [
-    "Teşekkürler 💜 Sana özel yorumunu DM'den gönderdim ✨",
-    "Yorumun için teşekkürler 🌙 Cevabın DM kutunda 💌",
-    "Teşekkür ederiz 💫 Sana özel mesajı DM'ine bıraktım ✨",
+    "Teşekkürler 💜 Sana özel kartın DM'inde, hikâyende paylaşmayı unutma ✨",
+    "Yorumun için teşekkürler 🌙 Sana özel mesajın DM kutunda 💌",
+    "Çok teşekkürler 💫 DM'ine güzel bir sürpriz bıraktım ✨",
 ]
 
 
@@ -231,12 +279,8 @@ def process_comments() -> dict:
                     who = c.get("username")
                     sent_dm = False
                     if kind == "analiz" and _dm_enabled():
-                        try:
-                            instagram.send_private_reply(uid, cid, text)
-                            sent_dm = True
-                        except Exception as e:
-                            log.warning(f"DM gönderilemedi, yoruma "
-                                        f"yazılıyor: {e}")
+                        sent_dm = _send_dm(instagram, uid, cid, text,
+                                           c.get("text", ""), my_name)
                     public = (_thanks() if sent_dm
                               else text if kind == "tesekkur" else _short(text))
                     msg = f"@{who} {public}" if who else public

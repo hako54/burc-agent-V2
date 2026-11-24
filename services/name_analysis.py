@@ -94,7 +94,8 @@ Numerolojide isim sayısı: {num} ({MEANINGS.get(num, '')})
 "güzel", "teşekkürler", "amin" gibi sıradan bir kelimeyse) SADECE
 NOT_A_NAME yaz, başka hiçbir şey yazma.
 
-Kurallar: Samimi, sıcak, "sen" diliyle; 4-5 kısa cümle. İsmin anlamını
+Kurallar: Samimi, sıcak, NEŞELİ ve motive edici, "sen" diliyle; 3-4 kısa
+cümle. Okuyan gülümsesin ve kendini özel hissetsin; olumsuzluk yok. İsmin anlamını
 biliyorsan bir cümleyle söyle (bilmiyorsan uydurma, atla). Sayının
 kişiliğe ve aşka etkisini anlat. Sonunda: "Günlük burç yorumların için
 takipte kal 💫" Emojiyi az kullan. Sadece mesaj metnini yaz."""

@@ -193,7 +193,8 @@ def media_stats(limit: int = 100, offset: int = 0) -> dict:
     return {"media": rows, "insights_error": errors[0] if errors else None}
 
 
-def send_private_reply(user_id: str, comment_id: str, text: str) -> dict:
+def send_private_reply(user_id: str, comment_id: str, text: str = "",
+                       image_url: str = "") -> dict:
     """Yorum yapan kişiye DM (Instagram Private Replies). Yorum başına bir
     kez ve yorumdan sonraki 7 gün içinde gönderilebilir. Takipçilere
     gönderebilmek için uygulamanın Meta onayı (Advanced Access,
@@ -201,7 +202,10 @@ def send_private_reply(user_id: str, comment_id: str, text: str) -> dict:
     r = requests.post(f"{GRAPH}/{user_id}/messages",
                       params={"access_token": _token()},
                       json={"recipient": {"comment_id": comment_id},
-                            "message": {"text": text[:1000]}},
+                            "message": ({"attachment": {
+                                "type": "image",
+                                "payload": {"url": image_url}}}
+                                if image_url else {"text": text[:1000]})},
                       timeout=60)
     try:
         data = r.json()
