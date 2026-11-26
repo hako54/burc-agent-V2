@@ -79,7 +79,7 @@ Sadece JSON döndür:
   "lucky_color": "Renk (Türkçe)",
   "compatible_sign": "Uyumlu burç (12'den biri)",
   "theme": "Kısa tema (3-5 kelime)",
-  "description": "YouTube açıklaması (200-300 karakter)",
+  "description": "YouTube açıklaması (200-300 karakter); son cümle: 'Bu mesaj sana geldiyse yorumlara “Aldım, kabul ediyorum” yaz ve bir arkadaşına gönder.'",
   "tags": ["burç", "{tr_lower(info['name'])}", "günlük", "astroloji", "shorts"],
   "hashtags": ["#{tr_lower(info['name'])}burcu", "#günlükburç", "#astroloji", "#shorts"]
 }}"""

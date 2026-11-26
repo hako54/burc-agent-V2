@@ -66,11 +66,12 @@ _INTROS = [
 ]
 
 _OUTROS = [
-    "Yorumu beğendiyseniz abone olmayı unutmayın. Yarın yıldızlarla "
-    "yeniden buluşalım!",
-    "Yarın yeni yorumlarla buradayım. Abone olun, yıldızlar sizinle olsun!",
-    "Bu enerjiyi bir arkadaşınızla paylaşın. Yarın görüşmek üzere, "
-    "yıldızlar sizinle olsun!",
+    "Bu mesaj sana geldiyse yorumlara aldım, kabul ediyorum yaz. Aynı "
+    "burçtan bir arkadaşına da gönder. Yıldızlar seninle!",
+    "Bu enerji senin için geldi. Yorumlara aldım, kabul ediyorum yaz ve "
+    "bu videoyu aynı burçtan sevdiğin birine gönder!",
+    "Kabul ediyorsan yorumlara aldım yaz. Bu mesajı aynı burçtan bir "
+    "arkadaşına gönder, o da bilsin. Yarın yine buradayım!",
 ]
 
 

@@ -383,7 +383,12 @@ def build_caption(title: str, description: str, hashtags: list,
     link = youtube_channel_url() if youtube_url is None else youtube_url
     if link:
         parts.append(f"▶️ YouTube: {link}")
-    parts.append("Burcunu yorumlara yaz, sana özel mesajı kaçırma! 💬✨")
+    if sign_name:
+        parts.append(f"💬 Bu mesaj sana geldiyse yorumlara "
+                     f"“Aldım, kabul ediyorum” yaz\n"
+                     f"📩 Bir {sign_name} arkadaşına gönder, o da bilsin ✨")
+    else:
+        parts.append("Burcunu yorumlara yaz, sana özel mesajı kaçırma! 💬✨")
     parts.append(" ".join(t if t.startswith("#") else f"#{t}" for t in tags))
     return "\n\n".join(p for p in parts if p)
 

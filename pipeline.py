@@ -96,7 +96,8 @@ def _queue_instagram(channel_id: str, topic_key: str, video_path: str,
                 return
         caption = instagram.build_caption(
             title, content.get("description", ""),
-            content.get("hashtags", []), youtube_url=youtube_url)
+            content.get("hashtags", []), youtube_url=youtube_url,
+            sign_name=content.get("sign_name", ""))
         caption = caption.replace(
             "▶️ YouTube:",
             "▶️ Tam yorum için profildeki linke dokun 👆\nYouTube:", 1)
