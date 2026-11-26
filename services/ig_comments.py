@@ -274,6 +274,21 @@ def _alert_once(st: dict, msg: str) -> None:
         pass
 
 
+def _all_comments(instagram, media_id: str, fields: str) -> list:
+    """Bir gönderinin tüm yorumları (50'şerlik sayfaları takip eder)."""
+    out, after = [], None
+    for _ in range(20):
+        params = {"fields": fields, "limit": 50}
+        if after:
+            params["after"] = after
+        r = instagram._api("GET", f"{media_id}/comments", **params)
+        out += r.get("data", [])
+        after = ((r.get("paging") or {}).get("cursors") or {}).get("after")
+        if not after or not (r.get("paging") or {}).get("next"):
+            break
+    return out
+
+
 def process_comments() -> dict:
     """Yeni yorumları cevaplar; {'replied': n, 'skipped': m} döner."""
     if not enabled():
@@ -301,9 +316,7 @@ def process_comments() -> dict:
             n = m.get("comments_count", 0)
             if not n or counts.get(m["id"]) == n:
                 continue
-            comments = instagram._api(
-                "GET", f"{m['id']}/comments",
-                fields="id,text,username,timestamp", limit=50).get("data", [])
+            comments = _all_comments(instagram, m["id"], "id,text,username,timestamp")
             for c in comments:
                 if replied >= MAX_PER_RUN:
                     break
@@ -357,9 +370,7 @@ def overview(days: int = 3) -> list:
         ts = datetime.strptime(m["timestamp"], "%Y-%m-%dT%H:%M:%S%z")
         if ts < since:
             continue
-        cs = instagram._api("GET", f"{m['id']}/comments",
-                            fields="id,text,username,timestamp,replies{id,username,text}",
-                            limit=50).get("data", [])
+        cs = _all_comments(instagram, m["id"], "id,text,username,timestamp,replies{id,username,text}")
         for c in cs:
             reps = (c.get("replies") or {}).get("data", [])
             out.append({
@@ -420,8 +431,7 @@ def fix_misread_signs(dry_run: bool = False) -> list:
         ts = datetime.strptime(m["timestamp"], "%Y-%m-%dT%H:%M:%S%z")
         if ts < since or not m.get("comments_count"):
             continue
-        cs = instagram._api("GET", f"{m['id']}/comments",
-                            fields="id,text,username", limit=50).get("data", [])
+        cs = _all_comments(instagram, m["id"], "id,text,username")
         for c in cs:
             cid, text = c["id"], c.get("text", "")
             if (c.get("username") == my_name or cid in fixed
