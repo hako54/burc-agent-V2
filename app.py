@@ -1122,6 +1122,18 @@ def instagram_comment_forget(comment_id):
     return jsonify({"forgotten": ig_comments.forget(comment_id)})
 
 
+@app.route("/api/instagram/comments/fix-signs", methods=["GET", "POST"])
+def instagram_comments_fix_signs():
+    """GET: isim sanılan burç yorumlarını listeler; POST: özür + doğru
+    burç mesajıyla cevaplar."""
+    from services import ig_comments
+    try:
+        return jsonify(ig_comments.fix_misread_signs(
+            dry_run=request.method == "GET"))
+    except Exception as e:
+        return jsonify({"error": str(e)[:400]}), 500
+
+
 @app.route("/api/instagram/comments/run", methods=["POST"])
 def instagram_comments_run():
     """Yorum cevaplamayı hemen bir kez çalıştırır (test için)."""
