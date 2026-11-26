@@ -127,5 +127,5 @@ def make_card(title: str, message: str, dst: str, handle: str = "",
         draw_text(img, d, ((W - text_width(d, ht, hf)) // 2, H - 220), ht, hf,
                   GOLD + (255,))
     Path(dst).parent.mkdir(parents=True, exist_ok=True)
-    img.save(dst, "JPEG", quality=92)
+    img.save(dst, "JPEG", quality=82, optimize=True)
     return dst

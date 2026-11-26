@@ -59,13 +59,41 @@ def _save_state(st: dict) -> None:
     os.replace(tmp, _state_file())
 
 
-def _sign_in(text: str):
+_ASCII = str.maketrans("çğıöşüâîû", "cgiosuaiu")
+# Burç kökleri (ünsüz yumuşaması dahil: akrebim, balığım, oğlağım)
+_STEMS = {
+    "koc": "koc", "boga": "boga", "ikizler": "ikizler", "yengec": "yengec",
+    "aslan": "aslan", "basak": "basak", "terazi": "terazi", "akrep": "akrep",
+    "akreb": "akrep", "yay": "yay", "oglak": "oglak", "oglag": "oglak",
+    "kova": "kova", "balik": "balik", "balig": "balik",
+}
+_SUFFIXES = ("", "im", "um", "yim", "yum", "iz", "uz", "yiz", "yuz", "in",
+             "un", "yin", "yun", "dir", "tir", "dur", "tur", "burcu",
+             "burcuyum", "burcum", "burcuyuz", "luyum", "liyim", "cuyum",
+             "ciyim", "cum", "cim", "yimdir", "yumdur")
+
+
+def _sign_word(w: str):
+    """'Kovayım', 'akrebim', 'koçum', 'balığız', "terazi'yim" → burç."""
     from zodiac import normalize_sign
+    from services.tr_locale import tr_lower
+    key = normalize_sign(w)
+    if key:
+        return key
+    a = tr_lower(w).replace("'", "").replace("’", "").translate(_ASCII)
+    for stem, k in _STEMS.items():
+        if a.startswith(stem) and a[len(stem):] in _SUFFIXES:
+            return k
+    return None
+
+
+def _sign_in(text: str):
     words = [w.strip(".,!?♈♉♊♋♌♍♎♏♐♑♒♓✨💫❤️ ") for w in text.split()]
+    words = [w for w in words if w]
     if not 1 <= len(words) <= 4:
         return None
     for w in words:
-        key = normalize_sign(w)
+        key = _sign_word(w)
         if key:
             return key
     return None
@@ -191,10 +219,18 @@ def _send_dm(instagram, uid: str, cid: str, text: str, comment: str,
             name = f"card_{cid}.jpg"
             make_card(_card_title(comment), _card_text(text),
                       str(qd / name), handle=handle)
-            instagram.send_private_reply(uid, cid,
-                                         image_url=instagram._public_url(name))
-            log.info(f"🖼️ Hikâye kartı DM ile gönderildi: {cid}")
-            return True
+            url = instagram._public_url(name)
+            for attempt in range(3):
+                try:
+                    instagram.send_private_reply(uid, cid, image_url=url)
+                    log.info(f"🖼️ Hikâye kartı DM ile gönderildi: {cid}")
+                    return True
+                except Exception as e:
+                    if attempt == 2:
+                        raise
+                    log.info(f"Kart DM denemesi {attempt + 1} başarısız "
+                             f"({e}); tekrar deneniyor")
+                    time.sleep(8)
         except Exception as e:
             log.warning(f"Kart DM gönderilemedi, yazı deneniyor: {e}")
     try:
@@ -349,3 +385,60 @@ def forget(comment_id: str) -> bool:
     st["counts"] = {}  # gönderiler yeniden taransın
     _save_state(st)
     return had
+
+
+def _old_sign_in(text: str):
+    """Eski (ekleri tanımayan) burç tanıma — yanlış cevaplananları bulmak
+    için."""
+    from zodiac import normalize_sign
+    words = [w.strip(".,!?♈♉♊♋♌♍♎♏♐♑♒♓✨💫❤️ ") for w in text.split()]
+    if not 1 <= len(words) <= 4:
+        return None
+    for w in words:
+        if normalize_sign(w):
+            return normalize_sign(w)
+    return None
+
+
+def fix_misread_signs(dry_run: bool = False) -> list:
+    """Burcunu ekli yazdığı için ('Kovayım') isim sanılıp isim analizi
+    gönderilen yorumlara yorumun altından özür + doğru burç mesajı yazar.
+    (Aynı yoruma ikinci DM gönderilemez; Instagram tek DM'e izin verir.)"""
+    from services import instagram
+    from zodiac import get_sign
+    st = _load_state()
+    fixed = set(st.setdefault("fixed", []))
+    done = set(st["done"])
+    me = instagram.account_info()
+    uid, my_name = str(me.get("user_id")), me.get("username", "")
+    since = datetime.now(timezone.utc) - timedelta(days=LOOKBACK_DAYS)
+    media = instagram._api("GET", f"{uid}/media",
+                           fields="id,timestamp,comments_count",
+                           limit=80).get("data", [])
+    out = []
+    for m in media:
+        ts = datetime.strptime(m["timestamp"], "%Y-%m-%dT%H:%M:%S%z")
+        if ts < since or not m.get("comments_count"):
+            continue
+        cs = instagram._api("GET", f"{m['id']}/comments",
+                            fields="id,text,username", limit=50).get("data", [])
+        for c in cs:
+            cid, text = c["id"], c.get("text", "")
+            if (c.get("username") == my_name or cid in fixed
+                    or cid not in done):
+                continue
+            key = _sign_in(text)
+            if not key or _old_sign_in(text):
+                continue
+            name = get_sign(key)["name"]
+            msg = (f"Özür dileriz 🙏 Burcunu yanlışlıkla isim sandık, DM'deki "
+                   f"mesajı dikkate alma! {name} için bugünün mesajı: "
+                   f"{_sign_message(key, st)}")
+            out.append({"comment": text, "reply": msg})
+            if dry_run:
+                continue
+            instagram._api("POST", f"{cid}/replies", message=msg[:1000])
+            st["fixed"].append(cid)
+            _save_state(st)
+            log.info(f"🙏 Yanlış cevap düzeltildi: {cid} ({text[:30]})")
+    return out
