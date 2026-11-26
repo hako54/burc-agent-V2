@@ -105,6 +105,12 @@ takipte kal 💫" Emojiyi az kullan. Sadece mesaj metnini yaz."""
         text = text.strip().strip('"')
         if NOT_A_NAME in text:
             text = NOT_A_NAME
+        else:
+            try:
+                from services.tr_spell import fix_turkish
+                text = fix_turkish([text])[0] or text
+            except Exception as e:
+                log.warning(f"İmla kontrolü yapılamadı: {e}")
     except Exception as e:
         log.warning(f"İsim analizi LLM hatası: {e}")
         if strict:

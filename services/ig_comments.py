@@ -107,7 +107,7 @@ def _sign_message(key: str, st: dict) -> str:
     today = now_local().strftime("%Y-%m-%d")
     cache = st.setdefault("sign_msgs", {})
     if (cache.get(key, {}).get("date") == today
-            and cache[key].get("v") == 4):
+            and cache[key].get("v") == 5):
         return cache[key]["text"]
     info = get_sign(key)
     from services.content import call_llm_with_fallback
@@ -124,7 +124,12 @@ ya da yapay zekâdan bahsetme; takipçinin ağzından yazma. Sonuna "Günlük
 yorumun için takipte kal 💫" ekle. Sadece cevap metnini yaz.""",
         max_tokens=300)
     text = text.strip().strip('"')
-    cache[key] = {"date": today, "text": text, "v": 4}
+    try:
+        from services.tr_spell import fix_turkish
+        text = fix_turkish([text])[0] or text
+    except Exception as e:
+        log.warning(f"İmla kontrolü yapılamadı: {e}")
+    cache[key] = {"date": today, "text": text, "v": 5}
     return text
 
 
