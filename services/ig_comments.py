@@ -88,8 +88,9 @@ def _sign_word(w: str):
 
 
 def _sign_in(text: str):
-    words = [w.strip(".,!?♈♉♊♋♌♍♎♏♐♑♒♓✨💫❤️ ") for w in text.split()]
-    words = [w for w in words if w]
+    import re
+    # Yalnızca harf grupları (emoji/noktalama bitişik olsa da: "Kova🤲❤️")
+    words = re.findall(r"[A-Za-zÇĞİÖŞÜçğıöşüÂâÎîÛû'’]+", text or "")
     if not 1 <= len(words) <= 4:
         return None
     for w in words:
@@ -438,7 +439,8 @@ def fix_misread_signs(dry_run: bool = False) -> list:
                     or cid not in done):
                 continue
             key = _sign_in(text)
-            if not key or _old_sign_in(text):
+            # Yalnızca eskiden isim analizine giden yorumlar
+            if not key or _old_sign_in(text) or not _looks_like_name(text):
                 continue
             name = get_sign(key)["name"]
             msg = (f"Özür dileriz 🙏 Burcunu yanlışlıkla isim sandık, DM'deki "
