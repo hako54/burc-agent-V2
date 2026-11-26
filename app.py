@@ -1134,6 +1134,28 @@ def instagram_comments_fix_signs():
         return jsonify({"error": str(e)[:400]}), 500
 
 
+@app.route("/api/instagram/dms")
+def instagram_dms():
+    """Son DM konuşmaları (kontrol için)."""
+    from services import instagram
+    try:
+        return jsonify(instagram.list_dms(int(request.args.get("limit", 50))))
+    except Exception as e:
+        return jsonify({"error": str(e)[:400]}), 500
+
+
+@app.route("/api/instagram/dm", methods=["POST"])
+def instagram_dm_send():
+    """POST {recipient_id, text}: konuşmadaki kişiye DM (24 saat kuralı)."""
+    from services import instagram
+    b = request.get_json(silent=True) or {}
+    try:
+        return jsonify(instagram.send_dm(b.get("recipient_id", ""),
+                                         b.get("text", "")))
+    except Exception as e:
+        return jsonify({"error": str(e)[:400]}), 400
+
+
 @app.route("/api/instagram/comments/run", methods=["POST"])
 def instagram_comments_run():
     """Yorum cevaplamayı hemen bir kez çalıştırır (test için)."""

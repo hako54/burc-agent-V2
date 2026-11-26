@@ -525,3 +525,40 @@ def _process_one() -> None:
             _notify(f"⚠️ <b>Instagram yayını yapılamadı</b> "
                     f"({item['topic_key']}, {MAX_ATTEMPTS} deneme)\n"
                     f"Hata: {str(e)[:250]}")
+
+
+def list_dms(limit: int = 50) -> list:
+    """Son DM konuşmaları ve mesajları (kontrol için)."""
+    uid = _user_id()
+    convs = _api("GET", f"{uid}/conversations", platform="instagram",
+                 fields="id,updated_time,participants,"
+                        "messages.limit(10){id,message,from,created_time}",
+                 limit=limit).get("data", [])
+    out = []
+    for c in convs:
+        msgs = (c.get("messages") or {}).get("data", [])
+        out.append({
+            "id": c.get("id"), "updated": c.get("updated_time"),
+            "participants": [p.get("username") for p in
+                             (c.get("participants") or {}).get("data", [])],
+            "messages": [{"id": m.get("id"),
+                          "from": (m.get("from") or {}).get("username"),
+                          "from_id": (m.get("from") or {}).get("id"),
+                          "time": m.get("created_time"),
+                          "text": m.get("message", "")} for m in msgs]})
+    return out
+
+
+def send_dm(recipient_id: str, text: str) -> dict:
+    """Konuşmadaki kişiye normal DM (yalnızca kişi son 24 saatte bize
+    yazdıysa Instagram izin verir)."""
+    r = requests.post(f"{GRAPH}/{_user_id()}/messages",
+                      params={"access_token": _token()},
+                      json={"recipient": {"id": recipient_id},
+                            "message": {"text": text[:1000]}}, timeout=60)
+    data = r.json() if r.content else {}
+    if r.status_code != 200 or "error" in data:
+        err = data.get("error", data)
+        raise RuntimeError(f"Instagram DM {r.status_code}: "
+                           f"{err.get('message') if isinstance(err, dict) else err}")
+    return data
